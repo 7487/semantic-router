@@ -141,6 +141,5 @@ class AgentMakeContractTests(unittest.TestCase):
     def test_security_scan_is_not_forced_for_docs_only_changes(self) -> None:
         self.assertNotIn("always_run", local_hook("supply-chain-security-scan"))
 
-
 if __name__ == "__main__":
     unittest.main()
