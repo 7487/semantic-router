@@ -17,6 +17,7 @@ import {
   controlledPairCandidateSourceOptions,
 } from './evaluationCampaignSupport'
 import { EvaluationActionButton } from './EvaluationPrimitives'
+import { runOptionLabels } from './evaluationRunPresentation'
 import styles from './EvaluationCampaignControlledPair.module.css'
 
 interface EvaluationCampaignControlledPairProps {
@@ -90,6 +91,8 @@ export default function EvaluationCampaignControlledPair({
     if (pair.status === 'ready' && activePairID) onPairIdentityChange(null, null)
   }, [activePairID, onPairIdentityChange, pair.status])
   const sourceReady = Boolean(baselineSourceID && candidateSourceID)
+  const baselineLabels = runOptionLabels(baselineOptions)
+  const candidateLabels = runOptionLabels(candidateOptions)
   const selectionRationale =
     baselineOptions.length === 0
       ? 'No completed, sealed live Mixture source is available for this G3 slot. Run a compatible live source evaluation first.'
@@ -129,7 +132,7 @@ export default function EvaluationCampaignControlledPair({
               <option value="">Select completed live source</option>
               {baselineOptions.map((run) => (
                 <option key={run.id} value={run.id}>
-                  {run.name} · {run.mixture?.entrypoint_model || run.target_id}
+                  {baselineLabels.get(run.id)}
                 </option>
               ))}
             </select>
@@ -148,7 +151,7 @@ export default function EvaluationCampaignControlledPair({
               <option value="">Select exact-cohort treatment source</option>
               {candidateOptions.map((run) => (
                 <option key={run.id} value={run.id}>
-                  {run.name} · {run.mixture?.entrypoint_model || run.target_id}
+                  {candidateLabels.get(run.id)}
                 </option>
               ))}
             </select>

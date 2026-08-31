@@ -4,6 +4,7 @@ import type { EvaluationExperimentFormModel } from './useEvaluationExperimentFor
 import EvaluationExperimentSectionHeading from './EvaluationExperimentSectionHeading'
 import EvaluationExperimentMixture from './EvaluationExperimentMixture'
 import { EvaluationActionButton } from './EvaluationPrimitives'
+import { runOptionLabels } from './evaluationRunPresentation'
 import styles from './EvaluationExperimentFields.module.css'
 import sectionStyles from './EvaluationExperimentSection.module.css'
 
@@ -33,6 +34,7 @@ export default function EvaluationExperimentIdentity({
   form,
 }: EvaluationExperimentIdentityProps) {
   const selectedTarget = catalog.targets.find((target) => target.id === form.targetID)
+  const baselineLabels = runOptionLabels(form.completedRuns)
   return (
     <section className={sectionStyles.formSection}>
       <EvaluationExperimentSectionHeading
@@ -124,7 +126,7 @@ export default function EvaluationExperimentIdentity({
                 const issue = baselineCohortIssue(catalog, run)
                 return (
                   <option key={run.id} value={run.id} disabled={Boolean(issue)}>
-                    {run.name} · {run.change_profile} · {run.mode}
+                    {baselineLabels.get(run.id)}
                     {issue ? ' · not eligible' : ''}
                   </option>
                 )

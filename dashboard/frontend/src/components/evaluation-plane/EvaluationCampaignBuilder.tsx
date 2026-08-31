@@ -15,6 +15,7 @@ import { buildEvaluationCampaignRequest, campaignSlotRunIDs } from './evaluation
 import type { EvaluationCampaignBuilderModel } from './useEvaluationCampaignBuilder'
 import EvaluationCampaignControlledPair from './EvaluationCampaignControlledPair'
 import { EvaluationActionButton, EvaluationTag } from './EvaluationPrimitives'
+import { runOptionLabels } from './evaluationRunPresentation'
 import commonStyles from './EvaluationCampaign.module.css'
 import styles from './EvaluationCampaignBuilder.module.css'
 
@@ -26,10 +27,6 @@ const RUN_BINDING_KEYS = {
   G8: 'g8_run_id',
   G9: 'g9_run_id',
 } as const
-
-function runLabel(run: EvaluationRun): string {
-  return `${run.name} · ${run.mode} · ${run.evidence_level} · n=${run.sample_limit}`
-}
 
 function slotDisposition(slot: EvaluationCatalogCampaignSlot): string {
   if (slot.disposition === 'required') return 'Required'
@@ -55,16 +52,24 @@ function SlotBinding({
     return <output aria-label={`${slot.gate_id} evidence`}>No evidence requested</output>
   if (slot.binding_kind === 'controlled_pair') {
     const pair = model.draft.gateBindings.g3_controlled_pair
+    const baseline = runs.find((run) => run.id === pair?.baseline_run_id)
+    const candidate = runs.find((run) => run.id === pair?.candidate_run_id)
+    const pairLabels = runOptionLabels([
+      ...(baseline ? [baseline] : []),
+      ...(candidate ? [candidate] : []),
+    ])
     return (
       <output aria-label="G3 controlled pair evidence">
         {pair
-          ? `${runs.find((run) => run.id === pair.baseline_run_id)?.name || pair.baseline_run_id} → ${runs.find((run) => run.id === pair.candidate_run_id)?.name || pair.candidate_run_id}`
+          ? `${baseline ? pairLabels.get(baseline.id) : pair.baseline_run_id} → ${candidate ? pairLabels.get(candidate.id) : pair.candidate_run_id}`
           : 'Launch the controlled pair below'}
       </output>
     )
   }
   if (slot.binding_kind === 'fidelity_pair') {
     const binding = model.draft.gateBindings.g5_fidelity
+    const referenceLabels = runOptionLabels(model.fidelityReferences)
+    const liveLabels = runOptionLabels(model.fidelityLiveRuns)
     return (
       <div className={styles.pairInputs}>
         <label>
@@ -82,7 +87,7 @@ function SlotBinding({
             </option>
             {model.fidelityReferences.map((run) => (
               <option key={run.id} value={run.id}>
-                {runLabel(run)}
+                {referenceLabels.get(run.id)}
               </option>
             ))}
           </select>
@@ -102,7 +107,7 @@ function SlotBinding({
             </option>
             {model.fidelityLiveRuns.map((run) => (
               <option key={run.id} value={run.id}>
-                {runLabel(run)}
+                {liveLabels.get(run.id)}
               </option>
             ))}
           </select>
@@ -113,6 +118,7 @@ function SlotBinding({
   const gateID = slot.gate_id as keyof typeof RUN_BINDING_KEYS
   const value = model.draft.gateBindings[RUN_BINDING_KEYS[gateID]] || ''
   const options = model.options.get(slot.gate_id) || []
+  const optionLabels = runOptionLabels(options)
   return (
     <select
       aria-label={`${slot.gate_id} ${slot.name} evidence`}
@@ -127,7 +133,7 @@ function SlotBinding({
       </option>
       {options.map((run) => (
         <option key={run.id} value={run.id}>
-          {runLabel(run)}
+          {optionLabels.get(run.id)}
         </option>
       ))}
     </select>

@@ -5,7 +5,8 @@ import EvaluationMetricTable from './EvaluationMetricTable'
 import EvaluationComparisonStatistics from './EvaluationComparisonStatistics'
 import { effectiveGateVerdict } from './evaluationPresentation'
 import { EvaluationActionButton, GateVerdictBadge } from './EvaluationPrimitives'
-import { cohortMismatches, eligibleComparisonCandidates } from './evaluationRunSupport'
+import { runOptionLabels } from './evaluationRunPresentation'
+import { comparisonCohortMismatches, eligibleComparisonCandidates } from './evaluationRunSupport'
 import styles from './EvaluationCompare.module.css'
 import disclosureStyles from './EvaluationReportDisclosures.module.css'
 import heroStyles from './EvaluationReportHero.module.css'
@@ -57,11 +58,12 @@ export default function EvaluationCompare({
   )
   const candidates =
     runLedgerAvailable && runLedgerComplete ? eligibleComparisonCandidates(runs) : []
+  const candidateLabels = runOptionLabels(candidates)
   const candidate = runLedgerAvailable && runLedgerComplete ? completed.get(candidateID) : undefined
   const baseline = runLedgerAvailable && runLedgerComplete ? completed.get(baselineID) : undefined
-  const mismatches = baseline && candidate ? cohortMismatches(baseline, candidate) : []
+  const mismatches = baseline && candidate ? comparisonCohortMismatches(baseline, candidate) : []
   const lineageMismatch = Boolean(candidate && candidate.baseline_run_id !== baselineID)
-  const routingRecipeComparisonUnavailable = Boolean(
+  const routingRecipeAggregateBoundary = Boolean(
     baseline?.mixture &&
       candidate?.mixture &&
       baseline.mode === 'live' &&
@@ -94,8 +96,8 @@ export default function EvaluationCompare({
           <h2>Compare a candidate with its pinned baseline</h2>
           <p>
             Candidate lineage fixes the baseline and cohort. Arbitrary completed runs are excluded
-            because they can manufacture invalid deltas. This scientific diagnostic does not issue a
-            promotion decision.
+            because they can manufacture invalid deltas; server-owned controlled pairs carry their
+            own attested lineage. This scientific diagnostic does not issue a promotion decision.
           </p>
         </div>
         <div className={styles.compareControls}>
@@ -116,7 +118,7 @@ export default function EvaluationCompare({
               <option value="">Select a candidate with baseline lineage</option>
               {candidates.map((run) => (
                 <option key={run.id} value={run.id}>
-                  {run.name} · {run.change_profile}
+                  {candidateLabels.get(run.id)}
                 </option>
               ))}
             </select>
@@ -124,7 +126,7 @@ export default function EvaluationCompare({
           <label>
             Pinned baseline
             <input
-              value={baseline?.name || ''}
+              value={baseline ? runOptionLabels([baseline]).get(baseline.id) : ''}
               placeholder="Derived from candidate"
               readOnly
               aria-describedby="evaluation-baseline-help"
@@ -221,11 +223,11 @@ export default function EvaluationCompare({
               <dd>{candidate.seed}</dd>
             </div>
           </dl>
-          {routingRecipeComparisonUnavailable ? (
+          {routingRecipeAggregateBoundary ? (
             <p className={styles.routingComparisonBoundary} role="note">
-              <strong>Routing Recipe comparison unavailable.</strong> The server-owned E1/E2
-              aggregate is report-scoped and is not projected into generic paired metrics. Inspect
-              each run report for decision coverage, calibration, top-k recall, and oracle regret.
+              <strong>Routing Recipe aggregate boundary.</strong> The server-owned E1/E2 aggregate
+              remains report-scoped and is not projected into generic paired metrics. Inspect each
+              run report for decision coverage, calibration, top-k recall, and oracle regret.
             </p>
           ) : null}
         </>

@@ -45,6 +45,7 @@ import {
   decodeEvaluationCapacityLoadProtocol,
   defaultEvaluationCapacityLoadProtocol,
   equalEvaluationCapacityLoadProtocol,
+  equalEvaluationCapacitySLO,
 } from '../../src/utils/evaluationCapacitySLOContract'
 import { metricAnalysisSpecification } from '../../src/utils/evaluationReportContract'
 import { evaluationCampaignExpectedAnchors } from '../../src/utils/evaluationCampaignBindingContract'
@@ -1376,25 +1377,15 @@ interface MockEvaluationPlaneOptions {
   }
 }
 
-function sameMembers(left: readonly string[], right: readonly string[]): boolean {
+function sameOrderedMembers(left: readonly string[], right: readonly string[]): boolean {
   if (left.length !== right.length) return false
-  const sortedLeft = [...left].sort()
-  const sortedRight = [...right].sort()
-  return sortedLeft.every((value, index) => value === sortedRight[index])
+  return left.every((value, index) => value === right[index])
 }
 
-function equalCapacitySLO(
-  left: EvaluationCapacitySLO | undefined,
-  right: EvaluationCapacitySLO | undefined,
-): boolean {
-  if (!left || !right) return left === right
+function sameMixtureIdentity(left: EvaluationRun, right: EvaluationRun): boolean {
+  if (!left.mixture || !right.mixture) return left.mixture === right.mixture
   return (
-    left.schema_version === right.schema_version &&
-    left.required_concurrency === right.required_concurrency &&
-    left.max_latency_p95_ms === right.max_latency_p95_ms &&
-    left.max_error_rate === right.max_error_rate &&
-    left.min_throughput_rps === right.min_throughput_rps &&
-    left.min_throughput_scaling_efficiency === right.min_throughput_scaling_efficiency
+    left.mixture.id === right.mixture.id && left.mixture.recipe_name === right.mixture.recipe_name
   )
 }
 
@@ -1415,37 +1406,38 @@ function exactCohortMatches(left: EvaluationRun, right: EvaluationRun): boolean 
   return (
     left.mode === right.mode &&
     left.target_id === right.target_id &&
+    sameMixtureIdentity(left, right) &&
     left.change_profile === right.change_profile &&
     left.sample_limit === right.sample_limit &&
     left.concurrency === right.concurrency &&
-    equalCapacitySLO(left.capacity_slo, right.capacity_slo) &&
+    equalEvaluationCapacitySLO(left.capacity_slo, right.capacity_slo) &&
     equalEvaluationCapacityLoadProtocol(
       left.capacity_load_protocol,
       right.capacity_load_protocol,
     ) &&
     left.seed === right.seed &&
-    sameMembers(left.suite_ids, right.suite_ids) &&
-    sameMembers(left.track_ids, right.track_ids)
+    sameOrderedMembers(left.suite_ids, right.suite_ids) &&
+    sameOrderedMembers(left.track_ids, right.track_ids)
   )
 }
 
 function controlledPairCohortMatches(left: EvaluationRun, right: EvaluationRun): boolean {
   return (
     left.target_id !== right.target_id &&
-    left.mixture?.id === right.mixture?.id &&
-    left.mixture?.recipe_name === right.mixture?.recipe_name &&
+    Boolean(left.mixture && right.mixture) &&
+    sameMixtureIdentity(left, right) &&
     left.mode === right.mode &&
     left.change_profile === right.change_profile &&
     left.sample_limit === right.sample_limit &&
     left.concurrency === right.concurrency &&
-    equalCapacitySLO(left.capacity_slo, right.capacity_slo) &&
+    equalEvaluationCapacitySLO(left.capacity_slo, right.capacity_slo) &&
     equalEvaluationCapacityLoadProtocol(
       left.capacity_load_protocol,
       right.capacity_load_protocol,
     ) &&
     left.seed === right.seed &&
-    sameMembers(left.suite_ids, right.suite_ids) &&
-    sameMembers(left.track_ids, right.track_ids)
+    sameOrderedMembers(left.suite_ids, right.suite_ids) &&
+    sameOrderedMembers(left.track_ids, right.track_ids)
   )
 }
 
@@ -1458,15 +1450,15 @@ function createRequestMatchesRun(request: CreateEvaluationRunPayload, run: Evalu
     request.change_profile === run.change_profile &&
     request.sample_limit === run.sample_limit &&
     request.concurrency === run.concurrency &&
-    equalCapacitySLO(request.capacity_slo, run.capacity_slo) &&
+    equalEvaluationCapacitySLO(request.capacity_slo, run.capacity_slo) &&
     equalEvaluationCapacityLoadProtocol(
       request.capacity_load_protocol,
       run.capacity_load_protocol,
     ) &&
     request.seed === run.seed &&
     (request.baseline_run_id || '') === (run.baseline_run_id || '') &&
-    sameMembers(request.suite_ids, run.suite_ids) &&
-    sameMembers(request.track_ids, run.track_ids)
+    sameOrderedMembers(request.suite_ids, run.suite_ids) &&
+    sameOrderedMembers(request.track_ids, run.track_ids)
   )
 }
 
@@ -1948,8 +1940,8 @@ export async function mockEvaluationPlane(
             Date.parse(fidelityLive.started_at) <= Date.parse(fidelityReference.completed_at) ||
             fidelityReference.sample_limit !== fidelityLive.sample_limit ||
             fidelityReference.seed !== fidelityLive.seed ||
-            !sameMembers(fidelityReference.suite_ids, fidelityLive.suite_ids) ||
-            !sameMembers(fidelityReference.track_ids, fidelityLive.track_ids)))
+            !sameOrderedMembers(fidelityReference.suite_ids, fidelityLive.suite_ids) ||
+            !sameOrderedMembers(fidelityReference.track_ids, fidelityLive.track_ids)))
       if (invalid) {
         await fulfillError(route, 400, 'invalid evaluation request: campaign contract rejected')
         return
@@ -2004,7 +1996,15 @@ export async function mockEvaluationPlane(
       )
       return
     }
-    if (!exactCohortMatches(baseline, candidate)) {
+    const controlledPairMatches =
+      baseline.controlled_pair?.role === 'baseline' &&
+      candidate.controlled_pair?.role === 'candidate' &&
+      baseline.controlled_pair.pair_id === candidate.controlled_pair.pair_id &&
+      candidate.baseline_run_id === baseline.id &&
+      baseline.mode === 'live' &&
+      candidate.mode === 'live' &&
+      controlledPairCohortMatches(baseline, candidate)
+    if (!exactCohortMatches(baseline, candidate) && !controlledPairMatches) {
       await fulfillError(
         route,
         400,

@@ -928,7 +928,7 @@ test.describe('Evaluation Plane', () => {
     await expect(page.getByLabel('Comparison candidate')).toHaveValue(
       EVALUATION_RUN_IDS.olderCandidate,
     )
-    await expect(page.getByLabel('Pinned baseline')).toHaveValue('Older production baseline')
+    await expect(page.getByLabel('Pinned baseline')).toHaveValue(/Older production baseline/)
     await page.getByRole('button', { name: 'Compare paired evidence' }).click()
     await expect.poll(() => state.comparisonRequests.length).toBe(1)
     expect(state.comparisonRequests[0]).toEqual({
@@ -1361,7 +1361,100 @@ test.describe('Evaluation Plane', () => {
     await expect
       .poll(() => new URL(page.url()).searchParams.get('baseline'))
       .toBe(secondBaseline.id)
-    await expect(page.getByLabel('Pinned baseline')).toHaveValue(secondBaseline.name)
+    await expect(page.getByLabel('Pinned baseline')).toHaveValue(new RegExp(secondBaseline.name))
+  })
+
+  test('rejects controlled-pair cohort order drift and missing Mixture identity', async ({
+    page,
+  }) => {
+    const orderedPairID = evaluationRunID(950)
+    const orderedBaseline = evaluationRun(
+      evaluationRunID(951),
+      'Ordered baseline',
+      'completed',
+      '2026-08-29T13:00:00Z',
+      'recipe',
+      {
+        mode: 'live',
+        target_id: EVALUATION_BASELINE_MOM_TARGET_ID,
+        mixture: EVALUATION_MOM,
+        suite_ids: ['live-mom-core', 'normalized-promotion-cohort'],
+        track_ids: ['routing', 'joint'],
+        controlled_pair: { pair_id: orderedPairID, role: 'baseline' },
+      },
+    )
+    const reorderedCandidate = evaluationRun(
+      evaluationRunID(952),
+      'Reordered candidate',
+      'completed',
+      '2026-08-29T13:01:00Z',
+      'recipe',
+      {
+        ...orderedBaseline,
+        id: evaluationRunID(952),
+        client_request_id: evaluationRunID(952),
+        name: 'Reordered candidate',
+        target_id: EVALUATION_MOM_TARGET_ID,
+        baseline_run_id: orderedBaseline.id,
+        suite_ids: [...orderedBaseline.suite_ids].reverse(),
+        track_ids: [...orderedBaseline.track_ids].reverse(),
+        controlled_pair: { pair_id: orderedPairID, role: 'candidate' },
+      },
+    )
+    const missingMixturePairID = evaluationRunID(953)
+    const missingMixtureBaseline = evaluationRun(
+      evaluationRunID(954),
+      'Missing Mixture baseline',
+      'completed',
+      '2026-08-29T14:00:00Z',
+      'recipe',
+      {
+        mode: 'live',
+        target_id: EVALUATION_BASELINE_MOM_TARGET_ID,
+        mixture: undefined,
+        controlled_pair: { pair_id: missingMixturePairID, role: 'baseline' },
+      },
+    )
+    const missingMixtureCandidate = evaluationRun(
+      evaluationRunID(955),
+      'Missing Mixture candidate',
+      'completed',
+      '2026-08-29T14:01:00Z',
+      'recipe',
+      {
+        ...missingMixtureBaseline,
+        id: evaluationRunID(955),
+        client_request_id: evaluationRunID(955),
+        name: 'Missing Mixture candidate',
+        target_id: EVALUATION_MOM_TARGET_ID,
+        baseline_run_id: missingMixtureBaseline.id,
+        controlled_pair: { pair_id: missingMixturePairID, role: 'candidate' },
+      },
+    )
+    await mockEvaluationPlane(page, [
+      reorderedCandidate,
+      orderedBaseline,
+      missingMixtureCandidate,
+      missingMixtureBaseline,
+    ])
+    await page.goto('/evaluation?view=compare')
+
+    await expect(page.getByLabel('Comparison candidate')).toBeDisabled()
+    for (const [baselineRunID, candidateRunID] of [
+      [orderedBaseline.id, reorderedCandidate.id],
+      [missingMixtureBaseline.id, missingMixtureCandidate.id],
+    ]) {
+      const status = await page.evaluate(
+        async ({ baselineID, candidateID }) =>
+          (
+            await fetch(
+              `/api/evaluation/v1/compare?baseline_run_id=${baselineID}&candidate_run_id=${candidateID}`,
+            )
+          ).status,
+        { baselineID: baselineRunID, candidateID: candidateRunID },
+      )
+      expect(status).toBe(400)
+    }
   })
 
   test('withholds E0 promotion claims while retaining diagnostics and never fakes G2+ pass', async ({
@@ -1705,9 +1798,24 @@ test.describe('Evaluation Plane', () => {
         completed_at: '2026-08-29T07:10:00Z',
       },
     )
+    const capacityDuplicate = evaluationRun(
+      evaluationRunID(20),
+      'Capacity envelope qualification',
+      'completed',
+      '2026-08-29T07:20:00Z',
+      'recipe',
+      {
+        ...capacity,
+        id: evaluationRunID(20),
+        client_request_id: evaluationRunID(20),
+        created_at: '2026-08-29T07:20:00Z',
+        completed_at: '2026-08-29T07:30:00Z',
+      },
+    )
     const state = await mockEvaluationPlane(
       page,
       [
+        capacityDuplicate,
         capacity,
         fidelityLive,
         fidelityReference,
@@ -1802,9 +1910,20 @@ test.describe('Evaluation Plane', () => {
     await expect
       .poll(() => new URL(page.url()).searchParams.get('controlled_pair_profile'))
       .toBeNull()
-    await expect(page.getByLabel('G3 controlled pair evidence')).toContainText(
-      'Controlled baseline AB/BA → Controlled candidate AB/BA',
-    )
+    const g3Evidence = page.getByLabel('G3 controlled pair evidence')
+    await expect(g3Evidence).toContainText('Controlled baseline AB/BA')
+    await expect(g3Evidence).toContainText('Controlled candidate AB/BA')
+    const comparisonCandidate = page.getByLabel('Comparison candidate')
+    await comparisonCandidate.selectOption(controlledPairRequest.candidate_run_id)
+    await expect(page.getByLabel('Pinned baseline')).toHaveValue(/Controlled baseline AB\/BA/)
+    await page.getByRole('button', { name: 'Compare paired evidence' }).click()
+    await expect
+      .poll(() => state.comparisonRequests.at(-1))
+      .toEqual({
+        baselineRunID: controlledPairRequest.baseline_run_id,
+        candidateRunID: controlledPairRequest.candidate_run_id,
+      })
+    await expect(page.getByText('Paired scientific statistics')).toBeVisible()
     await page.getByLabel('G2 Hard policy evidence').selectOption(EVALUATION_RUN_IDS.campaignG2)
     await page
       .getByLabel('G4 Declared-shift robustness evidence')
@@ -1815,9 +1934,12 @@ test.describe('Evaluation Plane', () => {
     await page
       .getByLabel('G5 fidelity live evidence')
       .selectOption(EVALUATION_RUN_IDS.campaignG5Live)
-    await page
-      .getByLabel('G7 Cost / latency / capacity evidence')
-      .selectOption(EVALUATION_RUN_IDS.campaignG7)
+    const g7Evidence = page.getByLabel('G7 Cost / latency / capacity evidence')
+    const g7OptionLabels = await g7Evidence.locator('option').allTextContents()
+    expect(new Set(g7OptionLabels).size).toBe(g7OptionLabels.length)
+    expect(g7OptionLabels.join('\n')).toContain('#00000019')
+    expect(g7OptionLabels.join('\n')).toContain('#00000020')
+    await g7Evidence.selectOption(EVALUATION_RUN_IDS.campaignG7)
     await page.getByLabel('Campaign name').fill('Recipe v4 guarded promotion')
     await page
       .locator('details')
@@ -2098,7 +2220,7 @@ test.describe('Evaluation Plane', () => {
       page.getByText('Fresh baseline and candidate runs completed and were bound to G3.'),
     ).toBeVisible()
     await expect(page.getByLabel('G3 controlled pair evidence')).toContainText(
-      'Controlled baseline AB/BA → Controlled candidate AB/BA',
+      /Controlled baseline AB\/BA.*Controlled candidate AB\/BA/,
     )
     await expect.poll(() => new URL(page.url()).searchParams.get('controlled_pair')).toBeNull()
     await expect
@@ -2184,7 +2306,7 @@ test.describe('Evaluation Plane', () => {
 
     await expect(profile).toHaveValue('recipe')
     await expect(page.getByLabel('G3 controlled pair evidence')).toContainText(
-      'Controlled baseline AB/BA → Controlled candidate AB/BA',
+      /Controlled baseline AB\/BA.*Controlled candidate AB\/BA/,
     )
     await expect.poll(() => new URL(page.url()).searchParams.get('controlled_pair')).toBeNull()
   })

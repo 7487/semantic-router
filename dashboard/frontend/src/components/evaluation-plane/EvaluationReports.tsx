@@ -3,6 +3,7 @@ import type { EvaluationRun } from '../../types/evaluationPlane'
 import type { EvaluationReport } from '../../types/evaluationReport'
 import { EvaluationActionButton } from './EvaluationPrimitives'
 import EvaluationReportView from './EvaluationReportView'
+import { runOptionLabels } from './evaluationRunPresentation'
 import styles from './EvaluationPlane.module.css'
 import reportStyles from './EvaluationReports.module.css'
 
@@ -38,6 +39,10 @@ export default function EvaluationReports({
   const reportableRuns = runs.filter((run) => run.status === 'completed')
   const selectedReportRun =
     report && !reportableRuns.some((run) => run.id === report.run.id) ? report.run : null
+  const reportLabels = runOptionLabels([
+    ...(selectedReportRun ? [selectedReportRun] : []),
+    ...reportableRuns,
+  ])
   return (
     <div className={styles.sectionStack} aria-busy={loading}>
       <section className={styles.surface}>
@@ -62,12 +67,12 @@ export default function EvaluationReports({
               </option>
               {selectedReportRun ? (
                 <option value={selectedReportRun.id}>
-                  {selectedReportRun.name} · {selectedReportRun.evidence_level}
+                  {reportLabels.get(selectedReportRun.id)}
                 </option>
               ) : null}
               {reportableRuns.map((run) => (
                 <option key={run.id} value={run.id}>
-                  {run.name} · {run.evidence_level}
+                  {reportLabels.get(run.id)}
                 </option>
               ))}
             </select>

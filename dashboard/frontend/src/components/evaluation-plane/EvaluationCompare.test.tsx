@@ -23,6 +23,37 @@ function analysisProvenance(metricID: string): EvaluationMetricAnalysisProvenanc
   }
 }
 
+const mixtureBase = {
+  id: 'mom',
+  entrypoint_model: 'vllm-sr/auto',
+  aliases: ['vllm-sr/auto'],
+  recipe_name: 'balanced',
+  recipe_description: '',
+  recipe_digest: `sha256:${'1'.repeat(64)}`,
+  pool_digest: `sha256:${'2'.repeat(64)}`,
+  selector_policy_digest: `sha256:${'3'.repeat(64)}`,
+  selector_digest: `sha256:${'4'.repeat(64)}`,
+  adaptation_digest: `sha256:${'5'.repeat(64)}`,
+  binding_digest: `sha256:${'6'.repeat(64)}`,
+  model_arms: [
+    {
+      id: 'arm',
+      model: 'model',
+      provider_model_id_digest: `sha256:${'7'.repeat(64)}`,
+      input_cost_per_million_tokens_usd: 0,
+      output_cost_per_million_tokens_usd: 0,
+    },
+  ],
+  support_models: [],
+  fallback_arm_id: 'arm',
+  decisions: [{ name: 'route', algorithm: 'static', arm_ids: ['arm'] }],
+}
+
+const evaluationMixture = {
+  ...mixtureBase,
+  routing_recipe_plan: buildEvaluationRoutingRecipePlan(mixtureBase),
+}
+
 const baseline: EvaluationRun = {
   schema_version: 'evaluation.v1',
   id: 'baseline',
@@ -137,35 +168,6 @@ describe('EvaluationCompare evidence labels', () => {
   })
 
   it('states that server-owned Routing Recipe aggregates are not generic comparison metrics', () => {
-    const mixtureBase = {
-      id: 'mom',
-      entrypoint_model: 'vllm-sr/auto',
-      aliases: ['vllm-sr/auto'],
-      recipe_name: 'balanced',
-      recipe_description: '',
-      recipe_digest: `sha256:${'1'.repeat(64)}`,
-      pool_digest: `sha256:${'2'.repeat(64)}`,
-      selector_policy_digest: `sha256:${'3'.repeat(64)}`,
-      selector_digest: `sha256:${'4'.repeat(64)}`,
-      adaptation_digest: `sha256:${'5'.repeat(64)}`,
-      binding_digest: `sha256:${'6'.repeat(64)}`,
-      model_arms: [
-        {
-          id: 'arm',
-          model: 'model',
-          provider_model_id_digest: `sha256:${'7'.repeat(64)}`,
-          input_cost_per_million_tokens_usd: 0,
-          output_cost_per_million_tokens_usd: 0,
-        },
-      ],
-      support_models: [],
-      fallback_arm_id: 'arm',
-      decisions: [{ name: 'route', algorithm: 'static', arm_ids: ['arm'] }],
-    }
-    const mixture = {
-      ...mixtureBase,
-      routing_recipe_plan: buildEvaluationRoutingRecipePlan(mixtureBase),
-    }
     const routingBaseline: EvaluationRun = {
       ...baseline,
       id: 'routing-baseline',
@@ -174,7 +176,7 @@ describe('EvaluationCompare evidence labels', () => {
       track_ids: ['routing'],
       track_evidence_levels: { routing: 'E3' },
       evidence_level: 'E3',
-      mixture,
+      mixture: evaluationMixture,
     }
     const routingCandidate: EvaluationRun = {
       ...routingBaseline,
@@ -188,7 +190,7 @@ describe('EvaluationCompare evidence labels', () => {
       routingBaseline.id,
       routingCandidate.id,
     )
-    expect(markup).toContain('Routing Recipe comparison unavailable')
+    expect(markup).toContain('Routing Recipe aggregate boundary')
     expect(markup).toContain('not projected into generic paired metrics')
 
     const replayBaseline = { ...routingBaseline, mode: 'replay' as const }
@@ -208,6 +210,48 @@ describe('EvaluationCompare evidence labels', () => {
         replayBaseline.id,
         replayCandidate.id,
       ),
-    ).not.toContain('Routing Recipe comparison unavailable')
+    ).not.toContain('Routing Recipe aggregate boundary')
+  })
+
+  it('offers an attested controlled-pair candidate despite its intentional target treatment', () => {
+    const controlledBaseline: EvaluationRun = {
+      ...baseline,
+      id: '00000000-0000-4000-8000-000000000101',
+      client_request_id: '00000000-0000-4000-8000-000000000101',
+      mode: 'live',
+      target_id: 'baseline-deployment',
+      mixture: evaluationMixture,
+      controlled_pair: { pair_id: 'pair', role: 'baseline' },
+    }
+    const controlledCandidate: EvaluationRun = {
+      ...candidate,
+      id: '00000000-0000-4000-8000-000000000102',
+      client_request_id: '00000000-0000-4000-8000-000000000102',
+      mode: 'live',
+      target_id: 'candidate-deployment',
+      mixture: evaluationMixture,
+      baseline_run_id: controlledBaseline.id,
+      controlled_pair: { pair_id: 'pair', role: 'candidate' },
+    }
+
+    const markup = renderComparison(
+      {
+        ...comparison,
+        baseline_run_id: controlledBaseline.id,
+        candidate_run_id: controlledCandidate.id,
+      },
+      [controlledCandidate, controlledBaseline],
+      controlledBaseline.id,
+      controlledCandidate.id,
+    )
+
+    expect(markup).toContain('Candidate · #00000102 · Routing recipe · Live · E0 · n=4')
+    expect(markup).not.toContain('No comparable candidate exists')
+    expect(markup).not.toContain('Cohort mismatch')
+    const compareButton = markup.match(
+      new RegExp(`<${'button'}[^>]*>Compare paired evidence</${'button'}>`),
+    )?.[0]
+    expect(compareButton).toBeDefined()
+    expect(compareButton).not.toContain('disabled')
   })
 })
