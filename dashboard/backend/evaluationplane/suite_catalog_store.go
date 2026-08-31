@@ -191,12 +191,6 @@ func validateInstalledSuiteManifest(root string, data []byte, index suiteIndexRe
 	if err := validateInstalledSuiteArtifacts(root, manifest.Artifacts); err != nil {
 		return CatalogSuite{}, err
 	}
-	executors := map[Mode]string{ModeReplay: normalizedSuiteExecutorID}
-	modes := []Mode{ModeReplay}
-	if normalizedSuiteSupportsLive(manifest.TrackIDs) {
-		executors[ModeLive] = normalizedSuiteLiveExecutorID
-		modes = append(modes, ModeLive)
-	}
 	parserLabel := "User-provided normalized records passed the closed schema"
 	importTag := "user-provided-import"
 	if importEvidence.ParserVerified {
@@ -207,72 +201,51 @@ func validateInstalledSuiteManifest(root string, data []byte, index suiteIndexRe
 	if err != nil {
 		return CatalogSuite{}, err
 	}
+	executors := map[Mode]string{ModeReplay: normalizedSuiteExecutorID}
+	modes := []Mode{ModeReplay}
+	tags := []string{
+		"external", "pinned", "exploratory-e0", "normalized-replay", importTag,
+		"native-run-unattested", "adapter:" + manifest.AdapterID,
+		"classification:" + manifest.DataClassification, "redistribution:" + manifest.Redistribution,
+	}
+	if len(normalizedSuiteLiveMethodTracks(CatalogSuite{Methods: methods})) > 0 {
+		executors[ModeLive] = normalizedSuiteLiveExecutorID
+		modes = append(modes, ModeLive)
+		tags = append(tags, "target-live")
+	}
 	return CatalogSuite{
 		ID: manifest.ID, Name: manifest.Name,
 		Description: "Pinned normalized exploratory workload. " + parserLabel +
-			"; upstream benchmark execution is not attested, so replay is E0 diagnostic evidence only.",
+			"; the import remains E0 and only explicitly registered first-party methods may execute live.",
 		Executors:     executors,
 		TrackIDs:      append([]TrackID(nil), manifest.TrackIDs...),
 		Modes:         modes,
 		EvidenceLevel: manifest.QualificationReceipt.EvidenceLevel,
 		CaseCount:     manifest.CaseCount,
 		Revision:      manifest.Revision,
-		Tags: []string{
-			"external", "pinned", "exploratory-e0", "normalized-replay", importTag,
-			"native-run-unattested", "adapter:" + manifest.AdapterID,
-			"classification:" + manifest.DataClassification, "redistribution:" + manifest.Redistribution,
-		},
-		Methods: methods,
+		Tags:          tags,
+		Methods:       methods,
 	}, nil
 }
 
-var normalizedCatalogMethodIDs = map[string]string{
-	"routerarena":      "routerarena.predictions-and-robustness.v2",
-	"coderouterbench":  "coderouterbench.id-results.v1",
-	"llmrouterbench":   "llmrouterbench.result-documents.v1",
-	"routerbench":      "routerbench.wide-csv.v1",
-	"xroutebench":      "xroutebench.standardized-csv.v1",
-	"twinrouterbench":  "twinrouterbench.static-summary.v1",
-	"mmr-bench":        "mmrbench.merged-csv.v1",
-	"acebench":         "acebench.run-summary.v1",
-	"continuity-bench": "continuitybench.labeled-failover.v3",
-	"fusionfactory":    "fusionfactory.aligned-csv.v1",
-	"r2-router":        "r2bench.model-budget-csv.v1",
-}
-
 func installedCatalogMethods(root string, manifest suiteManifestProjection) ([]CatalogMethod, error) {
-	methodID, known := normalizedCatalogMethodIDs[manifest.AdapterID]
+	plugin, known := InstalledMethodPlugin(manifest.AdapterID)
 	if !known {
-		return nil, nil
+		return nil, fmt.Errorf("%w: benchmark %q has no v2 method declaration", ErrInvalid, manifest.AdapterID)
 	}
-	methods := make([]CatalogMethod, 0, len(manifest.TrackIDs)+1)
+	methods := make([]CatalogMethod, 0, len(manifest.TrackIDs)+2)
 	for _, trackID := range manifest.TrackIDs {
 		methods = append(methods, CatalogMethod{
-			ID: methodID + "." + string(trackID), TrackID: trackID,
+			ID: plugin.ID + "." + string(trackID), TrackID: trackID,
 			QualifiedGateIDs: []string{}, EvidenceSource: "normalized_import", Status: "configured",
 		})
 	}
-	eligible, err := installedDeclaredShiftSourceEligible(root, installedSuiteDocument{Manifest: manifest})
+	liveMethods, err := installedFirstPartyNormalizedLiveMethods(root, manifest)
 	if err != nil {
-		return nil, fmt.Errorf("%w: installed suite declared-shift qualification is invalid", err)
+		return nil, err
 	}
-	if eligible {
-		methods = append(methods, CatalogMethod{
-			ID: declaredShiftLiveMethodID, TrackID: "routing",
-			QualifiedGateIDs: []string{"G4"}, EvidenceSource: "server_brokered_live", Status: "configured",
-		})
-	}
+	methods = append(methods, liveMethods...)
 	return methods, nil
-}
-
-func normalizedSuiteSupportsLive(trackIDs []TrackID) bool {
-	for _, trackID := range trackIDs {
-		switch trackID {
-		case "routing", "model_pool", "joint", "multimodal", "capacity":
-			return true
-		}
-	}
-	return false
 }
 
 func validateInstalledSuiteArtifacts(root string, raw json.RawMessage) error {

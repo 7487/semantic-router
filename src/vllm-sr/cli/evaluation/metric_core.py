@@ -3,10 +3,18 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from dataclasses import dataclass, replace
 from math import sqrt
+from typing import Any
 
 from cli.evaluation.evidence import ExecutionRecord
-from cli.evaluation.reporting import EvaluationCoverage, EvaluationMetric
+from cli.evaluation.reporting import (
+    METRIC_ANALYSIS_CONTRACT_VERSION,
+    EvaluationCoverage,
+    EvaluationMetric,
+    MetricAnalysisProvenance,
+    metric_analysis_specification,
+)
 
 
 def _canonical_ordered_float_sum(values: Iterable[float]) -> float:
@@ -51,6 +59,97 @@ def _sum_complete(values: Iterable[float | None]) -> float | None:
     return _canonical_ordered_float_sum(value for value in rows if value is not None)
 
 
+def metric_analysis_provenance(
+    metric_id: str, *, observed_exclusions: int
+) -> MetricAnalysisProvenance:
+    """Return the registered analysis plan for one metric identifier.
+
+    Unknown identifiers intentionally fail closed: only cataloged estimators can
+    be published, and sealing compares workers to this same registry.
+    """
+
+    spec = metric_analysis_specification(metric_id)
+
+    return MetricAnalysisProvenance(
+        contract_version=METRIC_ANALYSIS_CONTRACT_VERSION,
+        estimator_id=spec.estimator_id,
+        estimator_version=spec.estimator_version,
+        analysis_unit=spec.analysis_unit,
+        cluster_unit=spec.cluster_unit,
+        weighting=spec.weighting,
+        missingness=spec.missingness,
+        exclusion_policy=spec.exclusion_policy,
+        observed_exclusions=observed_exclusions,
+    )
+
+
+@dataclass(frozen=True)
+class MetricDraft:
+    """Internal unreleased reduction, before evidence exclusions are bound.
+
+    A draft deliberately cannot be serialized as an ``EvaluationMetric``.  The
+    report dispatcher binds it to the complete normalized evidence population
+    before it becomes a publishable metric, preventing a reducer from silently
+    manufacturing an ``observed_exclusions=0`` claim.
+    """
+
+    id: str
+    name: str
+    track_id: str
+    value: float | None
+    unit: str
+    direction: str
+    sample_count: int
+    confidence_interval: tuple[float, float] | None = None
+    planned_analysis_units: int | None = None
+    # Only the sealed model-pool reducer owns this: generic reducers must let
+    # the publication boundary derive exclusions from their planned population.
+    model_pool_observed_exclusions: int | None = None
+
+    def model_copy(self, *, update: dict[str, Any]) -> MetricDraft:
+        return replace(self, **update)
+
+    def publish(self, *, unavailable_analysis_units: int) -> EvaluationMetric:
+        planned = (
+            self.sample_count
+            if self.planned_analysis_units is None
+            else self.planned_analysis_units
+        )
+        if planned < self.sample_count:
+            raise ValueError(
+                f"metric {self.id} has {self.sample_count} observed units but only "
+                f"{planned} planned analysis units"
+            )
+        if unavailable_analysis_units < 0:
+            raise ValueError(f"metric {self.id} has a negative unavailable-unit count")
+        if self.model_pool_observed_exclusions is not None:
+            if (
+                not self.id.startswith("model_pool.")
+                or self.model_pool_observed_exclusions < 0
+            ):
+                raise ValueError(
+                    f"metric {self.id} has an invalid sealed model-pool exclusion count"
+                )
+            observed_exclusions = self.model_pool_observed_exclusions
+        else:
+            observed_exclusions = (
+                planned - self.sample_count
+            ) + unavailable_analysis_units
+        return EvaluationMetric(
+            id=self.id,
+            name=self.name,
+            track_id=self.track_id,
+            value=self.value,
+            unit=self.unit,
+            direction=self.direction,
+            sample_count=self.sample_count,
+            confidence_interval=self.confidence_interval,
+            analysis_provenance=metric_analysis_provenance(
+                self.id, observed_exclusions=observed_exclusions
+            ),
+        )
+
+
 def _metric(
     metric_id: str,
     name: str,
@@ -59,8 +158,10 @@ def _metric(
     unit: str,
     direction: str,
     sample_count: int,
-) -> EvaluationMetric:
-    return EvaluationMetric(
+    *,
+    planned_analysis_units: int | None = None,
+) -> MetricDraft:
+    return MetricDraft(
         id=metric_id,
         name=name,
         track_id=track_id,
@@ -68,6 +169,7 @@ def _metric(
         unit=unit,
         direction=direction,
         sample_count=sample_count,
+        planned_analysis_units=planned_analysis_units,
     )
 
 

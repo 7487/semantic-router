@@ -6,6 +6,7 @@ from cli.evaluation.gate_contract import (
     gate_applicability,
 )
 from cli.evaluation.gates import GateEvidenceContext, compute_gates
+from cli.evaluation.metric_core import metric_analysis_provenance
 from cli.evaluation.reporting import EvaluationMetric
 
 
@@ -25,6 +26,9 @@ def _metric(
         unit=unit,
         direction=direction,
         sample_count=20,
+        analysis_provenance=metric_analysis_provenance(
+            metric_id, observed_exclusions=0
+        ),
     )
 
 

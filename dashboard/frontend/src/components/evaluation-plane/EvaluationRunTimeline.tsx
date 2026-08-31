@@ -1,3 +1,5 @@
+import { useId } from 'react'
+
 import type { EvaluationRun, EvaluationRunEvent } from '../../types/evaluationPlane'
 import { TRACK_PRESENTATION } from '../../types/evaluationPlane'
 import { formatDateTime } from '../../utils/dateTime'
@@ -20,6 +22,7 @@ export default function EvaluationRunTimeline({
   error,
   onReconnect,
 }: EvaluationRunTimelineProps) {
+  const timelineTitleID = useId()
   const active = run.status === 'running' || run.status === 'sealing'
   const eventMessage = (event: EvaluationRunEvent) => {
     if (event.type !== 'track') return event.message
@@ -30,7 +33,7 @@ export default function EvaluationRunTimeline({
   return (
     <>
       <div className={styles.eventHeader}>
-        <h4>Execution timeline</h4>
+        <h4 id={timelineTitleID}>Execution timeline</h4>
         <span className={connected ? styles.live : styles.offline}>
           {connected
             ? 'Stream connected'
@@ -61,19 +64,26 @@ export default function EvaluationRunTimeline({
             : 'No durable lifecycle events were returned for this run.'}
         </p>
       ) : (
-        <ol className={styles.eventList}>
-          {events.map((event, index) => (
-            <li key={event.id || `${event.timestamp}-${index}`}>
-              <time>{formatDateTime(event.timestamp)}</time>
-              <div>
-                <strong>
-                  {event.track_id ? TRACK_PRESENTATION[event.track_id].label : event.type}
-                </strong>
-                <span>{eventMessage(event)}</span>
-              </div>
-            </li>
-          ))}
-        </ol>
+        <div
+          className={styles.eventList}
+          role="region"
+          aria-labelledby={timelineTitleID}
+          tabIndex={0}
+        >
+          <ol className={styles.eventItems}>
+            {events.map((event, index) => (
+              <li key={event.id || `${event.timestamp}-${index}`}>
+                <time>{formatDateTime(event.timestamp)}</time>
+                <div>
+                  <strong>
+                    {event.track_id ? TRACK_PRESENTATION[event.track_id].label : event.type}
+                  </strong>
+                  <span>{eventMessage(event)}</span>
+                </div>
+              </li>
+            ))}
+          </ol>
+        </div>
       )}
     </>
   )

@@ -38,6 +38,7 @@ from cli.evaluation.manifest_identity import (
     model_pool_snapshot_digest,
     selector_snapshot_digest,
 )
+from cli.evaluation.routing_recipe_plan import build_routing_recipe_plan
 from cli.evaluation.suite_catalog import NormalizedSuiteCatalog
 from cli.evaluation.suite_contract import (
     BenchmarkSourceReceipt,
@@ -650,6 +651,9 @@ def _target_mixture() -> ManifestMixture:
     mixture_id = mixture_target_id(recipe_name)
     aliases = ("entrypoint-a",)
     selector_policy_digest = digest_value("target-selector-policy")
+    selector_digest = selector_snapshot_digest(selector_policy_digest, ())
+    adaptation_digest = digest_value("target-adaptation")
+    binding_digest = digest_value("target-binding-v1")
     return ManifestMixture(
         id=mixture_id,
         entrypoint_model="entrypoint-a",
@@ -659,9 +663,9 @@ def _target_mixture() -> ManifestMixture:
         recipe_digest=recipe_digest,
         pool_digest=pool_digest,
         selector_policy_digest=selector_policy_digest,
-        selector_digest=selector_snapshot_digest(selector_policy_digest, ()),
-        adaptation_digest=digest_value("target-adaptation"),
-        binding_digest=digest_value("target-binding-v1"),
+        selector_digest=selector_digest,
+        adaptation_digest=adaptation_digest,
+        binding_digest=binding_digest,
         model_arms=arms,
         support_models=(),
         fallback_arm_id="arm-fast",
@@ -671,6 +675,18 @@ def _target_mixture() -> ManifestMixture:
                 algorithm="static",
                 arm_ids=("arm-fast", "arm-strong"),
             ),
+        ),
+        routing_recipe_plan=build_routing_recipe_plan(
+            recipe_digest=recipe_digest,
+            pool_digest=pool_digest,
+            selector_policy_digest=selector_policy_digest,
+            selector_digest=selector_digest,
+            adaptation_digest=adaptation_digest,
+            binding_digest=binding_digest,
+            arm_ids=tuple(arm.id for arm in arms),
+            fallback_arm_id="arm-fast",
+            signals=(),
+            projections=(),
         ),
     )
 

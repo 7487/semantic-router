@@ -19,6 +19,12 @@ type reportSealPreparation struct {
 }
 
 func (s *Service) validateAndAnchorReport(runID string) error {
+	return s.store.withEvidencePublication(func() error {
+		return s.validateAndAnchorReportDuringPublication(runID)
+	})
+}
+
+func (s *Service) validateAndAnchorReportDuringPublication(runID string) error {
 	preparation, err := s.prepareReportSeal(runID)
 	if err != nil {
 		return err
@@ -75,8 +81,26 @@ func (s *Service) prepareReportSeal(runID string) (reportSealPreparation, error)
 	if err != nil {
 		return reportSealPreparation{}, err
 	}
+	runDir, err := s.store.checkedRunDir(runID)
+	if err != nil {
+		return reportSealPreparation{}, err
+	}
+	records, err := validateRecordsAndFailureSummary(runDir, manifest, executionContract.Executor)
+	if err != nil {
+		return reportSealPreparation{}, err
+	}
+	methodReports, err := ReduceSealedMethodReports(records.Methods)
+	if err != nil {
+		return reportSealPreparation{}, fmt.Errorf("%w: reduce sealed method reports: %w", ErrInvalid, err)
+	}
+	report.MethodReports = methodReports
+	routingRecipeReport, err := reduceSealedRoutingRecipeReport(manifest, records, executionAttestation)
+	if err != nil {
+		return reportSealPreparation{}, err
+	}
+	report.RoutingRecipeReport = routingRecipeReport
 	sealedLevels, err := s.validateReportBundle(
-		runID, manifest, report, checksums, executionContract, executionAttestation,
+		runID, manifest, report, checksums, executionContract, executionAttestation, records,
 	)
 	if err != nil {
 		return reportSealPreparation{}, err
@@ -92,10 +116,8 @@ func (s *Service) validatedExecutionAttestation(runID string, manifest RunManife
 	if manifest.Mode != ModeLive {
 		return nil, nil
 	}
-	attestation, err := s.store.readExecutionAttestation(runID)
-	if err != nil || attestation.ManifestDigest != manifest.ManifestDigest ||
-		attestation.TargetID != manifest.Target.ID || attestation.PolicySnapshotDigest != manifest.PolicySnapshotDigest ||
-		attestation.BackendTopologyDigest != manifest.Target.BackendTopologyDigest {
+	attestation, err := s.store.readExecutionAttestationForManifest(runID, manifest)
+	if err != nil {
 		return nil, fmt.Errorf("%w: live report lacks its exact server execution attestation", ErrInvalid)
 	}
 	return &attestation, nil
@@ -136,7 +158,7 @@ func (s *Service) publishReportSeal(runID string, preparation reportSealPreparat
 	if err := validateReportExecutionTimestamp(run, preparation.manifest, report.Provenance.GeneratedAt, sealedAt); err != nil {
 		return err
 	}
-	if _, err := s.store.commitSealedEvidenceLevels(runID, preparation.sealedLevels); err != nil {
+	if _, err := s.store.commitSealedEvidenceLevelsWithinLifecycle(runID, preparation.sealedLevels); err != nil {
 		return err
 	}
 	// The revision is exclusively server-owned and is published only after all

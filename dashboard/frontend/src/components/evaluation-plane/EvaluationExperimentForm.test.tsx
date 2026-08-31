@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { EvaluationCatalog, EvaluationRun } from '../../types/evaluationPlane'
 import EvaluationExperimentForm from './EvaluationExperimentForm'
+import { buildEvaluationRoutingRecipePlan } from '../../test/evaluationRoutingRecipeFixture'
 import {
   baselineCohortIssue,
   compatibleEvaluationSuites,
@@ -351,7 +352,7 @@ describe('evaluation experiment cohort helpers', () => {
 
 describe('EvaluationExperimentForm contract', () => {
   it('prefers a healthy live Mixture and opens it as a frozen routing, pool, and joint cohort', () => {
-    const mixture = {
+    const mixtureBase = {
       id: 'mom-live',
       entrypoint_model: 'vllm-sr/auto',
       aliases: ['smart-model'],
@@ -382,6 +383,10 @@ describe('EvaluationExperimentForm contract', () => {
       support_models: [],
       fallback_arm_id: 'fast',
       decisions: [{ name: 'reasoning', algorithm: 'confidence', arm_ids: ['fast', 'strong'] }],
+    }
+    const mixture = {
+      ...mixtureBase,
+      routing_recipe_plan: buildEvaluationRoutingRecipePlan(mixtureBase),
     }
     const liveCatalog: EvaluationCatalog = {
       ...catalog,

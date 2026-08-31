@@ -1,21 +1,20 @@
 .formSection {
-  padding: 1.15rem 0 1.25rem;
+  padding: 1.25rem 0 1.35rem;
   border-bottom: 1px solid var(--border-subtle);
 }
 
 .sectionHeading {
   display: grid;
-  grid-template-columns: 2.25rem minmax(0, 1fr);
-  gap: 0.65rem;
-  margin-bottom: 0.85rem;
+  grid-template-columns: 1.75rem minmax(0, 1fr);
+  gap: 0.75rem;
+  margin-bottom: 1rem;
 }
 
 .sectionHeading > span {
   padding-top: 0.12rem;
-  border-right: 1px solid var(--border-subtle);
   color: var(--text-muted);
   font-family: var(--font-mono);
-  font-size: 0.72rem;
+  font-size: 0.68rem;
 }
 
 .sectionHeading h3 {

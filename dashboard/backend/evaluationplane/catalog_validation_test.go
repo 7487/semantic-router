@@ -309,7 +309,7 @@ func catalogTestNamedMixtureSnapshot(recipeName string, aliases []string, arms [
 	if len(armIDs) > 0 {
 		decisions = append(decisions, MixtureDecisionBinding{Name: "route", Algorithm: "static", ArmIDs: armIDs})
 	}
-	return MixtureTargetSnapshot{
+	snapshot := MixtureTargetSnapshot{
 		Mixture: ManifestMixture{
 			SchemaVersion: SchemaVersion, ID: id, EntrypointModel: aliases[0], Aliases: aliases,
 			RecipeName: recipeName, RecipeDigest: recipeDigest, PoolDigest: poolDigest,
@@ -321,6 +321,8 @@ func catalogTestNamedMixtureSnapshot(recipeName string, aliases []string, arms [
 		BackendTopologyDigest: topologyDigest,
 		Ready:                 digestPattern.MatchString(topologyDigest),
 	}
+	mustFreezeTestRoutingRecipePlan(&snapshot.Mixture)
+	return snapshot
 }
 
 func TestCreateRunAllowlistAndCanonicalManifest(t *testing.T) {

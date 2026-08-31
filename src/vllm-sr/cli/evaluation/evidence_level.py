@@ -6,6 +6,7 @@ from typing import cast
 
 from cli.evaluation.agent_task_evidence import AGENT_TASK_EVIDENCE_KIND
 from cli.evaluation.evidence import ExecutionRecord
+from cli.evaluation.execution_contract import NORMALIZED_LIVE_EXECUTOR_ID
 from cli.evaluation.reporting import EvidenceLevel
 
 _LIVE_TRACK_LEVEL: dict[str, EvidenceLevel] = {
@@ -44,6 +45,33 @@ _BUILTIN_LIVE_KIND_LEVEL: dict[str, dict[str, EvidenceLevel]] = {
 _LEVEL_ORDER: tuple[EvidenceLevel, ...] = ("E0", "E1", "E2", "E3", "E4", "E5")
 
 
+def _normalized_live_multimodal_level(
+    executor_id: str,
+    records: list[ExecutionRecord],
+) -> EvidenceLevel | None:
+    if executor_id != NORMALIZED_LIVE_EXECUTOR_ID:
+        return None
+    case_ids = [record.case_id for record in records]
+    receipts = [record.broker_receipt for record in records]
+    complete = (
+        bool(records)
+        and len(case_ids) == len(set(case_ids))
+        and all(receipts)
+        and len(receipts) == len(set(receipts))
+        and all(
+            record.track_id == "multimodal"
+            and record.status == "succeeded"
+            and record.success is True
+            and record.modality == "image"
+            and record.quality is not None
+            and record.grader == "normalized-suite-hidden-answer-exact.v1"
+            and record.evidence_kind == NORMALIZED_LIVE_EXECUTOR_ID
+            for record in records
+        )
+    )
+    return "E4" if complete else "E0"
+
+
 def _normalized_replay_level(
     executor_id: str, track_id: str, records: list[ExecutionRecord]
 ) -> EvidenceLevel:
@@ -76,6 +104,10 @@ def track_evidence_level(
         return _normalized_replay_level(executor_id, track_id, records)
     if not records or any(record.status == "unavailable" for record in records):
         return "E0"
+    if track_id == "multimodal":
+        normalized_level = _normalized_live_multimodal_level(executor_id, records)
+        if normalized_level is not None:
+            return normalized_level
     levels: list[EvidenceLevel] = []
     for record in records:
         kind = record.evidence_kind or ""

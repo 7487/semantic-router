@@ -1,6 +1,7 @@
 package evaluationplane
 
 import (
+	"errors"
 	"math"
 	"net/http"
 	"os"
@@ -198,7 +199,7 @@ func TestNewStoreRecoversOnlyUnanchoredExecutionAttestations(t *testing.T) {
 		}
 	})
 
-	t.Run("matching report anchor", func(t *testing.T) {
+	t.Run("report anchor without exact manifest", func(t *testing.T) {
 		store := newPrivateTestStore(t)
 		runID := newTestClientRequestID()
 		makePrivateRunDirectory(t, store, runID)
@@ -212,8 +213,8 @@ func TestNewStoreRecoversOnlyUnanchoredExecutionAttestations(t *testing.T) {
 		if _, err := NewStore(store.root); err != nil {
 			t.Fatalf("restart store with anchored attestation: %v", err)
 		}
-		if _, err := store.readExecutionAttestation(runID); err != nil {
-			t.Fatalf("anchored execution attestation was not retained: %v", err)
+		if _, err := store.readExecutionAttestation(runID); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("attestation without its exact manifest survived recovery: %v", err)
 		}
 	})
 }
@@ -271,6 +272,57 @@ func validExecutionAttestation(t *testing.T, runID string) executionAttestation 
 	value.Digest, err = executionAttestationDigest(value)
 	if err != nil {
 		t.Fatalf("digest execution attestation: %v", err)
+	}
+	return value
+}
+
+// validExecutionAttestationForManifest builds the shared durable fixture from
+// the immutable manifest instead of retrofitting only its top-level digests.
+// Routing runs therefore carry the same broker-owned, plan-bound decision
+// snapshot required of production evidence.
+func validExecutionAttestationForManifest(t *testing.T, manifest RunManifest) executionAttestation {
+	t.Helper()
+	value := validExecutionAttestation(t, manifest.RunID)
+	value.ManifestDigest = manifest.ManifestDigest
+	value.TargetID = manifest.Target.ID
+	value.Mode = manifest.Mode
+	value.PolicySnapshotDigest = manifest.PolicySnapshotDigest
+	value.BackendTopologyDigest = manifest.Target.BackendTopologyDigest
+	if manifest.Mode == ModeLive && containsTrack(manifest.TrackIDs, "routing") {
+		if manifest.Target.Mixture == nil {
+			t.Fatal("routing attestation fixture requires a frozen mixture")
+		}
+		observedAt := value.CompletedAt
+		requestedModel := manifest.Target.Mixture.EntrypointModel
+		recipe := manifest.Target.Mixture.RecipeName
+		entry := executionAttestationEntry{
+			RequestID: 2, Operation: workerBrokerRouterEvaluate, TrackID: "routing",
+			CaseID: "case-1", AttemptID: "attempt-1",
+			RequestDigest: digestString("routing-request"), ResponseDigest: digestString(""),
+			UpstreamAttempted: true, LatencyMicroseconds: 100, FetchedAt: &observedAt,
+			Headers: map[string]string{}, RequestedModel: &requestedModel, Recipe: &recipe,
+		}
+		requestError := "request_error"
+		entry.RoutingRecipeDecision = routingRecipeDecisionFromBrokerResponse(
+			manifest,
+			workerBrokerRequest{
+				ID: entry.RequestID, Operation: entry.Operation, TrackID: entry.TrackID,
+				CaseID: entry.CaseID, AttemptID: entry.AttemptID,
+			},
+			workerBrokerResponse{FetchedAt: observedAt, Error: &requestError},
+			entry,
+		)
+		if entry.RoutingRecipeDecision == nil {
+			t.Fatal("routing attestation fixture did not create a broker-owned decision snapshot")
+		}
+		value.Entries = append(value.Entries, entry)
+	}
+	refreshExecutionAttestationDigests(t, &value)
+	if err := validateExecutionAttestationIdentity(manifest.RunID, value); err != nil {
+		t.Fatalf("manifest-aware execution attestation identity: %v", err)
+	}
+	if err := validateExecutionAttestationAgainstManifest(value, manifest); err != nil {
+		t.Fatalf("manifest-aware execution attestation binding: %v", err)
 	}
 	return value
 }

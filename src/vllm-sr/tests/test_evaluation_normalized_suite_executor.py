@@ -1,40 +1,52 @@
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import stat
 from pathlib import Path
 from typing import Any
 
 import pytest
+from benchmark_normalization_fixtures import write_native_fixture
 from cli.commands.eval import eval
+from cli.evaluation.benchmark_normalization import normalize_benchmark_suite
 from cli.evaluation.canonical import canonical_json_bytes
+from cli.evaluation.catalog import get_catalog
 from cli.evaluation.constants import TRACK_IDS
 from cli.evaluation.evidence import ExecutionRecord, RoutingDiagnostic
 from cli.evaluation.execution_contract import (
+    NORMALIZED_LIVE_EXECUTOR_ID,
     NORMALIZED_REPLAY_EXECUTOR_ID,
 )
 from cli.evaluation.http_client import HTTPResult
 from cli.evaluation.live_executor import LiveRawResult
 from cli.evaluation.normalized_suite_inputs import SelectedCase, evidence_kind
+from cli.evaluation.normalized_suite_live_admission import (
+    NORMALIZED_MULTIMODAL_LIVE_METHOD_ID,
+)
 from cli.evaluation.orchestrator import run_evaluation
 from cli.evaluation.store import LocalArtifactStore
 from cli.evaluation.suite_contract import (
+    NormalizedMultimodalObservation,
     NormalizedPerturbation,
 )
+from cli.evaluation.suite_install_contract import NormalizedMediaEntry
 from cli.evaluation.suite_store import NormalizedSuiteStore
 from click.testing import CliRunner
 from evaluation_normalized_suite_test_support import (
     _PRIVATE_MARKERS,
+    _PIXEL,
     _base_bundle,
     _catalog,
     _decision,
     _digest,
     _install_composite,
-    _install_live_target_suite,
     _install_r2_suite,
     _live_manifest,
     _manifest,
     _qualification_cases,
+    _receipt,
     _suite_request,
     _target_mixture,
     _trusted_source_verifier,
@@ -132,6 +144,14 @@ def test_installed_composite_executes_all_tracks_deterministically_without_leaks
     assert "r2-private-case" not in public_payload
     records = (first_store / "runs" / manifest.run_id / "records.jsonl").read_text()
     assert "normalized suite does not declare this track" not in records
+    parsed_records = [
+        ExecutionRecord.model_validate_json(row) for row in records.splitlines()
+    ]
+    assert all(
+        record.method_id is None
+        for record in parsed_records
+        if record.track_id == "model_pool"
+    )
 
     lineage_path = first_store / "runs" / manifest.run_id / "lineage.json"
     lineage = json.loads(lineage_path.read_text())
@@ -151,36 +171,108 @@ def test_installed_composite_executes_all_tracks_deterministically_without_leaks
     )
 
 
-def _target_executor(observed_case_ids: list[str]) -> Any:
+def _install_registered_mmr(
+    root: Path,
+    store: NormalizedSuiteStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> str:
+    source_root = root / "source"
+    export_root = root / "native"
+    source_root.mkdir(parents=True)
+    write_native_fixture("mmr-bench", export_root)
+    monkeypatch.setattr(
+        "cli.evaluation.benchmark_normalization.require_verified_benchmark_source",
+        lambda descriptor, _root: _receipt(descriptor.id),
+    )
+    result = normalize_benchmark_suite(
+        adapter_id="mmr-bench",
+        source_root=source_root,
+        export_root=export_root,
+        output_root=root / "normalized",
+        suite_id="registered-mmr-live",
+    )
+    return store.install(
+        result.request,
+        result.bundle_path,
+        source_root=source_root,
+        native_export_root=export_root,
+    ).id
+
+
+def _install_user_provided_mmr(
+    root: Path,
+    store: NormalizedSuiteStore,
+) -> str:
+    case_id = "user-provided-mmr-case"
+    _base_bundle(
+        root,
+        case_id,
+        track_ids=("model_pool", "multimodal"),
+        image=True,
+        expected_answer="one",
+    )
+    _write_jsonl(
+        root / "grading/multimodal-observations.jsonl",
+        (
+            NormalizedMultimodalObservation(
+                case_id=case_id,
+                modality="image",
+                supported=True,
+                quality=1.0,
+                privacy_violations=0,
+                source_record_digest=_digest("user-provided-mmr-observation"),
+            ),
+        ),
+    )
+    media_bytes = base64.b64decode(_PIXEL.partition(",")[2], validate=True)
+    _write_jsonl(
+        root / "metadata/media.jsonl",
+        (
+            NormalizedMediaEntry(
+                id="user-provided-image",
+                digest="sha256:" + hashlib.sha256(media_bytes).hexdigest(),
+                media_type="image/png",
+                size_bytes=len(media_bytes),
+                modality="image",
+                license_id="upstream",
+            ),
+        ),
+    )
+    request = _suite_request(
+        root,
+        adapter_id="mmr-bench",
+        suite_id="user-provided-mmr",
+        case_id=case_id,
+        tracks=("model_pool", "multimodal"),
+        optional_roles=("multimodal_observations", "media_manifest"),
+    )
+    return store.install(request, root, source_root=root.parent).id
+
+
+def _target_executor(
+    observed_case_ids: list[str],
+    *,
+    broker_bound: bool = True,
+) -> Any:
     def execute(visible: Any, **kwargs: object) -> LiveRawResult:
-        assert kwargs["track_ids"] == ("routing", "multimodal")
+        assert kwargs["track_ids"] == ("multimodal",)
         assert kwargs["mixture"] == _target_mixture()
         case = visible.cases[0]
         observed_case_ids.append(case.id)
+        receipt = _digest(f"broker-{case.id}") if broker_bound else None
         response = HTTPResult(
             success=True,
             status_code=200,
             payload={
-                "choices": [{"message": {"content": "  TARGET   HIDDEN ANSWER  "}}],
+                "choices": [{"message": {"content": "  one  "}}],
                 "usage": {"prompt_tokens": 3, "completion_tokens": 4},
             },
             latency_ms=8.0,
             headers={},
+            broker_receipt=receipt,
         )
         return LiveRawResult(
             records=[
-                ExecutionRecord(
-                    id=f"routing-{case.id}",
-                    track_id="routing",
-                    case_id=case.id,
-                    attempt_id=f"attempt-{case.id}",
-                    status="succeeded",
-                    selected_arm_id="provider-strong",
-                    selection_status="selected",
-                    success=True,
-                    latency_ms=2.0,
-                    evidence_kind="untrusted-pre-grade-marker",
-                ),
                 ExecutionRecord(
                     id=f"multimodal-{case.id}",
                     track_id="multimodal",
@@ -190,6 +282,7 @@ def _target_executor(observed_case_ids: list[str]) -> Any:
                     success=True,
                     modality="image",
                     latency_ms=8.0,
+                    broker_receipt=receipt,
                 ),
             ],
             discovered_entrypoints=("entrypoint-a",),
@@ -214,11 +307,21 @@ def test_same_installed_workload_replays_history_or_executes_current_target(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     suite_store = NormalizedSuiteStore(tmp_path / "suite-store")
-    suite_id = _install_live_target_suite(tmp_path / "bundles", suite_store)
-    replay = _manifest("target-workload-replay", (suite_id,), suite_store)
-    replay = replay.with_semantic_updates(
-        track_ids=("routing", "multimodal"), sample_limit=1
+    suite_id = _install_registered_mmr(tmp_path / "bundles", suite_store, monkeypatch)
+    source_catalog = _catalog(suite_store).get(suite_id)
+    assert source_catalog.evidence_level == "E0"
+    assert source_catalog.track_ids == ("model_pool", "multimodal")
+    assert source_catalog.modes == ("replay", "live")
+    live_methods = tuple(
+        method
+        for method in source_catalog.methods
+        if method.evidence_source != "normalized_import"
     )
+    assert len(live_methods) == 1
+    assert live_methods[0].id == NORMALIZED_MULTIMODAL_LIVE_METHOD_ID
+    assert live_methods[0].track_id == "multimodal"
+    replay = _manifest("target-workload-replay", (suite_id,), suite_store)
+    replay = replay.with_semantic_updates(track_ids=("multimodal",), sample_limit=1)
     replay_store = LocalArtifactStore(tmp_path / "replay-store")
     run_evaluation(replay, replay_store, suite_store=suite_store)
 
@@ -227,7 +330,9 @@ def test_same_installed_workload_replays_history_or_executes_current_target(
         "cli.evaluation.normalized_suite_live_executor.execute_live_raw",
         _target_executor(observed_case_ids),
     )
-    live = _live_manifest("target-workload-live", suite_id, suite_store)
+    live = _live_manifest(
+        "target-workload-live", suite_id, suite_store, track_ids=("multimodal",)
+    )
     live_store = LocalArtifactStore(tmp_path / "live-store")
     report = run_evaluation(live, live_store, suite_store=suite_store)
 
@@ -242,14 +347,13 @@ def test_same_installed_workload_replays_history_or_executes_current_target(
         ExecutionRecord.model_validate_json(row)
         for row in live_store.read_run_bytes(live.run_id, "records.jsonl").splitlines()
     ]
-    routing = next(row for row in records if row.track_id == "routing")
-    multimodal = next(row for row in records if row.track_id == "multimodal")
-    assert routing.selected_arm_id == "arm-strong"
-    assert routing.quality == 1.0
-    assert routing.grader == "normalized-suite-hidden-route-label.v1"
+    assert len(records) == 1
+    multimodal = records[0]
+    assert multimodal.track_id == "multimodal"
     assert multimodal.quality == 1.0
     assert multimodal.grader == "normalized-suite-hidden-answer-exact.v1"
-    assert {row.evidence_kind for row in records} == {"normalized-suite-live.v1"}
+    assert multimodal.evidence_kind == NORMALIZED_LIVE_EXECUTOR_ID
+    assert multimodal.broker_receipt is not None
 
     lineage = live_store.read_run_json(live.run_id, "lineage.json")
     identities = lineage["normalized_suite_identities"]
@@ -259,15 +363,50 @@ def test_same_installed_workload_replays_history_or_executes_current_target(
         lineage["resolved_snapshot"]["environment"]["target_id"] == _target_mixture().id
     )
     assert "fixture_ref" not in lineage["resolved_snapshot"]
-    assert report.run.evidence_level == "E0"
+    assert report.run.evidence_level == "E4"
+    campaign = next(
+        profile
+        for profile in get_catalog(generated_at=False).change_profiles
+        if profile.id == "agent_multimodal"
+    )
+    g5 = next(slot for slot in campaign.campaign_slots if slot.gate_id == "G5")
+    assert g5.track_id == "multimodal"
+    assert g5.minimum_evidence_level == report.run.evidence_level
+    assert g5.accepted_executor_ids == (NORMALIZED_LIVE_EXECUTOR_ID,)
+
+    model_pool_live = _live_manifest(
+        "mmr-model-pool-live", suite_id, suite_store, track_ids=("model_pool",)
+    )
+    with pytest.raises(ValueError, match="no first-party normalized live method"):
+        run_evaluation(
+            model_pool_live,
+            LocalArtifactStore(tmp_path / "blocked-model-pool"),
+            suite_store=suite_store,
+        )
+
+    monkeypatch.setattr(
+        "cli.evaluation.normalized_suite_live_executor.execute_live_raw",
+        _target_executor([], broker_bound=False),
+    )
+    unbound = _live_manifest(
+        "mmr-unbound-live", suite_id, suite_store, track_ids=("multimodal",)
+    )
+    unbound_report = run_evaluation(
+        unbound,
+        LocalArtifactStore(tmp_path / "unbound-live"),
+        suite_store=suite_store,
+    )
+    assert unbound_report.run.evidence_level == "E0"
 
 
-def test_normalized_live_capacity_qualifies_only_from_its_frozen_load_protocol(
+def test_non_admitted_normalized_imports_cannot_reach_live_tracks(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     suite_store = NormalizedSuiteStore(tmp_path / "suite-store")
     suite_id = _install_r2_suite(tmp_path / "bundles", suite_store)
+    source_catalog = _catalog(suite_store).get(suite_id)
+    assert source_catalog.evidence_level == "E0"
+    assert source_catalog.modes == ("replay",)
     manifest = _live_manifest(
         "target-capacity-no-replay-qualification",
         suite_id,
@@ -275,80 +414,30 @@ def test_normalized_live_capacity_qualifies_only_from_its_frozen_load_protocol(
         track_ids=("capacity",),
     )
 
-    def fixed_capacity_execution(visible: Any, **kwargs: object) -> LiveRawResult:
-        case = visible.cases[0]
-        protocol = kwargs["capacity_load_protocol"]
-        assert protocol == manifest.capacity_load_protocol
-        assert protocol is not None
-        records: list[ExecutionRecord] = []
-        for concurrency in protocol.concurrency_levels:
-            throughput = float(concurrency * 8)
-            batches = (
-                ("warmup", 0, concurrency * protocol.warmup_request_multiplier),
-                *(
-                    (
-                        "measurement",
-                        repetition,
-                        protocol.measurement_requests_per_repetition,
-                    )
-                    for repetition in range(1, protocol.repetitions_per_level + 1)
-                ),
-            )
-            for phase, repetition, request_count in batches:
-                elapsed = request_count / throughput
-                for request_index in range(request_count):
-                    attempt_id = (
-                        f"capacity-c{concurrency}-{phase[0]}"
-                        f"{repetition}-q{request_index}"
-                    )
-                    records.append(
-                        ExecutionRecord(
-                            id=attempt_id,
-                            track_id="capacity",
-                            case_id=case.id,
-                            attempt_id=attempt_id,
-                            status="succeeded",
-                            success=True,
-                            latency_ms=12.0,
-                            input_tokens=1,
-                            output_tokens=1,
-                            runtime_cost=0.001,
-                            concurrency=concurrency,
-                            throughput_rps=throughput,
-                            load_elapsed_seconds=elapsed,
-                            load_phase=phase,
-                            load_repetition=repetition,
-                            load_request_index=request_index,
-                            evidence_kind="capacity.closed-loop.v1",
-                        )
-                    )
-        return LiveRawResult(
-            records=records,
-            discovered_entrypoints=("entrypoint-a",),
-            routing_traces=(),
-            chat_results={},
-            model_pool_results={},
-            model_pool_arm_ids=(),
-            joint_results={},
+    with pytest.raises(ValueError, match="no first-party normalized live method"):
+        run_evaluation(
+            manifest,
+            LocalArtifactStore(tmp_path / "evaluation"),
+            suite_store=suite_store,
         )
 
-    monkeypatch.setattr(
-        "cli.evaluation.normalized_suite_live_executor.execute_live_raw",
-        fixed_capacity_execution,
+    mmr_id = _install_user_provided_mmr(tmp_path / "bundles" / "user-mmr", suite_store)
+    mmr_catalog = _catalog(suite_store).get(mmr_id)
+    assert mmr_catalog.evidence_level == "E0"
+    assert mmr_catalog.modes == ("replay",)
+    assert all(
+        method.id != NORMALIZED_MULTIMODAL_LIVE_METHOD_ID
+        for method in mmr_catalog.methods
     )
-    report = run_evaluation(
-        manifest,
-        LocalArtifactStore(tmp_path / "evaluation"),
-        suite_store=suite_store,
+    mmr_live = _live_manifest(
+        "user-mmr-live", mmr_id, suite_store, track_ids=("multimodal",)
     )
-
-    gate = next(row for row in report.gates if row.id == "G7")
-    assert gate.disposition == "required"
-    assert gate.verdict == "pass"
-    assert gate.observed == 1
-    assert gate.threshold is not None
-    assert gate.threshold.operator == ">="
-    assert gate.threshold.value == 0
+    with pytest.raises(ValueError, match="no first-party normalized live method"):
+        run_evaluation(
+            mmr_live,
+            LocalArtifactStore(tmp_path / "blocked-user-mmr"),
+            suite_store=suite_store,
+        )
 
 
 def test_declared_track_without_qualification_artifact_is_unavailable(
@@ -506,3 +595,4 @@ def test_imported_robustness_pairs_remain_e0_and_cannot_pass_g4(
     assert (
         next(gate for gate in report.gates if gate.id == "G4").verdict == "unavailable"
     )
+    (_receipt,)

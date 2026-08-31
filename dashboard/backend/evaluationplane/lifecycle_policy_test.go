@@ -243,7 +243,12 @@ func TestLifecycleQuotasUsageAndRepeatedGrowthRemainBounded(t *testing.T) {
 	ownerA := testLifecycleActor(t, "owner-a", false)
 	ownerB := testLifecycleActor(t, "owner-b", false)
 	ownerC := testLifecycleActor(t, "owner-c", false)
-	first, err := service.CreateRunAs(context.Background(), ownerA, validCreateRequest())
+	attestedRequest := validCreateRequest()
+	attestedRequest.Mode = ModeLive
+	attestedRequest.TargetID = mixtureTargetID("default")
+	attestedRequest.SuiteIDs = []string{"live-mom-core"}
+	attestedRequest.ChangeProfile = "recipe"
+	first, err := service.CreateRunAs(context.Background(), ownerA, attestedRequest)
 	if err != nil {
 		t.Fatalf("create owner A: %v", err)
 	}
@@ -251,7 +256,13 @@ func TestLifecycleQuotasUsageAndRepeatedGrowthRemainBounded(t *testing.T) {
 	if err != nil {
 		t.Fatalf("usage before attestation: %v", err)
 	}
-	if writeAttestationErr := service.store.writeExecutionAttestation(validExecutionAttestation(t, first.ID)); writeAttestationErr != nil {
+	manifest, _, err := service.readDurableManifest(first.ID)
+	if err != nil {
+		t.Fatalf("read owner A manifest: %v", err)
+	}
+	if writeAttestationErr := service.store.writeExecutionAttestation(
+		validExecutionAttestationForManifest(t, manifest),
+	); writeAttestationErr != nil {
 		t.Fatalf("write owned execution attestation fixture: %v", writeAttestationErr)
 	}
 	usageAfterAttestation, err := service.LifecycleUsage(ownerA)
@@ -448,7 +459,7 @@ func newLifecycleTestService(t *testing.T, limits LifecycleLimits) (*Service, st
 		t.Fatalf("create private evaluation root: %v", err)
 	}
 	configPath := filepath.Join(root, "config.yaml")
-	if err := os.WriteFile(configPath, []byte("version: v0.3\nrouting:\n  modelCards: []\n"), 0o600); err != nil {
+	if err := os.WriteFile(configPath, []byte(modelArmTestYAML), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 	service, err := NewService(Options{

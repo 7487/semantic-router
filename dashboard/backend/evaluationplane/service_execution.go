@@ -55,9 +55,15 @@ func (s *Service) execute(
 }
 
 func (s *Service) beginSealing(runID string) error {
+	paired, err := s.store.acquireControlledPairMutationBarrier(runID)
+	if err != nil {
+		return err
+	}
+	defer s.store.releaseControlledPairMutationBarrier(paired)
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	run, err := s.store.commitRunSealing(runID)
+	run, err := s.store.commitRunSealingWithinLifecycle(runID)
 	if err != nil {
 		if run.Status == StatusCancelled {
 			return context.Canceled
@@ -77,7 +83,7 @@ func (s *Service) attestAndAnchorExecution(runID string, transcript *brokerExecu
 		if err != nil {
 			return fmt.Errorf("attest evaluation execution: %w", err)
 		}
-		validationErr := s.validateAndAnchorReport(runID)
+		validationErr := s.validateAndAnchorReportDuringPublication(runID)
 		if validationErr == nil {
 			return nil
 		}
@@ -119,6 +125,12 @@ func (s *Service) recordWorkerEvent(runID string, workerEvent WorkerEvent) error
 	if err != nil {
 		return fmt.Errorf("reject evaluation worker event: %w", err)
 	}
+	paired, err := s.store.acquireControlledPairMutationBarrier(runID)
+	if err != nil {
+		return err
+	}
+	defer s.store.releaseControlledPairMutationBarrier(paired)
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	run, err := s.store.GetRun(runID)
@@ -144,7 +156,7 @@ func (s *Service) recordWorkerEvent(runID string, workerEvent WorkerEvent) error
 		progress := *workerEvent.Progress
 		progress.Message = workerEvent.Message
 		run.Progress = progress
-		if updateErr := s.store.UpdateRun(run); updateErr != nil {
+		if updateErr := s.store.updateRunWithinLifecycle(run, paired); updateErr != nil {
 			return updateErr
 		}
 		workerEvent.Progress = &progress
@@ -194,31 +206,44 @@ func (s *Service) finalizeRun(runID string, processErr error) {
 	retryDelay := 10 * time.Millisecond
 	var terminalCause error
 	for {
+		paired, barrierErr := s.store.acquireControlledPairMutationBarrier(runID)
+		if barrierErr != nil {
+			s.mu.Lock()
+			s.recordLifecycleErrorLocked(fmt.Errorf("acquire terminal lifecycle barrier: %w", barrierErr))
+			s.cleanupWorkerLocked(runID)
+			s.mu.Unlock()
+			return
+		}
 		s.mu.Lock()
 		current, readErr := s.store.GetRun(runID)
 		if readErr != nil {
 			s.recordLifecycleErrorLocked(fmt.Errorf("read run before terminal transition: %w", readErr))
 			s.cleanupWorkerLocked(runID)
 			s.mu.Unlock()
+			s.store.releaseControlledPairMutationBarrier(paired)
 			return
 		}
 		var transitionErr error
 		var terminalEvent Event
 		terminalFailed := current.Status == StatusFailed
 		if terminalStatus(current.Status) {
-			terminalEvent, transitionErr = s.store.commitTerminalRun(current)
+			terminalEvent, transitionErr = s.store.commitTerminalRunWithinLifecycle(current)
 		} else if current.Status == StatusRunning || current.Status == StatusSealing {
 			var terminal Run
 			terminal, terminalCause = s.buildTerminalRun(current, processErr)
 			terminalFailed = terminal.Status == StatusFailed
-			terminalEvent, transitionErr = s.store.commitTerminalRun(terminal)
+			terminalEvent, transitionErr = s.store.commitTerminalRunWithinLifecycle(terminal)
 		} else {
 			transitionErr = fmt.Errorf("%w: run cannot complete from %s", ErrConflict, current.Status)
+		}
+		if transitionErr == nil {
+			transitionErr = s.store.refreshControlledPairTerminalState(runID)
 		}
 		if transitionErr == nil {
 			s.cleanupWorkerLocked(runID)
 			s.broadcastEventLocked(terminalEvent)
 			s.mu.Unlock()
+			s.store.releaseControlledPairMutationBarrier(paired)
 			if terminalFailed && terminalCause != nil {
 				// Public run state stays deliberately generic; detailed worker,
 				// broker, sealing, and attestation failures belong only here.
@@ -229,6 +254,7 @@ func (s *Service) finalizeRun(runID string, processErr error) {
 			return
 		}
 		s.mu.Unlock()
+		s.store.releaseControlledPairMutationBarrier(paired)
 		s.diagnosticLogger.Printf("evaluationplane: terminal lifecycle persistence retry run_id=%q error=%q", runID, transitionErr)
 
 		timer := time.NewTimer(retryDelay)
@@ -299,6 +325,7 @@ func (s *Service) cleanupWorkerLocked(runID string) {
 	}
 	delete(s.active, runID)
 	delete(s.workerEvents, runID)
+	s.activity.release(runID)
 }
 
 func (s *Service) recordLifecycleErrorLocked(err error) {
@@ -308,6 +335,8 @@ func (s *Service) recordLifecycleErrorLocked(err error) {
 }
 
 func (s *Service) RecoverInterruptedRuns() error {
+	s.store.lifecycle.mu.Lock()
+	defer s.store.lifecycle.mu.Unlock()
 	runs, err := s.store.ListRuns()
 	if err != nil {
 		return err
@@ -315,6 +344,9 @@ func (s *Service) RecoverInterruptedRuns() error {
 	for index := range runs {
 		run := runs[index]
 		if run.Status == StatusRunning || run.Status == StatusSealing {
+			if s.activity.contains(run.ID) {
+				continue
+			}
 			if _, recoverErr := s.recoverInterruptedRun(run); recoverErr != nil {
 				return recoverErr
 			}
@@ -343,7 +375,10 @@ func (s *Service) recoverInterruptedRun(run Run) (Run, error) {
 		run.Error = "Dashboard restarted while the evaluation worker was running"
 		run.Progress.Message = "Run interrupted by Dashboard restart"
 	}
-	if _, err := s.store.commitTerminalRun(run); err != nil {
+	if _, err := s.store.commitTerminalRunWithinLifecycle(run); err != nil {
+		return Run{}, err
+	}
+	if err := s.store.refreshControlledPairTerminalState(run.ID); err != nil {
 		return Run{}, err
 	}
 	return run, nil

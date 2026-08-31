@@ -30,6 +30,7 @@ import {
   startEvaluationRun,
   subscribeToEvaluationRun,
 } from './evaluationPlaneApi'
+import { decodeEvaluationReport } from './evaluationReportContract'
 
 const CREATE_RUN_ID = '4d0b4f2c-1fc5-40b0-b04e-876ad9d4d8e2'
 const RUN_ID = '11111111-1111-4111-8111-111111111111'
@@ -194,6 +195,56 @@ function reportFor(reportRun: EvaluationRun) {
       seed: reportRun.seed,
     },
     artifacts: [],
+    method_reports: [],
+  }
+}
+
+function methodReportFixture() {
+  const slice = { schema_version: 'evaluation-method.v2', id: 'all' } as const
+  const plan = {
+    schema_version: 'evaluation-method.v2',
+    id: 'r2-compound-case-action-budget',
+    analysis_unit: 'case_action_budget',
+    cluster_unit: 'case',
+    slices: [slice],
+    curve_domain: 'shared_budget' as const,
+    missingness: 'fail_closed' as const,
+  }
+  return {
+    method: {
+      schema_version: 'evaluation-method.v2',
+      id: 'r2.compound-model-budget.v2',
+      version: 'evaluation-method.v2',
+      status: 'exploratory-import',
+      execution_owner: 'server',
+      input_schema: 'r2-compound-input',
+      export_schema: 'r2-compound-report',
+      live_input_complete: false,
+      live_grader: false,
+      applicable_tracks: ['model_pool'],
+      live_tracks: [],
+      produced_metric_ids: ['r2.compound_model_budget.audc'],
+      evidence_ceiling: 'E5',
+      native_parity: 'source_qualified',
+      required_artifact_ids: ['curves'],
+      analysis_plan: plan,
+    },
+    analysis_plan: plan,
+    action_refs: [{ schema_version: 'evaluation-method.v2', id: 'small' }],
+    slice_refs: [slice],
+    raw_shared_domain_curve: [
+      {
+        action: { schema_version: 'evaluation-method.v2', id: 'small' },
+        budget: 100,
+        mean_score: 0.5,
+        case_count: 2,
+      },
+    ],
+    audc: 0,
+    nauc: 0.5,
+    peak: 0.5,
+    qnc: 0.5,
+    missing_case_action_budget_cells: 0,
   }
 }
 
@@ -750,6 +801,42 @@ describe('Evaluation Plane API', () => {
       /requested pair/i,
     )
     await expect(getEvaluationCatalog()).rejects.toThrow(/catalog response is incomplete/i)
+  })
+
+  it('rejects malformed sealed method reports before rendering', () => {
+    const report = reportFor(completedRun)
+    const valid = methodReportFixture()
+    const malformedReports = [
+      { ...valid, audc: -0.01 },
+      { ...valid, nauc: 1.01 },
+      { ...valid, action_refs: [...valid.action_refs, valid.action_refs[0]] },
+      { ...valid, slice_refs: [...valid.slice_refs, valid.slice_refs[0]] },
+      { ...valid, analysis_plan: { ...valid.analysis_plan, cluster_unit: 'attempt' } },
+      {
+        ...valid,
+        raw_shared_domain_curve: [
+          ...valid.raw_shared_domain_curve,
+          valid.raw_shared_domain_curve[0],
+        ],
+      },
+      {
+        ...valid,
+        raw_shared_domain_curve: [
+          {
+            ...valid.raw_shared_domain_curve[0],
+            action: { schema_version: 'evaluation-method.v2', id: 'unknown' },
+          },
+        ],
+      },
+    ]
+    for (const malformed of malformedReports) {
+      expect(() =>
+        decodeEvaluationReport({ ...report, method_reports: [malformed] }, RUN_ID),
+      ).toThrow(/report response is incomplete/i)
+    }
+    expect(
+      decodeEvaluationReport({ ...report, method_reports: [valid] }, RUN_ID).method_reports,
+    ).toHaveLength(1)
   })
 
   it('rejects responses outside the current run and attestation contracts', async () => {

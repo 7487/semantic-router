@@ -181,10 +181,15 @@ def test_suite_install_list_and_show_keep_output_boundaries(
         suite for suite in catalog["suites"] if suite["id"] == installed["id"]
     )
     assert installed_catalog["revision"] == installed["revision"]
+    assert installed_catalog["modes"] == ["replay"]
+    assert installed_catalog["evidence_level"] == "E0"
     assert installed_catalog["executors"] == {
         "replay": "normalized-suite-replay.v1",
-        "live": "normalized-suite-live.v1",
     }
+    assert all(
+        method["status"] == "configured" and not method["qualified_gate_ids"]
+        for method in installed_catalog["methods"]
+    )
     assert "artifacts" not in catalog_result.output
     assert "PRIVATE PROMPT" not in catalog_result.output
 

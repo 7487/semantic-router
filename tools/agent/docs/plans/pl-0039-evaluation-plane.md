@@ -15,7 +15,10 @@ reproducible reports and fail-closed promotion decisions.
 - Deterministic fixture replay, exact-pinned normalized benchmark replay,
   normalized live execution, and bounded runtime probes.
 - Thirteen benchmark research descriptors, eleven executable safe-export
-  normalizers, and two diagnostic-only source entries with explicit blockers.
+  normalizers, and two diagnostic-only source entries with explicit blockers;
+  one canonical thirteen-item research inventory keeps these descriptors
+  separate from additional installed adapters and publishes an honest
+  readiness/native-parity boundary for every benchmark.
 - Per-track evidence levels, weakest-track run level, G0-G9 gate dispositions,
   strict unavailable semantics, paired statistics, and architecture feedback.
 - A server-owned Promotion Campaign whose change-profile catalog declares one
@@ -60,6 +63,9 @@ reproducible reports and fail-closed promotion decisions.
 - Reports expose per-track evidence strength, complete coverage, rich metrics,
   uncertainty, three cost ledgers, G0-G9, failure evidence, lineage, and
   actionable architecture findings.
+- Every published metric carries a validated estimator/version, analysis and
+  cluster unit, weighting, missingness, and exclusion contract; the server
+  rejects reports that omit or forge this analysis provenance.
 - Normalized benchmark imports are sealed as exploratory E0 evidence. Exact
   source pins and parser re-derivation authenticate the parser and submitted
   bytes, not an upstream native benchmark run; imports cannot publish a
@@ -81,6 +87,9 @@ reproducible reports and fail-closed promotion decisions.
   protection, and restart validation are enforced per slot.
 - Every Evaluation page, control, dialog, error/loading/empty state, keyboard
   path, deep link, and responsive layout passes frontend acceptance.
+- Controlled-pair admission is single-flight across services, fails closed
+  when another process owns the filesystem store, and cannot publish, reserve,
+  launch, or return success after caller or service cancellation.
 - Unit, race, integration, frontend, repository-selected, and CI gates pass.
 - A fresh AMD deployment runs and retains representative replay, Recipe,
   model-pool, joint, multimodal, capacity, comparison, and Campaign evidence;
@@ -106,7 +115,9 @@ reproducible reports and fail-closed promotion decisions.
   runtime Recipe diagnostics, dense direct-arm model-pool execution, routed
   joint/multimodal/capacity execution, the current typed Capacity SLO contract
   and attested headroom reducer, hidden grading, metric/gate reduction,
-  comparison, and architecture feedback.
+  comparison, and architecture feedback. Recipe and model-pool conclusions are
+  manifest-frozen, broker-attested, and server-reduced; worker-authored
+  aggregates cannot enter the decision report.
 - [x] `TASK-06` Implement the catalog-driven Promotion Campaign v2 with typed
   per-gate bindings, exact controlled-live G3 statistics, qualified
   reference-to-fresh-live G5 fidelity, and strict production-only G8/G9
@@ -114,7 +125,7 @@ reproducible reports and fail-closed promotion decisions.
 - [x] `TASK-07` Complete the Evaluation Dashboard information architecture,
   responsive visual system, strict decoders, all controls/dialogs, and
   Evaluation-specific unit and browser coverage.
-- [ ] `TASK-08` Reconcile the integrated implementation and documentation, then
+- [x] `TASK-08` Reconcile the integrated implementation and documentation, then
   run every affected local validation and race gate to green.
 - [ ] `TASK-09` Build and deploy the reviewed source through the canonical AMD
   local-image workflow into a fresh state root; execute and retain the complete
@@ -124,11 +135,11 @@ reproducible reports and fail-closed promotion decisions.
 
 ## Next Action
 
-Run the integrated local Python, Go/race, frontend, browser, and repository
-gates. Fix every failure before creating the fresh AMD evidence root. Exercise
-the completed Evaluation lifecycle policy during restart and multi-principal
-validation, and do not represent data-dependent production gates as completed
-evidence.
+Finish the integrated local lint and repository gates, then create the fresh
+AMD evidence root from the reviewed revision. Execute the representative live
+and replay matrix, retain its reports, and exercise lifecycle recovery during
+restart and multi-principal validation. Do not represent data-dependent
+production gates as completed evidence.
 
 ## Operating Rules
 

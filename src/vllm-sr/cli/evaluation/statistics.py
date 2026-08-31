@@ -8,6 +8,7 @@ from collections.abc import Callable, Iterable
 
 from cli.evaluation.evidence import ExecutionRecord
 from cli.evaluation.metric_core import _wilson, percentile
+from cli.evaluation.metric_model_pool import parse_model_pool_arm_metric_id
 from cli.evaluation.reporting import EvaluationMetric
 
 _BINOMIAL_METRICS = {
@@ -139,8 +140,9 @@ def _record_values(
             and row.quality is not None
         ]
         return values, _mean
-    if metric_id.startswith("model_pool.arm.") and metric_id.endswith(".quality"):
-        arm_id = metric_id.removeprefix("model_pool.arm.").removesuffix(".quality")
+    model_pool_arm = parse_model_pool_arm_metric_id(metric_id)
+    if model_pool_arm is not None and model_pool_arm[1] == "quality":
+        arm_id, _ = model_pool_arm
         values = [
             row.quality
             for row in records
@@ -284,6 +286,10 @@ def attach_confidence_intervals(
         interval: tuple[float, float] | None = None
         if metric.confidence_interval is not None:
             interval = metric.confidence_interval
+        elif metric.id.startswith("model_pool."):
+            # The dashboard attests this complete reducer-owned metric family
+            # and requires the worker proposal to carry no client-side interval.
+            pass
         elif metric.id in _SERVER_REDUCED_WITHOUT_INTERVALS:
             pass
         elif metric.id == "model_pool.worst_arm_reliability":

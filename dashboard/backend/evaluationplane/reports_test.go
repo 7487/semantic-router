@@ -27,6 +27,7 @@ func TestReportJSONIsStrictVersionedIdentityCheckedAndRaw(t *testing.T) {
 		ID: "routing.accuracy", Name: "Routing accuracy", TrackID: "routing",
 		Value: float64Pointer(0.75), Unit: "fraction", Direction: "higher_is_better",
 		ConfidenceInterval: []float64{0.5, 0.9}, SampleCount: 4,
+		AnalysisProvenance: validMetricAnalysisProvenance(0),
 	}}
 	valid.Gates = []Gate{{
 		ID: "G0", Name: "Reproducibility", Disposition: "required", Verdict: "pass",
@@ -82,6 +83,12 @@ func TestReportJSONIsStrictVersionedIdentityCheckedAndRaw(t *testing.T) {
 		{name: "negative metric sample count", mutate: func(value map[string]any) {
 			value["metrics"].([]any)[0].(map[string]any)["sample_count"] = -1
 		}, match: "sample_count cannot be negative"},
+		{name: "missing metric analysis provenance", mutate: func(value map[string]any) {
+			delete(value["metrics"].([]any)[0].(map[string]any), "analysis_provenance")
+		}, match: "analysis_provenance"},
+		{name: "illegal metric analysis provenance", mutate: func(value map[string]any) {
+			value["metrics"].([]any)[0].(map[string]any)["analysis_provenance"].(map[string]any)["missingness"] = "impute"
+		}, match: "registered estimator"},
 		{name: "malformed metric confidence interval", mutate: func(value map[string]any) {
 			value["metrics"].([]any)[0].(map[string]any)["confidence_interval"] = []any{0.5}
 		}, match: "exactly two bounds"},
@@ -113,6 +120,7 @@ func TestValidateReportMetricsRejectsMisleadingNumericEvidence(t *testing.T) {
 			ID: "routing.accuracy", Name: "Routing accuracy", TrackID: "routing",
 			Value: &value, Unit: "fraction", Direction: "higher_is_better",
 			ConfidenceInterval: []float64{0.7, 0.9}, SampleCount: 10,
+			AnalysisProvenance: validMetricAnalysisProvenance(0),
 		}
 	}
 	if err := validateReportMetrics([]Metric{validMetric()}, []TrackID{"routing"}); err != nil {
@@ -122,8 +130,8 @@ func TestValidateReportMetricsRejectsMisleadingNumericEvidence(t *testing.T) {
 	systemMetric.ID = "system.total_cost"
 	systemMetric.Name = "Total cost"
 	systemMetric.TrackID = ""
-	if err := validateReportMetrics([]Metric{systemMetric}, []TrackID{"routing"}); err != nil {
-		t.Fatalf("valid system-level metric rejected: %v", err)
+	if err := validateReportMetrics([]Metric{systemMetric}, []TrackID{"routing"}); err == nil || !strings.Contains(err.Error(), "metric id is not registered") {
+		t.Fatalf("unknown system-level metric error=%v, want fail-closed catalog rejection", err)
 	}
 	unavailable := validMetric()
 	unavailable.Value = nil
@@ -141,6 +149,7 @@ func TestValidateReportMetricsRejectsMisleadingNumericEvidence(t *testing.T) {
 	roundedComparison := validMetric()
 	roundedComparison.ID = "routing.latency_p95_ms"
 	roundedComparison.Name = "Latency p95"
+	roundedComparison.AnalysisProvenance = validMetricAnalysisProvenanceFor(roundedComparison.ID, 0)
 	roundedComparison.Unit = "ms"
 	roundedComparison.Value = float64Pointer(1000.1)
 	roundedComparison.BaselineValue = float64Pointer(1000)
@@ -265,6 +274,13 @@ func writePairedPrivateRecord(t *testing.T, service *Service, runID string, qual
 
 func newPairedComparisonFixture(t *testing.T) *pairedComparisonFixture {
 	t.Helper()
+	metric := func(id, name, unit, direction string, value *float64, samples int) Metric {
+		return Metric{
+			ID: id, Name: name, TrackID: "routing", Value: value, Unit: unit,
+			Direction: direction, SampleCount: samples,
+			AnalysisProvenance: validMetricAnalysisProvenanceFor(id, 0),
+		}
+	}
 	service, _ := newTestService(t, &controlledProcess{}, 1)
 	baselineRequest := validCreateRequest()
 	baselineRequest.ChangeProfile = "recipe"
@@ -286,18 +302,18 @@ func newPairedComparisonFixture(t *testing.T) *pairedComparisonFixture {
 	baseline := reportForRun(baselineRun, nil)
 	baseline.AttestationRevision = ServerAttestationRevision
 	baseline.Metrics = []Metric{
-		{ID: "routing.accuracy", Name: "Quality", TrackID: "routing", Value: float64Pointer(0.8), Unit: "score", Direction: "higher_is_better"},
-		{ID: "routing.latency_p95_ms", Name: "Latency", TrackID: "routing", Value: float64Pointer(100), Unit: "ms", Direction: "lower_is_better"},
-		{ID: "missing", Name: "Missing", TrackID: "routing", Value: nil, Unit: "score", Direction: "higher_is_better"},
+		metric("routing.accuracy", "Quality", "score", "higher_is_better", float64Pointer(0.8), 1),
+		metric("routing.latency_p95_ms", "Latency", "ms", "lower_is_better", float64Pointer(100), 1),
+		metric("routing.coverage", "Missing", "fraction", "higher_is_better", nil, 0),
 	}
 	candidate := reportForRun(candidateRun, nil)
 	candidate.AttestationRevision = ServerAttestationRevision
 	candidate.Provenance.PolicySnapshotDigest = "sha256:candidate-policy"
 	candidate.Metrics = []Metric{
-		{ID: "routing.accuracy", Name: "Quality", TrackID: "routing", Value: float64Pointer(0.9), Unit: "score", Direction: "higher_is_better"},
-		{ID: "routing.latency_p95_ms", Name: "Latency", TrackID: "routing", Value: float64Pointer(104), Unit: "ms", Direction: "lower_is_better"},
-		{ID: "missing", Name: "Missing", TrackID: "routing", Value: float64Pointer(1), Unit: "score", Direction: "higher_is_better"},
-		{ID: "candidate-only", Name: "Candidate only", TrackID: "routing", Value: float64Pointer(7), Unit: "count", Direction: "higher_is_better"},
+		metric("routing.accuracy", "Quality", "score", "higher_is_better", float64Pointer(0.9), 1),
+		metric("routing.latency_p95_ms", "Latency", "ms", "lower_is_better", float64Pointer(104), 1),
+		metric("routing.coverage", "Missing", "fraction", "higher_is_better", float64Pointer(1), 1),
+		metric("routing.fallback_rate", "Candidate only", "fraction", "lower_is_better", float64Pointer(0), 1),
 	}
 	return &pairedComparisonFixture{
 		service: service, baselineRun: baselineRun, candidateRun: candidateRun,

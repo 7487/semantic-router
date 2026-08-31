@@ -61,24 +61,14 @@
   gap: 0.4rem;
 }
 
-.evidence {
-  padding: 0 0.6rem;
-  border-left: 1px solid var(--border-subtle);
-  color: var(--text-secondary);
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-  font-weight: 650;
-}
-
 .permissionState {
   display: grid;
   min-height: 280px;
   place-items: center;
   align-content: center;
   padding: 2rem;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  background: var(--surface-panel);
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
   text-align: center;
 }
 
@@ -91,9 +81,10 @@
 .error,
 .deepLinkWarning {
   padding: 0.8rem 0.9rem;
-  border: 1px solid rgba(248, 113, 113, 0.38);
-  border-radius: var(--radius-lg);
-  background: rgba(239, 68, 68, 0.08);
+  border: 0;
+  border-left: 2px solid rgba(248, 113, 113, 0.58);
+  border-radius: 0;
+  background: transparent;
   color: #ffb0b3;
   font-size: var(--text-xs);
   line-height: 1.5;
@@ -102,8 +93,7 @@
 .deepLinkWarning {
   display: grid;
   gap: 0.25rem;
-  border-color: rgba(251, 191, 36, 0.42);
-  background: color-mix(in srgb, var(--color-warning) 8%, var(--surface-panel));
+  border-color: rgba(251, 191, 36, 0.54);
   color: var(--text-secondary);
 }
 
@@ -129,7 +119,7 @@
   gap: 1rem;
   padding: 0.8rem 0;
   border-top: 1px solid var(--border-subtle);
-  background: var(--surface-shell);
+  background: transparent;
 }
 
 .actions span {

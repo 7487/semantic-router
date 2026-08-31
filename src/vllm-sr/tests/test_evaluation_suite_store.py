@@ -274,11 +274,8 @@ def test_catalog_never_contains_private_records_refs_or_arm_ids(tmp_path: Path) 
     assert first_digest_absent(manifest.artifacts.visible_cases.digest, encoded)
     manifest_blob_digest = "sha256:" + next(store.manifests.iterdir()).name
     assert manifest_blob_digest not in encoded
-    assert catalog.modes == ("replay", "live")
-    assert catalog.executors == {
-        "replay": "normalized-suite-replay.v1",
-        "live": "normalized-suite-live.v1",
-    }
+    assert catalog.modes == ("replay",)
+    assert catalog.executors == {"replay": "normalized-suite-replay.v1"}
     outcomes = list(store.load_jsonl(manifest.id, "outcomes"))
     assert len(outcomes) == 1
     assert outcomes[0].grader_id == "private-outcome-grader"

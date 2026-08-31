@@ -51,11 +51,13 @@ export default function EvaluationNavigation({ active, onChange }: EvaluationNav
         aria-label="Evaluation plane views"
       >
         {VIEWS.map((view, index) => (
+          /* Tabs retain their compact, underlined navigation treatment rather than action-button styling. */
           <button
             key={view.id}
             id={`evaluation-tab-${view.id}`}
             type="button"
             role="tab"
+            data-evaluation-navigation-tab="true"
             aria-selected={active === view.id}
             aria-controls="evaluation-panel"
             tabIndex={active === view.id ? 0 : -1}
@@ -72,10 +74,12 @@ export default function EvaluationNavigation({ active, onChange }: EvaluationNav
         ))}
       </div>
       {activeIndex > 0 ? (
+        /* These are viewport-only tab navigation affordances on narrow screens. */
         <button
           type="button"
           className={`${styles.navigationOverflowHint} ${styles.navigationOverflowHintLeft}`}
           data-testid="evaluation-navigation-overflow-left"
+          data-evaluation-navigation-overflow="true"
           aria-label="Previous evaluation section"
           title={`Go to ${VIEWS[activeIndex - 1].label}`}
           onClick={() => onChange(VIEWS[activeIndex - 1].id)}
@@ -88,6 +92,7 @@ export default function EvaluationNavigation({ active, onChange }: EvaluationNav
           type="button"
           className={`${styles.navigationOverflowHint} ${styles.navigationOverflowHintRight}`}
           data-testid="evaluation-navigation-overflow-right"
+          data-evaluation-navigation-overflow="true"
           aria-label="Next evaluation section"
           title={`Go to ${VIEWS[activeIndex + 1].label}`}
           onClick={() => onChange(VIEWS[activeIndex + 1].id)}

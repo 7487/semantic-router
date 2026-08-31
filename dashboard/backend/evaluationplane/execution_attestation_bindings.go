@@ -77,9 +77,13 @@ func indexBrokerAttestationEntries(
 		); err != nil {
 			return brokerAttestationEntryIndex{}, err
 		}
-		if !entry.UpstreamAttempted || !containsTrack(manifest.TrackIDs, entry.TrackID) ||
+		if (!entry.UpstreamAttempted && !unattemptedRoutingDecisionUnavailable(*entry)) ||
+			!containsTrack(manifest.TrackIDs, entry.TrackID) ||
 			!evidenceIDPattern.MatchString(entry.CaseID) || !evidenceIDPattern.MatchString(entry.AttemptID) {
-			return brokerAttestationEntryIndex{}, fmt.Errorf("%w: broker execution entry is not an attempted manifest operation", ErrInvalid)
+			return brokerAttestationEntryIndex{}, fmt.Errorf("%w: broker execution entry is not a bounded manifest operation", ErrInvalid)
+		}
+		if err := validateBrokerRoutingRecipeDecision(manifest.Target.Mixture, *entry); err != nil {
+			return brokerAttestationEntryIndex{}, fmt.Errorf("%w: broker execution entry %d: %w", ErrInvalid, index+1, err)
 		}
 		if err := validateBrokerMixtureBinding(manifest.Target.Mixture, *entry); err != nil {
 			return brokerAttestationEntryIndex{}, fmt.Errorf("%w: broker execution entry %d: %w", ErrInvalid, index+1, err)

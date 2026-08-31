@@ -50,6 +50,7 @@ from cli.evaluation.production_experiment_ledger import (
     ProductionExperimentLedger,
     execute_production_experiment_ledger,
 )
+from cli.evaluation.routing_recipe_plan import build_routing_recipe_plan
 
 
 def _digest(label: str) -> str:
@@ -253,18 +254,23 @@ def _mixture() -> ManifestMixture:
     arms = _model_arms()
     recipe_name = "method-ledger-recipe"
     selector_policy = _digest("method-selector-policy")
+    recipe_digest = _digest("method-recipe")
+    pool_digest = model_pool_snapshot_digest(arms)
+    selector_digest = selector_snapshot_digest(selector_policy, ())
+    adaptation_digest = _digest("method-adaptation")
+    binding_digest = _digest("method-binding")
     return ManifestMixture(
         id=mixture_target_id(recipe_name),
         entrypoint_model="method-entrypoint",
         aliases=("method-entrypoint",),
         recipe_name=recipe_name,
         recipe_description="Frozen method-ledger evaluation subject",
-        recipe_digest=_digest("method-recipe"),
-        pool_digest=model_pool_snapshot_digest(arms),
+        recipe_digest=recipe_digest,
+        pool_digest=pool_digest,
         selector_policy_digest=selector_policy,
-        selector_digest=selector_snapshot_digest(selector_policy, ()),
-        adaptation_digest=_digest("method-adaptation"),
-        binding_digest=_digest("method-binding"),
+        selector_digest=selector_digest,
+        adaptation_digest=adaptation_digest,
+        binding_digest=binding_digest,
         model_arms=arms,
         support_models=(),
         fallback_arm_id=arms[0].id,
@@ -274,6 +280,18 @@ def _mixture() -> ManifestMixture:
                 algorithm="single",
                 arm_ids=tuple(sorted(arm.id for arm in arms)),
             ),
+        ),
+        routing_recipe_plan=build_routing_recipe_plan(
+            recipe_digest=recipe_digest,
+            pool_digest=pool_digest,
+            selector_policy_digest=selector_policy,
+            selector_digest=selector_digest,
+            adaptation_digest=adaptation_digest,
+            binding_digest=binding_digest,
+            arm_ids=tuple(arm.id for arm in arms),
+            fallback_arm_id=arms[0].id,
+            signals=(),
+            projections=(),
         ),
     )
 

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import subprocess
+from importlib.resources import files
 from pathlib import Path
 
 import pytest
@@ -9,6 +11,7 @@ from cli.evaluation.benchmark_registry import (
     get_benchmark_adapter,
     get_benchmark_registry,
 )
+from cli.evaluation.research_benchmark_inventory import RESEARCH_BENCHMARKS_BY_ADAPTER
 from cli.evaluation.benchmark_sources import (
     SourceVerificationError,
     verify_benchmark_source,
@@ -71,6 +74,32 @@ def test_registry_covers_every_audited_benchmark_at_an_exact_pin() -> None:
     assert all(len(adapter.source_revision) == 40 for adapter in registry.adapters)
     assert all(adapter.track_ids for adapter in registry.adapters)
     assert all(adapter.limitations for adapter in registry.adapters)
+
+
+def test_registry_matches_shared_research_inventory_pins_and_scope() -> None:
+    registry = get_benchmark_registry()
+    assert {adapter.id for adapter in registry.adapters} == set(
+        RESEARCH_BENCHMARKS_BY_ADAPTER
+    )
+    for adapter in registry.adapters:
+        inventory = RESEARCH_BENCHMARKS_BY_ADAPTER[adapter.id]
+        assert adapter.source_revision == inventory["source_revision"]
+        assert adapter.dataset_revision == inventory.get("dataset_revision")
+        assert adapter.decision_unit == inventory["decision_unit"]
+        assert adapter.action_space == inventory["action_space"]
+        assert set(adapter.track_ids) == set(inventory["applicable_tracks"])
+
+
+def test_research_inventory_is_loadable_as_packaged_resource() -> None:
+    """The inventory must ship in a wheel, not depend on the Go source tree."""
+    resource = files("cli.evaluation").joinpath(
+        "golden/research_benchmark_inventory.v1.json"
+    )
+    document = json.loads(resource.read_text(encoding="utf-8"))
+    assert document["schema_version"] == "evaluation-research-benchmark-inventory.v1"
+    assert {item["adapter_id"] for item in document["benchmarks"]} == set(
+        RESEARCH_BENCHMARKS_BY_ADAPTER
+    )
 
 
 def test_known_source_and_dataset_pins_are_not_mutable_labels() -> None:

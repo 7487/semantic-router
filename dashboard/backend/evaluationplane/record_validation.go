@@ -45,6 +45,8 @@ type recordAttestation struct {
 	EvaluatedCaseIDsByTrack map[TrackID]map[string]struct{}
 	CellEvidence            map[TrackID]map[string]*recordCellAttestation
 	Metrics                 recordMetricAttestation
+	ModelPoolRecords        []executionRecordEvidence
+	JointRecords            []executionRecordEvidence
 	Costs                   recordCostAttestation
 	Methods                 methodRecordAttestation
 }
@@ -83,6 +85,7 @@ type visibleCaseSet struct {
 	Modalities     map[string]string
 	TrackIDsByCase map[string][]TrackID
 	CaseIDsByTrack map[TrackID]map[string]struct{}
+	MessageDigests map[string]string
 }
 
 func (attestation recordAttestation) expectedTrackCoverage(trackID TrackID) Coverage {
@@ -157,6 +160,10 @@ type executionRecordEvidence struct {
 	AttemptID            string                              `json:"attempt_id"`
 	Status               string                              `json:"status"`
 	ArmID                *string                             `json:"arm_id,omitempty"`
+	MethodID             *string                             `json:"method_id,omitempty"`
+	ActionID             *string                             `json:"action_id,omitempty"`
+	BudgetTokens         *int                                `json:"budget_tokens,omitempty"`
+	SliceIDs             []string                            `json:"slice_ids,omitempty"`
 	SelectedArmID        *string                             `json:"selected_arm_id,omitempty"`
 	SelectionStatus      *string                             `json:"selection_status,omitempty"`
 	SelectionMethod      *string                             `json:"selection_method,omitempty"`
@@ -224,6 +231,9 @@ type recordSemanticKey struct {
 	AttemptID     string
 	ArmID         string
 	SelectedArmID string
+	MethodID      string
+	ActionID      string
+	BudgetTokens  int
 }
 
 func validateRecordsAndFailureSummary(
@@ -242,6 +252,27 @@ func validateRecordsAndFailureSummary(
 	attestation, err := validateExecutionRecords(filepath.Join(runDir, "records.jsonl"), manifest.TrackIDs, cases, executor)
 	if err != nil {
 		return recordAttestation{}, err
+	}
+	if manifest.Target.Mixture != nil && containsTrack(manifest.TrackIDs, "model_pool") {
+		arms := make([]string, len(manifest.Target.Mixture.ModelArms))
+		for index, arm := range manifest.Target.Mixture.ModelArms {
+			arms[index] = arm.ID
+		}
+		planned := make([]string, 0, len(cases.CaseIDsByTrack["model_pool"]))
+		for caseID := range cases.CaseIDsByTrack["model_pool"] {
+			planned = append(planned, caseID)
+		}
+		poolMetrics, reduceErr := reduceAuthoritativeModelPoolMetrics(modelPoolReductionInput{
+			FrozenArmIDs: arms, PlannedCaseIDs: planned,
+			// Replay evidence remains an honest worker-owned E0 boundary. Only
+			// live Mixture records are server-attested as authoritative.
+			Authoritative: manifest.Mode == ModeLive,
+			PoolRecords:   attestation.ModelPoolRecords, JointRecords: attestation.JointRecords,
+		})
+		if reduceErr != nil {
+			return recordAttestation{}, fmt.Errorf("%w: model-pool metric reduction failed: %w", ErrInvalid, reduceErr)
+		}
+		attestation.Metrics.ModelPool = poolMetrics
 	}
 	if err := validateMethodSnapshotBindings(attestation.Methods, manifest); err != nil {
 		return recordAttestation{}, err
@@ -294,6 +325,7 @@ func validateVisibleCaseSet(path string, caseLimit int, selectedTrackIDs []Track
 	cases := visibleCaseSet{
 		IDs: make(map[string]struct{}), Modalities: make(map[string]string),
 		TrackIDsByCase: make(map[string][]TrackID), CaseIDsByTrack: make(map[TrackID]map[string]struct{}, len(selectedTrackIDs)),
+		MessageDigests: make(map[string]string),
 	}
 	for _, trackID := range selectedTrackIDs {
 		cases.CaseIDsByTrack[trackID] = make(map[string]struct{})
@@ -320,12 +352,17 @@ func validateVisibleCaseSet(path string, caseLimit int, selectedTrackIDs []Track
 				return fmt.Errorf("%w: cases.jsonl line %d message %d is invalid: %w", ErrInvalid, lineNumber, index+1, err)
 			}
 		}
+		messagesDigest, digestErr := canonicalMessageListDigest(identity.Messages)
+		if digestErr != nil {
+			return fmt.Errorf("%w: cases.jsonl line %d messages cannot be digested: %w", ErrInvalid, lineNumber, digestErr)
+		}
 		if _, duplicate := cases.IDs[identity.ID]; duplicate {
 			return fmt.Errorf("%w: cases.jsonl contains duplicate case id %q", ErrInvalid, identity.ID)
 		}
 		cases.IDs[identity.ID] = struct{}{}
 		cases.Modalities[identity.ID] = identity.Modality
 		cases.TrackIDsByCase[identity.ID] = append([]TrackID(nil), identity.TrackIDs...)
+		cases.MessageDigests[identity.ID] = messagesDigest
 		for _, trackID := range identity.TrackIDs {
 			cases.CaseIDsByTrack[trackID][identity.ID] = struct{}{}
 		}
@@ -506,6 +543,15 @@ func (state *recordValidationState) observe(line []byte, lineNumber int) error {
 	if err := state.costReducer.observe(record); err != nil {
 		return fmt.Errorf("%w: records.jsonl line %d costs cannot be reduced: %w", ErrInvalid, lineNumber, err)
 	}
+	// Retain only the bounded evidence needed by the server-owned pool reducer.
+	// It is captured during the strict records scan; sealing never performs a
+	// second, unanchored read of worker records.jsonl.
+	switch record.TrackID {
+	case "model_pool":
+		state.attestation.ModelPoolRecords = append(state.attestation.ModelPoolRecords, record)
+	case "joint":
+		state.attestation.JointRecords = append(state.attestation.JointRecords, record)
+	}
 	counts := state.attestation.ByTrack[record.TrackID]
 	switch record.Status {
 	case "succeeded":
@@ -555,6 +601,11 @@ func (record executionRecordEvidence) semanticKey() recordSemanticKey {
 	}
 	if record.SelectedArmID != nil {
 		key.SelectedArmID = *record.SelectedArmID
+	}
+	if record.MethodID != nil {
+		key.MethodID = *record.MethodID
+		key.ActionID = *record.ActionID
+		key.BudgetTokens = *record.BudgetTokens
 	}
 	return key
 }

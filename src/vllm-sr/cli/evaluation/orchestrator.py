@@ -10,6 +10,7 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from cli.evaluation.builtin_executors import DEFAULT_EXECUTOR_REGISTRY
+from cli.evaluation.case_plan import planned_case_ids_by_track
 from cli.evaluation.capacity_profile import CapacityProfile, build_capacity_profile
 from cli.evaluation.contracts import ArtifactRef, ResolvedRunSnapshot, RunManifest
 from cli.evaluation.evidence import ExecutionRecord
@@ -26,6 +27,7 @@ from cli.evaluation.finalize import finalize_report_bundle
 from cli.evaluation.gates import compute_gates
 from cli.evaluation.method_gate_evidence import derive_method_gate_evidence
 from cli.evaluation.metrics import compute_metrics
+from cli.evaluation.metric_model_pool import ModelPoolReductionContext
 from cli.evaluation.normalized_suite_live_robustness import (
     declared_shift_gate_is_complete,
 )
@@ -305,8 +307,22 @@ def _reduce_run_evidence(
         if manifest.capacity_slo is not None
         else None
     )
+    planned_case_ids = planned_case_ids_by_track(
+        collected.inputs.visible, manifest.track_ids
+    )
+    model_pool_context = None
+    if manifest.target.mixture is not None and "model_pool" in manifest.track_ids:
+        model_pool_context = ModelPoolReductionContext(
+            frozen_arm_ids=tuple(arm.id for arm in manifest.target.mixture.model_arms),
+            planned_case_ids=tuple(planned_case_ids["model_pool"]),
+            authoritative=manifest.mode == "live",
+        )
     metrics = attach_confidence_intervals(
-        compute_metrics(records, capacity_profile=capacity_profile),
+        compute_metrics(
+            records,
+            capacity_profile=capacity_profile,
+            model_pool_context=model_pool_context,
+        ),
         records,
         seed=manifest.seed,
     )

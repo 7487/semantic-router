@@ -16,6 +16,7 @@ import {
   equalEvaluationCapacitySLO,
 } from './evaluationCapacitySLOContract'
 import { decodeEvaluationRun } from './evaluationRunContract'
+import { buildEvaluationRoutingRecipePlan } from '../test/evaluationRoutingRecipeFixture'
 
 const RUN_ID = '11111111-1111-4111-8111-111111111111'
 
@@ -30,7 +31,7 @@ const capacitySLO: EvaluationCapacitySLO = {
 
 const loadProtocol: EvaluationCapacityLoadProtocol = defaultEvaluationCapacityLoadProtocol(8)
 
-const mixture = {
+const mixtureBase = {
   id: 'capacity-mixture',
   entrypoint_model: 'vllm-sr/auto',
   aliases: ['vllm-sr/auto'],
@@ -54,6 +55,10 @@ const mixture = {
   support_models: [],
   fallback_arm_id: 'primary',
   decisions: [{ name: 'default', algorithm: 'confidence', arm_ids: ['primary'] }],
+}
+const mixture = {
+  ...mixtureBase,
+  routing_recipe_plan: buildEvaluationRoutingRecipePlan(mixtureBase),
 }
 
 const catalog = {

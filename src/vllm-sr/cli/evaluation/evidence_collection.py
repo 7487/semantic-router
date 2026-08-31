@@ -123,5 +123,5 @@ def _validate_records(
     if missing_cells:
         case_id, track_id = missing_cells[0]
         raise ValueError(
-            "executor omitted a planned case-track cell: " f"{case_id}/{track_id}"
+            f"executor omitted a planned case-track cell: {case_id}/{track_id}"
         )

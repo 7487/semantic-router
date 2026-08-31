@@ -8,6 +8,9 @@ import (
 )
 
 func validateMethodRecord(record executionRecordEvidence, executor executorContract) error {
+	if err := validateV2MethodCoordinates(record); err != nil {
+		return err
+	}
 	methodCount := 0
 	for _, present := range []bool{
 		record.Robustness != nil,
@@ -66,6 +69,40 @@ func validateMethodRecord(record executionRecordEvidence, executor executorContr
 		if err := validateHardPolicyMethod(*record.HardPolicy, record); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// validateV2MethodCoordinates admits only the R2 raw cells that the server can
+// independently reduce.  Coordinates without a v2 method are rejected so an
+// ordinary model-pool record can never be silently treated as an R2 cell.
+func validateV2MethodCoordinates(record executionRecordEvidence) error {
+	coordinatesPresent := record.ActionID != nil || record.BudgetTokens != nil || record.SliceIDs != nil
+	if record.MethodID == nil {
+		if coordinatesPresent {
+			return fmt.Errorf("v2 method coordinates require method_id")
+		}
+		return nil
+	}
+	if *record.MethodID != R2CompoundModelBudgetMethodID {
+		return fmt.Errorf("unknown v2 method_id %q", *record.MethodID)
+	}
+	if record.TrackID != "model_pool" || record.Status != "succeeded" || record.ActionID == nil ||
+		record.BudgetTokens == nil || record.Quality == nil || record.SliceIDs == nil {
+		return fmt.Errorf("R2 records require succeeded model_pool action, budget, quality, and slices")
+	}
+	if !validMethodID(*record.ActionID) || *record.BudgetTokens <= 0 || len(record.SliceIDs) == 0 {
+		return fmt.Errorf("R2 method coordinates are invalid")
+	}
+	seen := make(map[string]struct{}, len(record.SliceIDs))
+	for _, sliceID := range record.SliceIDs {
+		if !validMethodID(sliceID) {
+			return fmt.Errorf("R2 slice identity is invalid")
+		}
+		if _, duplicate := seen[sliceID]; duplicate {
+			return fmt.Errorf("R2 slice identities must be unique")
+		}
+		seen[sliceID] = struct{}{}
 	}
 	return nil
 }

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 import math
 from importlib.resources import files
@@ -10,6 +11,7 @@ from cli.evaluation.catalog import EvaluationCatalog, get_catalog
 from cli.evaluation.constants import SCHEMA_VERSION, TRACK_IDS
 from cli.evaluation.contracts import (
     ArtifactRef,
+    CatalogMixture,
     EvaluationTarget,
     EvaluationTargetArm,
     ManifestMixture,
@@ -21,12 +23,19 @@ from cli.evaluation.contracts import (
 from cli.evaluation.executor_contracts import BUILTIN_EXECUTOR_CONTRACTS
 from cli.evaluation.manifest_identity import (
     manifest_semantic_digest,
+    mixture_snapshot_digest,
     mixture_target_id,
     model_pool_snapshot_digest,
+    routing_recipe_plan_digest,
     seal_manifest_fields,
     selector_snapshot_digest,
 )
 from cli.evaluation.reporting import EvaluationReport, WorkerEvent
+from cli.evaluation.routing_recipe_plan import (
+    RoutingRecipeInputSpec,
+    RoutingRecipeProjectionSpec,
+    build_routing_recipe_plan,
+)
 from cli.evaluation.schemas import contract_schemas
 from cli.evaluation.target_capabilities import DEFAULT_TARGET_REGISTRY
 from pydantic import ValidationError
@@ -44,6 +53,10 @@ def _mixture(arms: tuple[EvaluationTargetArm, ...]) -> ManifestMixture:
     mixture_id = mixture_target_id(recipe_name)
     aliases = ("entrypoint-contract",)
     selector_policy_digest = digest_value("contract-selector-policy")
+    selector_digest = selector_snapshot_digest(selector_policy_digest, ())
+    adaptation_digest = digest_value("contract-adaptation")
+    binding_digest = digest_value("contract-mixture-binding")
+    fallback_arm_id = arms[0].id
     return ManifestMixture(
         id=mixture_id,
         entrypoint_model="entrypoint-contract",
@@ -53,18 +66,30 @@ def _mixture(arms: tuple[EvaluationTargetArm, ...]) -> ManifestMixture:
         recipe_digest=recipe_digest,
         pool_digest=pool_digest,
         selector_policy_digest=selector_policy_digest,
-        selector_digest=selector_snapshot_digest(selector_policy_digest, ()),
-        adaptation_digest=digest_value("contract-adaptation"),
-        binding_digest=digest_value("contract-mixture-binding"),
+        selector_digest=selector_digest,
+        adaptation_digest=adaptation_digest,
+        binding_digest=binding_digest,
         model_arms=arms,
         support_models=(),
-        fallback_arm_id=arms[0].id,
+        fallback_arm_id=fallback_arm_id,
         decisions=(
             MixtureDecisionBinding(
                 name="default",
                 algorithm="static" if len(arms) > 1 else "single",
                 arm_ids=tuple(sorted(arm.id for arm in arms)),
             ),
+        ),
+        routing_recipe_plan=build_routing_recipe_plan(
+            recipe_digest=recipe_digest,
+            pool_digest=pool_digest,
+            selector_policy_digest=selector_policy_digest,
+            selector_digest=selector_digest,
+            adaptation_digest=adaptation_digest,
+            binding_digest=binding_digest,
+            arm_ids=tuple(sorted({arm.id for arm in arms})),
+            fallback_arm_id=fallback_arm_id,
+            signals=(),
+            projections=(),
         ),
     )
 
@@ -134,8 +159,7 @@ def _assert_fidelity_slots(catalog: EvaluationCatalog) -> None:
     assert all(
         slot.track_id == "joint"
         and slot.minimum_evidence_level == "E5"
-        and slot.accepted_executor_ids
-        == ("normalized-suite-live.v1", "live-runtime.v1")
+        and slot.accepted_executor_ids == ("live-runtime.v1",)
         for profile, slot in g5_slots.items()
         if profile != "agent_multimodal"
     )
@@ -387,6 +411,120 @@ def test_live_manifest_semantic_digest_binds_every_capacity_protocol_field() -> 
         )
 
 
+def test_routing_recipe_plan_is_required_strict_and_fully_bound() -> None:
+    arms = (
+        EvaluationTargetArm(
+            id="fast",
+            model="org/fast",
+            provider_model_id_digest=sha256_digest(b"org/fast"),
+            input_cost_per_million_tokens_usd=0.1,
+            output_cost_per_million_tokens_usd=0.2,
+        ),
+        EvaluationTargetArm(
+            id="strong",
+            model="org/strong",
+            provider_model_id_digest=sha256_digest(b"org/strong"),
+            input_cost_per_million_tokens_usd=0.3,
+            output_cost_per_million_tokens_usd=0.4,
+        ),
+    )
+    mixture = _mixture(arms)
+    payload = mixture.model_dump(mode="json", exclude_none=True)
+
+    missing = copy.deepcopy(payload)
+    missing.pop("routing_recipe_plan")
+    with pytest.raises(ValidationError, match="routing_recipe_plan"):
+        ManifestMixture.model_validate(missing)
+    public_missing = mixture.public_summary().model_dump(mode="json", exclude_none=True)
+    public_missing.pop("routing_recipe_plan")
+    with pytest.raises(ValidationError, match="routing_recipe_plan"):
+        CatalogMixture.model_validate(public_missing)
+
+    extra = copy.deepcopy(payload)
+    extra["routing_recipe_plan"]["outcome"] = "forged"
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        ManifestMixture.model_validate(extra)
+
+    stale_digest = copy.deepcopy(payload)
+    stale_digest["routing_recipe_plan"]["arm_ids"] = ["strong", "fast"]
+    stale_digest["routing_recipe_plan"]["plan_digest"] = sha256_digest(b"stale-plan")
+    with pytest.raises(ValidationError, match="does not bind its canonical body"):
+        ManifestMixture.model_validate(stale_digest)
+
+    detached_target = copy.deepcopy(payload)
+    detached_target["routing_recipe_plan"]["target_snapshot_digest"] = sha256_digest(
+        b"detached-target"
+    )
+    detached_target["routing_recipe_plan"]["plan_digest"] = routing_recipe_plan_digest(
+        detached_target["routing_recipe_plan"]
+    )
+    with pytest.raises(
+        ValidationError, match="does not bind its immutable component digests"
+    ):
+        ManifestMixture.model_validate(detached_target)
+
+    truncated_top_k = copy.deepcopy(payload)
+    truncated_top_k["routing_recipe_plan"]["top_k"] = [1]
+    truncated_top_k["routing_recipe_plan"]["plan_digest"] = routing_recipe_plan_digest(
+        truncated_top_k["routing_recipe_plan"]
+    )
+    with pytest.raises(ValidationError, match="frozen pool top-k schedule"):
+        ManifestMixture.model_validate(truncated_top_k)
+
+    nonnumeric_signal = copy.deepcopy(payload)
+    nonnumeric_signal["routing_recipe_plan"]["signals"] = [
+        {"id": "context:turns", "value_kind": "none"}
+    ]
+    nonnumeric_signal["routing_recipe_plan"]["plan_digest"] = (
+        routing_recipe_plan_digest(nonnumeric_signal["routing_recipe_plan"])
+    )
+    with pytest.raises(ValidationError, match="signals must be numeric"):
+        ManifestMixture.model_validate(nonnumeric_signal)
+
+
+def test_routing_recipe_plan_manifest_identity_is_canonical_and_complete() -> None:
+    payload = _golden("live-manifest.json")
+    parsed = RunManifest.model_validate(payload)
+    assert parsed.target.mixture is not None
+    plan = parsed.target.mixture.routing_recipe_plan
+    assert plan.plan_digest == (
+        "sha256:1f3a6ccdafe32e7b2cf84b077431596c845a0c4c5b77c8da35d1bbf487c1c24c"
+    )
+    assert plan.target_snapshot_digest == (
+        "sha256:5b8d499933f180ca9877c2cfc99bb718403c3e8feaa08227e38c4e8b9907bb9e"
+    )
+
+    permuted = copy.deepcopy(payload)
+    permuted_plan = permuted["target"]["mixture"]["routing_recipe_plan"]
+    permuted_plan["arm_ids"].reverse()
+    permuted_plan["signals"].reverse()
+    assert routing_recipe_plan_digest(permuted_plan) == plan.plan_digest
+    assert manifest_semantic_digest(permuted) == payload["manifest_digest"]
+    assert RunManifest.model_validate(permuted).manifest_digest == (
+        payload["manifest_digest"]
+    )
+    assert mixture_snapshot_digest(permuted["target"]["mixture"]) != (
+        mixture_snapshot_digest(payload["target"]["mixture"])
+    )
+
+    changed = copy.deepcopy(payload)
+    changed_plan = changed["target"]["mixture"]["routing_recipe_plan"]
+    changed_plan["signals"].append(
+        RoutingRecipeInputSpec(id="context:turns", value_kind="numeric").model_dump(
+            mode="json"
+        )
+    )
+    changed_plan["projections"].append(
+        RoutingRecipeProjectionSpec(
+            id="projection:quality",
+            value_kind="probability",
+            outcome_binding="selected_is_oracle",
+        ).model_dump(mode="json")
+    )
+    changed_plan["plan_digest"] = routing_recipe_plan_digest(changed_plan)
+    assert manifest_semantic_digest(changed) != payload["manifest_digest"]
+
+
 def test_manifest_target_shape_is_exact_for_each_execution_mode() -> None:
     replay = _golden("manifest.json")
     replay_target = dict(replay["target"])
@@ -545,6 +683,18 @@ def test_selector_support_identity_is_strict_and_digest_bound() -> None:
     payload["support_models"] = (support,)
     payload["selector_digest"] = selector_snapshot_digest(
         mixture.selector_policy_digest, (support,)
+    )
+    payload["routing_recipe_plan"] = build_routing_recipe_plan(
+        recipe_digest=mixture.recipe_digest,
+        pool_digest=mixture.pool_digest,
+        selector_policy_digest=mixture.selector_policy_digest,
+        selector_digest=payload["selector_digest"],
+        adaptation_digest=mixture.adaptation_digest,
+        binding_digest=mixture.binding_digest,
+        arm_ids=tuple(arm.id for arm in mixture.model_arms),
+        fallback_arm_id=mixture.fallback_arm_id,
+        signals=mixture.routing_recipe_plan.signals,
+        projections=mixture.routing_recipe_plan.projections,
     )
     parsed = ManifestMixture.model_validate(payload)
     assert parsed.support_models == (support,)

@@ -44,6 +44,7 @@ from cli.evaluation.manifest_identity import (
     selector_snapshot_digest,
 )
 from cli.evaluation.resolution import live_grading
+from cli.evaluation.routing_recipe_plan import build_routing_recipe_plan
 from cli.evaluation.store import LocalArtifactStore
 
 _LIVE_TRACKS = ("routing", "model_pool", "joint", "multimodal", "capacity")
@@ -308,6 +309,9 @@ def _mixture() -> ManifestMixture:
         ),
     )
     selector_policy_digest = digest_value("live-selector-policy")
+    selector_digest = selector_snapshot_digest(selector_policy_digest, support_models)
+    adaptation_digest = digest_value("live-adaptation")
+    binding_digest = digest_value("live-binding")
     return ManifestMixture(
         id=mixture_id,
         entrypoint_model="entrypoint-b",
@@ -317,11 +321,9 @@ def _mixture() -> ManifestMixture:
         recipe_digest=recipe_digest,
         pool_digest=pool_digest,
         selector_policy_digest=selector_policy_digest,
-        selector_digest=selector_snapshot_digest(
-            selector_policy_digest, support_models
-        ),
-        adaptation_digest=digest_value("live-adaptation"),
-        binding_digest=digest_value("live-binding"),
+        selector_digest=selector_digest,
+        adaptation_digest=adaptation_digest,
+        binding_digest=binding_digest,
         model_arms=arms,
         support_models=support_models,
         fallback_arm_id="arm-fast",
@@ -331,6 +333,18 @@ def _mixture() -> ManifestMixture:
                 algorithm="confidence",
                 arm_ids=("arm-fast", "arm-strong"),
             ),
+        ),
+        routing_recipe_plan=build_routing_recipe_plan(
+            recipe_digest=recipe_digest,
+            pool_digest=pool_digest,
+            selector_policy_digest=selector_policy_digest,
+            selector_digest=selector_digest,
+            adaptation_digest=adaptation_digest,
+            binding_digest=binding_digest,
+            arm_ids=tuple(arm.id for arm in arms),
+            fallback_arm_id="arm-fast",
+            signals=(),
+            projections=(),
         ),
     )
 

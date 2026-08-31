@@ -39,9 +39,11 @@ from cli.evaluation.manifest_identity import (
     mixture_target_id,
     model_pool_snapshot_digest,
     require_manifest_digest,
+    routing_recipe_target_snapshot_digest,
     seal_manifest_fields,
     selector_snapshot_digest,
 )
+from cli.evaluation.routing_recipe_plan import RoutingRecipePlan, routing_recipe_top_k
 
 _MAX_MIXTURE_ALIAS_BYTES = 512
 _MAX_SUITE_EXECUTOR_ID_LENGTH = 128
@@ -371,6 +373,7 @@ class CatalogMixture(StrictModel):
     support_models: tuple[SupportModelIdentity, ...] = ()
     fallback_arm_id: str | None = None
     decisions: tuple[MixtureDecisionBinding, ...] = ()
+    routing_recipe_plan: RoutingRecipePlan
 
     _id = field_validator("id")(validate_portable_id)
 
@@ -406,6 +409,7 @@ class CatalogMixture(StrictModel):
         self._validate_support_models(owners)
         self._validate_decisions(arm_ids)
         self._validate_snapshot_digests()
+        self._validate_routing_recipe_plan(arm_ids)
         return self
 
     def _validate_primary_identity(self) -> None:
@@ -464,6 +468,36 @@ class CatalogMixture(StrictModel):
         ):
             raise ValueError(
                 "mixture selector digest must bind policy and support models"
+            )
+
+    def _validate_routing_recipe_plan(self, arm_ids: list[str]) -> None:
+        plan = self.routing_recipe_plan
+        expected_target_digest = routing_recipe_target_snapshot_digest(self)
+        if plan.target_snapshot_digest != expected_target_digest:
+            raise ValueError(
+                "mixture routing recipe plan does not bind its immutable component digests"
+            )
+        if tuple(sorted(plan.arm_ids)) != tuple(sorted(arm_ids)):
+            raise ValueError(
+                "mixture routing recipe plan does not bind its frozen model pool"
+            )
+        if plan.fallback_arm_id != self.fallback_arm_id:
+            raise ValueError(
+                "mixture routing recipe plan does not bind its frozen fallback arm"
+            )
+        if plan.top_k != routing_recipe_top_k(len(arm_ids)):
+            raise ValueError(
+                "mixture routing recipe plan does not use the frozen pool top-k schedule"
+            )
+        if any(signal.value_kind != "numeric" for signal in plan.signals):
+            raise ValueError("mixture routing recipe signals must be numeric")
+        if any(
+            projection.value_kind != "probability"
+            or projection.outcome_binding != "selected_is_oracle"
+            for projection in plan.projections
+        ):
+            raise ValueError(
+                "mixture routing recipe projections must bind oracle-selection probability"
             )
 
 

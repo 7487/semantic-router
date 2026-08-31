@@ -17,10 +17,7 @@ export default function EvaluationTrackReadiness({
 }: EvaluationTrackReadinessProps) {
   return (
     <>
-      <section
-        className={`${styles.surface} ${styles.workspaceSurface}`}
-        aria-labelledby="track-readiness-title"
-      >
+      <section className={styles.surface} aria-labelledby="track-readiness-title">
         <header className={styles.surfaceHeader}>
           <div>
             <span className={styles.eyebrow}>Coverage and qualification</span>

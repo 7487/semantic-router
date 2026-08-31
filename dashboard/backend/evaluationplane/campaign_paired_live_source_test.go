@@ -1,6 +1,10 @@
 package evaluationplane
 
-import "testing"
+import (
+	"errors"
+	"strings"
+	"testing"
+)
 
 func TestCampaignPairedLiveEvidenceBindsProviderTargetWithoutLiteralTargetAssumptions(t *testing.T) {
 	fixture := newCampaignPairedLiveFixture(campaignPairedMinimumCases, false)
@@ -51,5 +55,21 @@ func TestGenericComparisonAcceptsOnlyValidatedCrossDeploymentControlledPair(t *t
 	fixture.candidate.attestation.Entries[0].ControlledPair = nil
 	if _, err := compareControlledPairReports(fixture.baseline, fixture.candidate); err == nil {
 		t.Fatal("comparison accepted cross-deployment reports without controlled-pair provenance")
+	}
+}
+
+func TestCrossDeploymentComparisonRejectsInvalidControlledPairAsDomainError(t *testing.T) {
+	unbound := newCampaignPairedLiveFixture(campaignPairedMinimumCases, false)
+	unbound.candidate.manifest.BaselineRunID = ""
+	if _, err := compareControlledPairReports(unbound.baseline, unbound.candidate); !errors.Is(err, ErrInvalid) ||
+		!strings.Contains(err.Error(), "server-owned controlled pair") {
+		t.Fatalf("unbound controlled pair error=%v, want actionable ErrInvalid", err)
+	}
+
+	topologyChanged := newCampaignPairedLiveFixture(campaignPairedMinimumCases, false)
+	topologyChanged.candidate.manifest.Target.BackendTopologyDigest = digestString("different-topology")
+	if _, err := compareControlledPairReports(topologyChanged.baseline, topologyChanged.candidate); !errors.Is(err, ErrInvalid) ||
+		!strings.Contains(err.Error(), "backend topology changed outside the declared treatment") {
+		t.Fatalf("undeclared topology change error=%v, want actionable ErrInvalid", err)
 	}
 }

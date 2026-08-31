@@ -2,8 +2,23 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
-import type { EvaluationMetric } from '../../types/evaluationReport'
+import type {
+  EvaluationMetric,
+  EvaluationMetricAnalysisProvenance,
+} from '../../types/evaluationReport'
+import { metricAnalysisSpecification } from '../../utils/evaluationReportContract'
 import EvaluationMetricTable from './EvaluationMetricTable'
+
+function analysisProvenance(metricID: string): EvaluationMetricAnalysisProvenance {
+  return {
+    contract_version: 'metric-analysis.v1',
+    ...metricAnalysisSpecification(metricID),
+    estimator_version: 'v1',
+    missingness: 'fail_closed',
+    exclusion_policy: 'exclude_unavailable_evidence',
+    observed_exclusions: 0,
+  }
+}
 
 const metrics = [
   {
@@ -12,6 +27,7 @@ const metrics = [
     track_id: 'safety',
     value: 0,
     unit: 'violations/case',
+    analysis_provenance: analysisProvenance('safety.violation_rate'),
   },
   {
     id: 'routing.accuracy',
@@ -19,6 +35,7 @@ const metrics = [
     track_id: 'routing',
     value: 0.8,
     unit: 'fraction',
+    analysis_provenance: analysisProvenance('routing.accuracy'),
   },
 ] satisfies EvaluationMetric[]
 

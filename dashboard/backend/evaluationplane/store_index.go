@@ -69,6 +69,21 @@ func (index *runMetadataIndex) replace(runs []Run, warnings map[string]runListWa
 func (index *runMetadataIndex) upsert(run Run) {
 	index.mu.Lock()
 	defer index.mu.Unlock()
+	index.upsertLocked(run)
+}
+
+func (index *runMetadataIndex) upsertBatch(runs []Run, eventSequences map[string]uint64) {
+	index.mu.Lock()
+	defer index.mu.Unlock()
+	for _, run := range runs {
+		index.upsertLocked(run)
+	}
+	for runID, sequence := range eventSequences {
+		index.eventSequences[runID] = sequence
+	}
+}
+
+func (index *runMetadataIndex) upsertLocked(run Run) {
 	if position, exists := index.positions[run.ID]; exists {
 		if index.runs[position].CreatedAt.Equal(run.CreatedAt) {
 			index.runs[position] = run
@@ -91,6 +106,18 @@ func (index *runMetadataIndex) upsert(run Run) {
 func (index *runMetadataIndex) remove(runID string) {
 	index.mu.Lock()
 	defer index.mu.Unlock()
+	index.removeLocked(runID)
+}
+
+func (index *runMetadataIndex) removeBatch(runIDs ...string) {
+	index.mu.Lock()
+	defer index.mu.Unlock()
+	for _, runID := range runIDs {
+		index.removeLocked(runID)
+	}
+}
+
+func (index *runMetadataIndex) removeLocked(runID string) {
 	position, exists := index.positions[runID]
 	if !exists {
 		return

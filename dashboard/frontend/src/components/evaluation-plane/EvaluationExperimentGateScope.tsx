@@ -1,6 +1,7 @@
 import type { EvaluationChangeProfileId, EvaluationCatalog } from '../../types/evaluationPlane'
 import type { EvaluationExperimentFormModel } from './useEvaluationExperimentForm'
 import EvaluationExperimentSectionHeading from './EvaluationExperimentSectionHeading'
+import { EvaluationTag } from './EvaluationPrimitives'
 import styles from './EvaluationExperimentGateScope.module.css'
 import noticeStyles from './EvaluationExperimentNotice.module.css'
 import sectionStyles from './EvaluationExperimentSection.module.css'
@@ -71,7 +72,17 @@ export default function EvaluationExperimentGateScope({
                   <code>{gate.id}</code>
                   <strong>{gate.name}</strong>
                 </div>
-                <span>{gate.disposition.replace('_', ' ')}</span>
+                <EvaluationTag
+                  tone={
+                    gate.disposition === 'required'
+                      ? 'positive'
+                      : gate.disposition === 'advisory'
+                        ? 'warning'
+                        : 'neutral'
+                  }
+                >
+                  {gate.disposition.replace('_', ' ')}
+                </EvaluationTag>
                 <small>{gate.description}</small>
               </article>
             ))}

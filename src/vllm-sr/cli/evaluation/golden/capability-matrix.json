@@ -57,7 +57,22 @@
             }
           ],
           "fallback_arm_id": "fast",
-          "decisions": [{"name": "default", "algorithm": "static", "arm_ids": ["fast", "vision"]}]
+          "decisions": [{"name": "default", "algorithm": "static", "arm_ids": ["fast", "vision"]}],
+          "routing_recipe_plan": {
+            "contract_version": "routing-recipe-plan.v1",
+            "plan_digest": "sha256:7cb3a0b6d29e82c0e4608b186d9a1d1fef90a69c52e143e81364043d26cbfa95",
+            "target_snapshot_digest": "sha256:6d670e837cd9a9bd65f73e1cede60230388e9c1b0e0acc6640730fd3c3cbc958",
+            "arm_ids": ["fast", "vision"],
+            "fallback_arm_id": "fast",
+            "signals": [
+              {"id": "complexity:complexity", "value_kind": "numeric"},
+              {"id": "modality:modality", "value_kind": "numeric"}
+            ],
+            "projections": [
+              {"id": "projection:route-confidence", "value_kind": "probability", "outcome_binding": "selected_is_oracle"}
+            ],
+            "top_k": [1, 2]
+          }
         }
       },
       "expected_tracks": ["routing", "model_pool", "joint", "multimodal", "capacity"]
@@ -94,7 +109,22 @@
           ],
           "support_models": [],
           "fallback_arm_id": "fast",
-          "decisions": [{"name": "default", "algorithm": "static", "arm_ids": ["fast", "vision"]}]
+          "decisions": [{"name": "default", "algorithm": "static", "arm_ids": ["fast", "vision"]}],
+          "routing_recipe_plan": {
+            "contract_version": "routing-recipe-plan.v1",
+            "plan_digest": "sha256:e2923da5096055b56ab1464ce5e9029d279b270ce29901bbb3faf11173b2add8",
+            "target_snapshot_digest": "sha256:065abf2aa10093ae2bbe0c14e400306ad878f9902bc556d5f954fbc6f8936f30",
+            "arm_ids": ["fast", "vision"],
+            "fallback_arm_id": "fast",
+            "signals": [
+              {"id": "complexity:complexity", "value_kind": "numeric"},
+              {"id": "modality:modality", "value_kind": "numeric"}
+            ],
+            "projections": [
+              {"id": "projection:route-confidence", "value_kind": "probability", "outcome_binding": "selected_is_oracle"}
+            ],
+            "top_k": [1, 2]
+          }
         }
       },
       "expected_tracks": ["routing", "model_pool", "joint", "agentic", "multimodal", "preference", "safety", "capacity"]
@@ -125,7 +155,17 @@
           "model_arms": [{"id": "only", "model": "org/only", "provider_model_id_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "input_cost_per_million_tokens_usd": 0.0, "output_cost_per_million_tokens_usd": 0.0, "modalities": ["text"]}],
           "support_models": [],
           "fallback_arm_id": "only",
-          "decisions": [{"name": "default", "algorithm": "single", "arm_ids": ["only"]}]
+          "decisions": [{"name": "default", "algorithm": "single", "arm_ids": ["only"]}],
+          "routing_recipe_plan": {
+            "contract_version": "routing-recipe-plan.v1",
+            "plan_digest": "sha256:47c3e33101bf4bc381bd7479e63750ecbab9ce124b7d5892ffddc66412139f6c",
+            "target_snapshot_digest": "sha256:b4f527e35536c0aa66a8fb82a6852c1ef99c3ae34f9106e2e53ac528da37c2b3",
+            "arm_ids": ["only"],
+            "fallback_arm_id": "only",
+            "signals": [],
+            "projections": [],
+            "top_k": [1]
+          }
         }
       },
       "expected_tracks": ["routing", "capacity"]

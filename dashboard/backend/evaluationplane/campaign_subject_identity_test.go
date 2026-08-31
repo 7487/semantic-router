@@ -130,6 +130,7 @@ func TestCandidateSubjectDigestChangesWithEverySubjectFactor(t *testing.T) {
 				"00000000-0000-4000-8000-"+fmtCandidateSubjectTestSuffix(index+130),
 			)
 			test.mutate(&manifest, &report)
+			mustFreezeTestRoutingRecipePlan(manifest.Target.Mixture)
 			report.Run.Mixture = catalogMixtureFromManifest(manifest.Target.Mixture)
 			sealCandidateSubjectTestManifest(t, &manifest)
 			got := requireCandidateSubjectDigest(t, manifest, report)
@@ -287,7 +288,7 @@ func candidateSubjectTestMixture() *ManifestMixture {
 		ConfigDigest: digestString("selector-config"), BackendTopologyDigest: digestString("selector-topology"),
 	}}
 	selectorPolicyDigest := digestString("selector-policy-v1")
-	return &ManifestMixture{
+	mixture := &ManifestMixture{
 		SchemaVersion:        SchemaVersion,
 		ID:                   "mom-" + strings.TrimPrefix(digestString(recipeName), "sha256:"),
 		EntrypointModel:      "virtual-entrypoint",
@@ -307,6 +308,8 @@ func candidateSubjectTestMixture() *ManifestMixture {
 			Name: "route", Algorithm: "weighted", ArmIDs: []string{"arm-fast", "arm-strong"},
 		}},
 	}
+	mustFreezeTestRoutingRecipePlan(mixture)
+	return mixture
 }
 
 func sealCandidateSubjectTestManifest(t *testing.T, manifest *RunManifest) {

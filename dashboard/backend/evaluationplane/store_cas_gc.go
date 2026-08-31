@@ -58,6 +58,14 @@ func (s *Store) deleteRunAuthorizedUnlocked(actor Actor, id string) error {
 		}
 		return err
 	}
+	if err := s.ensureRunNotControlledPairReferencedUnlocked(id); err != nil {
+		if _, auditErr := s.appendLifecycleAuditUnlocked(
+			actor, "delete", "denied", "referenced", id, lifecycle.OwnerPrincipalDigest,
+		); auditErr != nil {
+			return auditErr
+		}
+		return err
+	}
 
 	runDir, runDirErr := s.checkedRunDir(id)
 	if runDirErr != nil {
@@ -204,6 +212,7 @@ func (s *Store) markRunCASReferences(runID string, references map[string]bool) e
 	}
 	allowed := map[string]bool{
 		runFileName: true, eventsFileName: true, reportAnchorFileName: true, lifecycleFileName: true,
+		controlledPairMembershipFile: true,
 	}
 	for _, name := range workerRunArtifactNames {
 		allowed[name] = true

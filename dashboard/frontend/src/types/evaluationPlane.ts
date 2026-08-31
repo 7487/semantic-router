@@ -120,6 +120,28 @@ export interface EvaluationSupportModel {
   backend_topology_digest: string
 }
 
+export interface EvaluationRoutingRecipeInputSpec {
+  id: string
+  value_kind: 'numeric' | 'none'
+}
+
+export interface EvaluationRoutingRecipeProjectionSpec {
+  id: string
+  value_kind: 'numeric' | 'probability'
+  outcome_binding: 'selected_pool_quality' | 'selected_is_oracle'
+}
+
+export interface EvaluationRoutingRecipePlan {
+  contract_version: 'routing-recipe-plan.v1'
+  plan_digest: string
+  target_snapshot_digest: string
+  arm_ids: string[]
+  fallback_arm_id?: string
+  signals: EvaluationRoutingRecipeInputSpec[]
+  projections: EvaluationRoutingRecipeProjectionSpec[]
+  top_k: number[]
+}
+
 /**
  * Browser-safe, immutable view of the exact Mixture-of-Models binding being
  * evaluated. Connectivity and provider identities never cross this boundary.
@@ -140,6 +162,7 @@ export interface EvaluationMixture {
   support_models: EvaluationSupportModel[]
   fallback_arm_id?: string
   decisions: EvaluationMixtureDecision[]
+  routing_recipe_plan: EvaluationRoutingRecipePlan
 }
 
 export interface EvaluationCatalogTarget {

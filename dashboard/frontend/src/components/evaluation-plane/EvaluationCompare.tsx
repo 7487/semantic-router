@@ -61,6 +61,14 @@ export default function EvaluationCompare({
   const baseline = runLedgerAvailable && runLedgerComplete ? completed.get(baselineID) : undefined
   const mismatches = baseline && candidate ? cohortMismatches(baseline, candidate) : []
   const lineageMismatch = Boolean(candidate && candidate.baseline_run_id !== baselineID)
+  const routingRecipeComparisonUnavailable = Boolean(
+    baseline?.mixture &&
+      candidate?.mixture &&
+      baseline.mode === 'live' &&
+      candidate.mode === 'live' &&
+      baseline.track_ids.includes('routing') &&
+      candidate.track_ids.includes('routing'),
+  )
   const invalidPair =
     !runLedgerAvailable ||
     !runLedgerComplete ||
@@ -190,28 +198,37 @@ export default function EvaluationCompare({
         </div>
       ) : null}
       {runLedgerComplete && baseline && candidate ? (
-        <dl className={styles.comparabilityStrip} aria-label="Comparison cohort">
-          <div>
-            <dt>Profile</dt>
-            <dd>{candidate.change_profile}</dd>
-          </div>
-          <div>
-            <dt>Mode / target</dt>
-            <dd>
-              {candidate.mode} · {candidate.target_id}
-            </dd>
-          </div>
-          <div>
-            <dt>Workload</dt>
-            <dd>
-              {candidate.sample_limit} cases · c{candidate.concurrency}
-            </dd>
-          </div>
-          <div>
-            <dt>Seed</dt>
-            <dd>{candidate.seed}</dd>
-          </div>
-        </dl>
+        <>
+          <dl className={styles.comparabilityStrip} aria-label="Comparison cohort">
+            <div>
+              <dt>Profile</dt>
+              <dd>{candidate.change_profile}</dd>
+            </div>
+            <div>
+              <dt>Mode / target</dt>
+              <dd>
+                {candidate.mode} · {candidate.target_id}
+              </dd>
+            </div>
+            <div>
+              <dt>Workload</dt>
+              <dd>
+                {candidate.sample_limit} cases · c{candidate.concurrency}
+              </dd>
+            </div>
+            <div>
+              <dt>Seed</dt>
+              <dd>{candidate.seed}</dd>
+            </div>
+          </dl>
+          {routingRecipeComparisonUnavailable ? (
+            <p className={styles.routingComparisonBoundary} role="note">
+              <strong>Routing Recipe comparison unavailable.</strong> The server-owned E1/E2
+              aggregate is report-scoped and is not projected into generic paired metrics. Inspect
+              each run report for decision coverage, calibration, top-k recall, and oracle regret.
+            </p>
+          ) : null}
+        </>
       ) : null}
       {runLedgerComplete && lineageMismatch ? (
         <div className={heroStyles.error} role="alert">
@@ -287,7 +304,7 @@ export default function EvaluationCompare({
             </div>
             <EvaluationGateList gates={comparison.gates} />
           </section>
-          <details className={disclosureStyles.disclosure}>
+          <details className={disclosureStyles.disclosure} data-evaluation-report-disclosure="true">
             <summary>
               Comparison findings <span>{comparison.recommendations.length}</span>
             </summary>

@@ -87,7 +87,7 @@ export default function EvaluationExperimentBenchmarkScope({
                 <span>
                   <strong>{TRACK_PRESENTATION[track.id].label}</strong>
                   <small>{track.description}</small>
-                  <em>
+                  <em data-evaluation-unavailable-reason={!available ? 'true' : undefined}>
                     {available
                       ? `${track.metrics.length} metrics`
                       : !targetSupportsTrack

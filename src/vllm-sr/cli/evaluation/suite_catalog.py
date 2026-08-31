@@ -4,15 +4,15 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from cli.evaluation.benchmark_normalization_registry import (
-    get_benchmark_normalizer,
-)
 from cli.evaluation.benchmark_registry import get_benchmark_adapter
 from cli.evaluation.catalog import CatalogMethod, CatalogSuite
 from cli.evaluation.executor_contracts import Mode
 from cli.evaluation.executor_registry import ExecutorRegistry
-from cli.evaluation.normalized_suite_live_robustness import (
-    declared_shift_source_is_eligible,
+from cli.evaluation.method_contract_v2 import EvaluationMethodPlugin
+from cli.evaluation.method_registry_v2 import method_plugin_for_benchmark
+from cli.evaluation.normalized_suite_live_admission import (
+    NormalizedSuiteLiveAdmission,
+    normalized_suite_live_admissions,
 )
 from cli.evaluation.suite_contract import BenchmarkSuiteManifest
 from cli.evaluation.suite_store import NormalizedSuiteStore
@@ -53,18 +53,29 @@ class NormalizedSuiteCatalog:
 
     def _project(self, manifest: BenchmarkSuiteManifest) -> CatalogSuite:
         descriptor = get_benchmark_adapter(manifest.adapter_id)
-        normalizer = get_benchmark_normalizer(manifest.adapter_id)
         replay = self._contracts["replay"]
-        live = self._contracts["live"]
+        plugin = method_plugin_for_benchmark(manifest.adapter_id)
         executors: dict[Mode, str] = {"replay": replay.id}
-        supports_live = bool(set(manifest.track_ids).intersection(live.track_ids))
+        live_admissions = normalized_suite_live_admissions(self._store, manifest)
+        if live_admissions:
+            live = self._contracts["live"]
+            unsupported = sorted(
+                admission.track_id
+                for admission in live_admissions
+                if admission.track_id not in live.track_ids
+            )
+            if unsupported:
+                raise ValueError(
+                    "normalized live method is unsupported by its executor: "
+                    + ", ".join(unsupported)
+                )
         import_evidence = manifest.qualification_receipt.qualification
         parser_label = (
             "Registered parser output was re-derived exactly"
             if import_evidence.parser_verified
             else "User-provided normalized records passed the closed schema"
         )
-        if supports_live:
+        if live_admissions:
             executors["live"] = live.id
         return CatalogSuite(
             id=manifest.id,
@@ -92,27 +103,38 @@ class NormalizedSuiteCatalog:
                     else "user-provided-import"
                 ),
                 "native-run-unattested",
-                *(("target-live",) if supports_live else ()),
+                f"research-method:{plugin.status}",
+                *(("target-live",) if live_admissions else ()),
                 f"adapter:{manifest.adapter_id}",
                 f"classification:{manifest.data_classification}",
                 f"redistribution:{manifest.redistribution}",
             ),
             methods=_installed_catalog_methods(
-                self._store,
                 manifest,
-                normalizer.export_schema_id,
+                plugin=plugin,
+                live_admissions=live_admissions,
             ),
         )
 
 
 def _installed_catalog_methods(
-    store: NormalizedSuiteStore,
     manifest: BenchmarkSuiteManifest,
-    export_schema_id: str,
+    *,
+    plugin: EvaluationMethodPlugin,
+    live_admissions: tuple[NormalizedSuiteLiveAdmission, ...],
 ) -> tuple[CatalogMethod, ...]:
+    """Keep imports E0 while projecting independent exact live methods.
+
+    A parser-verified or user-provided normalized import is configured for
+    replay once installed. It never inherits native or gate qualification from
+    the research inventory. Exact immutable first-party source contracts may
+    additionally configure server-owned live methods; only fresh broker
+    evidence can later earn a non-E0 level.
+    """
+
     methods = [
         CatalogMethod(
-            id=f"{export_schema_id}.{track_id}",
+            id=f"{plugin.id}.{track_id}",
             track_id=track_id,
             qualified_gate_ids=(),
             evidence_source="normalized_import",
@@ -120,13 +142,13 @@ def _installed_catalog_methods(
         )
         for track_id in manifest.track_ids
     ]
-    if declared_shift_source_is_eligible(store, manifest):
+    for admission in live_admissions:
         methods.append(
             CatalogMethod(
-                id="declared-shift.server-live.v1",
-                track_id="routing",
-                qualified_gate_ids=("G4",),
-                evidence_source="server_brokered_live",
+                id=admission.method_id,
+                track_id=admission.track_id,
+                qualified_gate_ids=admission.qualified_gate_ids,
+                evidence_source=admission.evidence_source,
                 status="configured",
             )
         )

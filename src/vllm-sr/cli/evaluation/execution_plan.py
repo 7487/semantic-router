@@ -8,8 +8,12 @@ from types import MappingProxyType
 
 from cli.evaluation.catalog import CatalogSuite, get_catalog
 from cli.evaluation.contracts import RunManifest
+from cli.evaluation.execution_contract import NORMALIZED_LIVE_EXECUTOR_ID
 from cli.evaluation.executor_registry import ExecutorRegistry
 from cli.evaluation.manifest_identity import require_manifest_digest
+from cli.evaluation.normalized_suite_live_admission import (
+    normalized_suite_live_tracks,
+)
 from cli.evaluation.suite_contract import BenchmarkSuiteManifest
 from cli.evaluation.suite_store import NormalizedSuiteStore
 from cli.evaluation.suite_store_error import SuiteStoreError
@@ -114,13 +118,34 @@ def _installed_plan(
                 raise ValueError(
                     "installed suite qualification does not admit the frozen executor"
                 )
+        allowed_tracks = frozenset(
+            track for suite in manifests for track in suite.track_ids
+        )
+    elif executor_id == NORMALIZED_LIVE_EXECUTOR_ID:
+        admitted_by_suite = {
+            suite.id: normalized_suite_live_tracks(suite_store, suite)
+            for suite in manifests
+        }
+        for suite in manifests:
+            inadmissible = sorted(
+                set(manifest.track_ids).intersection(suite.track_ids)
+                - admitted_by_suite[suite.id]
+            )
+            if inadmissible:
+                raise ValueError(
+                    f"suite {suite.id} has no first-party normalized live method for "
+                    + ", ".join(inadmissible)
+                )
+        allowed_tracks = frozenset(
+            track for tracks in admitted_by_suite.values() for track in tracks
+        )
+    else:
+        raise ValueError("frozen executor has no normalized suite admission registry")
     return ExecutionPlan(
         suites=manifests,
         suite_revisions={suite.id: suite.revision for suite in manifests},
         suite_executors=dict.fromkeys((suite.id for suite in manifests), executor_id),
-        allowed_tracks=frozenset(
-            track for suite in manifests for track in suite.track_ids
-        ),
+        allowed_tracks=allowed_tracks,
     )
 
 

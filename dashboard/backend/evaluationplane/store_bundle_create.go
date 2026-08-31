@@ -52,16 +52,7 @@ func (s *Store) CreateBundleAs(actor Actor, run Run, manifest RunManifest) (stri
 	if err := validateActor(actor); err != nil {
 		return "", err
 	}
-	if err := validateStoredRun(run.ID, run); err != nil {
-		return "", fmt.Errorf("%w: initial run status is invalid: %w", ErrInvalid, err)
-	}
-	if run.Status != StatusPending || run.StartedAt != nil || run.CompletedAt != nil || run.Error != "" {
-		return "", fmt.Errorf("%w: initial run status must be pending", ErrInvalid)
-	}
-	if err := validateRunManifestContract(manifest); err != nil {
-		return "", fmt.Errorf("%w: initial run manifest is invalid: %w", ErrInvalid, err)
-	}
-	if err := validateRunManifestFrozenFields(run, manifest); err != nil {
+	if err := validateInitialRunBundle(run, manifest); err != nil {
 		return "", err
 	}
 	lifecycle := newRunLifecycle(run, actor)
@@ -81,45 +72,20 @@ func (s *Store) CreateBundleAs(actor Actor, run Run, manifest RunManifest) (stri
 		return "", err
 	}
 
-	runDir := filepath.Join(s.runsRoot, run.ID)
-	if err := s.requireAvailableRunDestinationUnlocked(actor, run.ID, runDir); err != nil {
-		return "", err
-	}
-	if reason, quotaErr := s.requireCreateQuotaUnlocked(actor, 0); quotaErr != nil {
-		if _, auditErr := s.appendLifecycleAuditUnlocked(
-			actor, "create", "denied", reason, run.ID, actor.principalDigest,
-		); auditErr != nil {
-			return "", auditErr
-		}
-		return "", quotaErr
-	}
-
-	stagedDir, err := s.stageInitialRunBundleUnlocked(actor, run, manifest, lifecycle)
+	items, err := s.prepareInitialBundlePublicationUnlocked(actor, []initialBundleSpec{{
+		run: run, manifest: manifest, lifecycle: lifecycle,
+	}}, 0)
 	if err != nil {
 		return "", err
 	}
 	published := false
 	defer func() {
 		if !published {
-			_ = os.RemoveAll(stagedDir)
+			cleanupStagedInitialBundles(items)
 		}
 	}()
-
-	// Recheck immediately before publication because another Store instance is
-	// not covered by this instance's mutex. UUID identities make this collision
-	// exceptional, but an existing destination must never be intentionally
-	// replaced.
-	if err := s.requireAvailableRunDestinationUnlocked(actor, run.ID, runDir); err != nil {
+	if err := publishStagedInitialBundle(items[0], os.Rename); err != nil {
 		return "", err
-	}
-	if err := os.Rename(stagedDir, runDir); err != nil {
-		// Rename reports destination conflicts differently across filesystems
-		// (EEXIST, ENOTEMPTY, or platform-specific wrappers). The destination
-		// state, not the errno spelling, defines the idempotency conflict.
-		if _, statErr := os.Lstat(runDir); statErr == nil {
-			return "", fmt.Errorf("%w: run %s already exists", ErrConflict, run.ID)
-		}
-		return "", fmt.Errorf("publish run bundle: %w", err)
 	}
 	published = true
 	s.runIndex.upsert(run)
@@ -130,15 +96,40 @@ func (s *Store) CreateBundleAs(actor Actor, run Run, manifest RunManifest) (stri
 		// an index that points at missing data.
 		return "", err
 	}
-	return filepath.Join(runDir, manifestFileName), nil
+	return filepath.Join(items[0].destination, manifestFileName), nil
+}
+
+func validateInitialRunBundle(run Run, manifest RunManifest) error {
+	if err := validateStoredRun(run.ID, run); err != nil {
+		return fmt.Errorf("%w: initial run status is invalid: %w", ErrInvalid, err)
+	}
+	if run.Status != StatusPending || run.StartedAt != nil || run.CompletedAt != nil || run.Error != "" {
+		return fmt.Errorf("%w: initial run status must be pending", ErrInvalid)
+	}
+	if err := validateRunManifestContract(manifest); err != nil {
+		return fmt.Errorf("%w: initial run manifest is invalid: %w", ErrInvalid, err)
+	}
+	return validateRunManifestFrozenFields(run, manifest)
 }
 
 func (s *Store) requireAvailableRunDestinationUnlocked(actor Actor, runID, runDir string) error {
 	if _, err := os.Lstat(runDir); err == nil {
-		_, _ = s.appendLifecycleAuditUnlocked(
-			actor, "create", "denied", "conflict", runID, actor.principalDigest,
-		)
-		return fmt.Errorf("%w: run %s already exists", ErrConflict, runID)
+		ownerDigest := ""
+		if existing, readErr := s.getRunUnlocked(runID); readErr == nil {
+			if lifecycle, lifecycleErr := s.readRunLifecycle(existing); lifecycleErr == nil {
+				ownerDigest = lifecycle.OwnerPrincipalDigest
+			}
+		}
+		reason := "conflict"
+		result := fmt.Errorf("%w: run %s already exists", ErrConflict, runID)
+		if ownerDigest != "" && ownerDigest != actor.principalDigest && !actor.administrator {
+			reason = "not_owner"
+			result = fmt.Errorf("%w: run identity belongs to another evaluation principal", ErrForbidden)
+		}
+		if auditErr := s.appendLifecycleDenialsUnlocked(actor, "create", reason, ownerDigest, runID); auditErr != nil {
+			return auditErr
+		}
+		return result
 	} else if !os.IsNotExist(err) {
 		return fmt.Errorf("inspect run bundle destination: %w", err)
 	}

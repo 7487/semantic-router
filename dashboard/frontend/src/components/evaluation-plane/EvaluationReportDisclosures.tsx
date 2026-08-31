@@ -20,7 +20,7 @@ export default function EvaluationReportDisclosures({ report }: { report: Evalua
 
   return (
     <>
-      <details className={styles.disclosure}>
+      <details className={styles.disclosure} data-evaluation-report-disclosure="true">
         <summary>
           All promotion gates <span>{report.gates.length}</span>
         </summary>
@@ -29,7 +29,7 @@ export default function EvaluationReportDisclosures({ report }: { report: Evalua
         </div>
       </details>
 
-      <details className={styles.disclosure}>
+      <details className={styles.disclosure} data-evaluation-report-disclosure="true">
         <summary>
           Verified cost ledgers <span>3 ledgers</span>
         </summary>
@@ -60,7 +60,7 @@ export default function EvaluationReportDisclosures({ report }: { report: Evalua
         </div>
       </details>
 
-      <details className={styles.disclosure}>
+      <details className={styles.disclosure} data-evaluation-report-disclosure="true">
         <summary>
           Diagnostic findings <span>{report.recommendations.length}</span>
         </summary>
@@ -81,7 +81,7 @@ export default function EvaluationReportDisclosures({ report }: { report: Evalua
         </div>
       </details>
 
-      <details className={styles.disclosure}>
+      <details className={styles.disclosure} data-evaluation-report-disclosure="true">
         <summary>
           Provenance and reproducibility <span>{gateContractVersion}</span>
         </summary>
@@ -171,7 +171,7 @@ export default function EvaluationReportDisclosures({ report }: { report: Evalua
         </div>
       </details>
 
-      <details className={styles.disclosure}>
+      <details className={styles.disclosure} data-evaluation-report-disclosure="true">
         <summary>
           Evidence artifacts <span>{report.artifacts.length}</span>
         </summary>

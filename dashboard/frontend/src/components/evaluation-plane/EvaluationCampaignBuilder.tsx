@@ -14,7 +14,7 @@ import type {
 import { buildEvaluationCampaignRequest, campaignSlotRunIDs } from './evaluationCampaignSupport'
 import type { EvaluationCampaignBuilderModel } from './useEvaluationCampaignBuilder'
 import EvaluationCampaignControlledPair from './EvaluationCampaignControlledPair'
-import { EvaluationActionButton } from './EvaluationPrimitives'
+import { EvaluationActionButton, EvaluationTag } from './EvaluationPrimitives'
 import commonStyles from './EvaluationCampaign.module.css'
 import styles from './EvaluationCampaignBuilder.module.css'
 
@@ -207,7 +207,7 @@ export default function EvaluationCampaignBuilder({
     >
       <div className={styles.builderHeader}>
         <span className={commonStyles.eyebrow}>Promotion readiness</span>
-        <span className={commonStyles.contractBadge}>{totalRuns} durable runs</span>
+        <EvaluationTag>{totalRuns} durable runs</EvaluationTag>
       </div>
 
       {!allRunsLoaded ? (
@@ -353,13 +353,9 @@ export default function EvaluationCampaignBuilder({
                         <small>{slot.description}</small>
                       </th>
                       <td>
-                        <span
-                          className={
-                            required ? commonStyles.requirementBadge : commonStyles.optionalBadge
-                          }
-                        >
+                        <EvaluationTag tone={required ? 'positive' : 'neutral'}>
                           {slotDisposition(slot)}
-                        </span>
+                        </EvaluationTag>
                         <small className={selected ? styles.roleReady : styles.roleEmpty}>
                           {selected
                             ? 'Evidence bound'

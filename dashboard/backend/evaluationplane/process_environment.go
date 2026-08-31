@@ -1,6 +1,7 @@
 package evaluationplane
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"os"
@@ -32,10 +33,16 @@ type workerBrokerCredentials struct {
 }
 
 type controlledPairCredentialFreezer interface {
-	freezeControlledPairCredentials(RunManifest) (workerBrokerCredentials, error)
+	freezeControlledPairCredentials(context.Context, RunManifest) (workerBrokerCredentials, error)
 }
 
-func (p *CommandProcess) freezeControlledPairCredentials(manifest RunManifest) (workerBrokerCredentials, error) {
+func (p *CommandProcess) freezeControlledPairCredentials(
+	ctx context.Context,
+	manifest RunManifest,
+) (workerBrokerCredentials, error) {
+	if err := ctx.Err(); err != nil {
+		return workerBrokerCredentials{}, err
+	}
 	return p.brokerCredentials(manifest)
 }
 

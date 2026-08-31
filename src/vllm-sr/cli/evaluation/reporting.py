@@ -18,6 +18,12 @@ from cli.evaluation.contracts import (
     validate_run_name,
 )
 from cli.evaluation.gate_contract import GATE_CONTRACT_VERSION, ChangeProfile
+from cli.evaluation.method_contract_v2 import CompoundModelBudgetReport
+from cli.evaluation.metric_analysis_catalog import (
+    PROVENANCE_CONTRACT_VERSION as METRIC_ANALYSIS_CONTRACT_VERSION,
+    CatalogMetricAnalysisSpecification as MetricAnalysisSpecification,
+    resolve_metric_analysis,
+)
 
 TrackID = Literal[
     "routing",
@@ -34,6 +40,12 @@ GateVerdict = Literal["pass", "fail", "unavailable", "waived", "not_applicable"]
 
 _MAX_EVENT_MESSAGE_BYTES = 512
 _MIN_CAPACITY_CONCURRENCY = 2
+
+
+def metric_analysis_specification(metric_id: str) -> MetricAnalysisSpecification:
+    """Resolve one exact catalog contract; unknown metrics fail closed."""
+
+    return resolve_metric_analysis(metric_id).specification
 
 
 class EvaluationRunProgress(StrictModel):
@@ -135,6 +147,46 @@ class EvaluationCoverage(StrictModel):
     confidence_interval: tuple[float, float] | None = None
 
 
+class MetricAnalysisProvenance(StrictModel):
+    """Auditable estimator contract required for every published metric."""
+
+    contract_version: Literal[METRIC_ANALYSIS_CONTRACT_VERSION]
+    estimator_id: str
+    estimator_version: str
+    analysis_unit: str
+    cluster_unit: str
+    weighting: Literal[
+        "inverse_propensity",
+        "uniform_arm",
+        "uniform_arm_pair",
+        "uniform_assignment",
+        "uniform_attempt",
+        "uniform_case",
+        "uniform_level",
+        "uniform_observation",
+        "uniform_pair",
+        "uniform_repetition",
+        "uniform_request",
+        "uniform_task",
+        "uniform_tool_call",
+        "unweighted",
+    ]
+    missingness: Literal["fail_closed"]
+    exclusion_policy: Literal["exclude_unavailable_evidence"]
+    observed_exclusions: int = Field(ge=0)
+
+    @field_validator(
+        "estimator_id", "estimator_version", "analysis_unit", "cluster_unit"
+    )
+    @classmethod
+    def validate_contract_identifier(cls, value: str) -> str:
+        if not value or value.strip() != value or len(value) > 160:
+            raise ValueError(
+                "metric analysis provenance identifiers must be trimmed and non-blank"
+            )
+        return value
+
+
 class EvaluationMetric(StrictModel):
     id: str
     name: str
@@ -146,6 +198,25 @@ class EvaluationMetric(StrictModel):
     delta: float | None = None
     confidence_interval: tuple[float, float] | None = None
     sample_count: int | None = Field(default=None, ge=0)
+    analysis_provenance: MetricAnalysisProvenance
+
+    @model_validator(mode="after")
+    def analysis_provenance_matches_registered_metric(self) -> EvaluationMetric:
+        specification = metric_analysis_specification(self.id)
+        provenance = self.analysis_provenance
+        if (
+            provenance.estimator_id != specification.estimator_id
+            or provenance.estimator_version != specification.estimator_version
+            or provenance.analysis_unit != specification.analysis_unit
+            or provenance.cluster_unit != specification.cluster_unit
+            or provenance.weighting != specification.weighting
+            or provenance.missingness != specification.missingness
+            or provenance.exclusion_policy != specification.exclusion_policy
+        ):
+            raise ValueError(
+                "metric analysis provenance does not match the registered estimator"
+            )
+        return self
 
 
 class GateThreshold(StrictModel):
@@ -264,6 +335,7 @@ class EvaluationReport(StrictModel):
     recommendations: tuple[str, ...]
     provenance: EvaluationProvenance
     artifacts: tuple[EvaluationArtifact, ...]
+    method_reports: tuple[CompoundModelBudgetReport, ...]
 
     @model_validator(mode="after")
     def coherent_gate_contract(self) -> EvaluationReport:

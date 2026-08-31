@@ -1,7 +1,7 @@
 import type { EvaluationGate } from '../../types/evaluationReport'
 import { formatDateTime } from '../../utils/dateTime'
 import { formatMetric, gateVerdictPresentation } from './evaluationPresentation'
-import { GateVerdictBadge } from './EvaluationPrimitives'
+import { EvaluationTag, GateVerdictBadge } from './EvaluationPrimitives'
 import styles from './EvaluationGateList.module.css'
 import reportStyles from './EvaluationReportLayout.module.css'
 
@@ -23,7 +23,7 @@ export default function EvaluationGateList({ gates }: { gates: EvaluationGate[] 
               {gate.description ? <small>{gate.description}</small> : null}
             </div>
             <div className={styles.gateEvidence}>
-              <span>{gate.disposition.replace('_', ' ')}</span>
+              <EvaluationTag>{gate.disposition.replace('_', ' ')}</EvaluationTag>
               {typeof gate.observed === 'number' ? (
                 <small>
                   Observed{' '}

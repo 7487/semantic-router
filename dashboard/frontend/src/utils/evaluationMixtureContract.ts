@@ -13,6 +13,7 @@ import {
   isNonNegativeInteger,
   isTextArray,
 } from './evaluationContractValidation'
+import { isEvaluationRoutingRecipePlan } from './evaluationRoutingRecipeContract'
 
 const PORTABLE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/
 const SHA256 = /^sha256:[0-9a-f]{64}$/
@@ -116,6 +117,7 @@ export function isEvaluationMixture(value: unknown): value is EvaluationMixture 
       'support_models',
       'fallback_arm_id',
       'decisions',
+      'routing_recipe_plan',
     ]) ||
     !isNonEmptyText(value.id) ||
     !PORTABLE_ID.test(value.id) ||
@@ -166,7 +168,11 @@ export function isEvaluationMixture(value: unknown): value is EvaluationMixture 
   const decisionNames = (value.decisions as EvaluationRecord[]).map(
     (decision) => decision.name as string,
   )
-  return new Set(decisionNames).size === decisionNames.length
+  if (new Set(decisionNames).size !== decisionNames.length) return false
+  return isEvaluationRoutingRecipePlan(
+    value.routing_recipe_plan,
+    value as unknown as Omit<EvaluationMixture, 'routing_recipe_plan'>,
+  )
 }
 
 export function requireEvaluationMixture(value: unknown, resource: string): EvaluationMixture {

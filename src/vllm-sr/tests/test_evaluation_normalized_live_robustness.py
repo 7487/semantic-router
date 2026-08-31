@@ -8,13 +8,16 @@ from cli.evaluation.evidence import ExecutionRecord
 from cli.evaluation.live_executor import LiveRawResult
 from cli.evaluation.normalized_suite_inputs import load_selected_cases
 from cli.evaluation.normalized_suite_live_robustness import (
+    DECLARED_SHIFT_LIVE_METHOD_ID,
     attach_live_declared_shift_evidence,
 )
 from cli.evaluation.orchestrator import run_evaluation
 from cli.evaluation.store import LocalArtifactStore
 from cli.evaluation.suite_contract import NormalizedPerturbation
 from cli.evaluation.suite_store import NormalizedSuiteStore
+from cli.evaluation.suite_store_error import SuiteStoreError
 from evaluation_normalized_suite_test_support import (
+    _catalog,
     _digest,
     _live_manifest,
     _qualification_cases,
@@ -78,6 +81,22 @@ def test_registered_pinned_pairs_get_server_portable_live_g4_candidate(
 ) -> None:
     suite_store = NormalizedSuiteStore(tmp_path / "suite-store")
     suite_id = _install_registered_pair(tmp_path / "bundle", suite_store)
+    source_catalog = _catalog(suite_store).get(suite_id)
+    assert source_catalog.evidence_level == "E0"
+    assert source_catalog.modes == ("replay", "live")
+    source_method = next(
+        method
+        for method in source_catalog.methods
+        if method.id == DECLARED_SHIFT_LIVE_METHOD_ID
+    )
+    assert source_method.status == "configured"
+    assert source_method.qualified_gate_ids == ("G4",)
+    assert source_method.evidence_source == "server_brokered_live"
+    assert all(
+        method.status == "configured" and not method.qualified_gate_ids
+        for method in source_catalog.methods
+        if method.evidence_source == "normalized_import"
+    )
     manifest = _live_manifest(
         f"declared-shift-{verdict}", suite_id, suite_store, track_ids=("routing",)
     ).with_semantic_updates(sample_limit=2)
@@ -128,7 +147,7 @@ def test_registered_pinned_pairs_get_server_portable_live_g4_candidate(
     ]
     methods = [row.robustness for row in records if row.robustness is not None]
     assert len(methods) == 1
-    assert methods[0].method_id == "declared-shift.server-live.v1"
+    assert methods[0].method_id == DECLARED_SHIFT_LIVE_METHOD_ID
     assert methods[0].suite_id == suite_id
     assert all(
         row.evidence_kind == "declared-shift.server-live.v1;level=E4"
@@ -191,6 +210,16 @@ def test_unverified_parser_or_native_count_drift_never_gets_live_g4_candidate(
         suite_store,
         registered=registered,
         native_pair_count=native_pair_count,
+    )
+    if registered:
+        with pytest.raises(SuiteStoreError, match="native pair count drifted"):
+            _catalog(suite_store).get(suite_id)
+        return
+    source_catalog = _catalog(suite_store).get(suite_id)
+    assert source_catalog.evidence_level == "E0"
+    assert source_catalog.modes == ("replay",)
+    assert all(
+        method.id != DECLARED_SHIFT_LIVE_METHOD_ID for method in source_catalog.methods
     )
     manifest = suite_store.get_suite_manifest(suite_id)
     selected, _ = load_selected_cases(

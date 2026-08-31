@@ -49,14 +49,9 @@
 
 .sourceGrid select {
   width: 100%;
-  min-height: 38px;
-  border-radius: var(--radius-md);
+  min-height: var(--control-height);
+  border-radius: var(--control-radius);
   background: var(--surface-shell);
-}
-
-.sourceGrid select option {
-  background: var(--surface-panel);
-  color: var(--text-primary);
 }
 
 .pairAction {
@@ -87,8 +82,9 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   margin: 0;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: 0;
 }
 
 .progress > div {
@@ -128,7 +124,7 @@
   gap: 0.75rem;
   padding: 0.65rem 0.7rem;
   border-left: 2px solid var(--color-danger);
-  background: rgba(239, 68, 68, 0.045);
+  background: transparent;
   color: #ffb0b3;
   font-size: 0.7rem;
   line-height: 1.45;
@@ -137,7 +133,7 @@
 .ready {
   padding: 0.6rem 0.7rem;
   border-left: 2px solid var(--color-success);
-  background: rgba(74, 222, 128, 0.035);
+  background: transparent;
   color: #a5f3c1;
   font-size: 0.7rem;
 }

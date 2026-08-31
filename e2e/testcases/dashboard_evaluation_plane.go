@@ -50,10 +50,11 @@ type dashboardEvaluationReport struct {
 		ChangeProfile string `json:"change_profile"`
 		EvidenceLevel string `json:"evidence_level"`
 	} `json:"run"`
-	Summary   evaluationReportSummary `json:"summary"`
-	Tracks    []evaluationTrackReport `json:"tracks"`
-	Gates     []evaluationGate        `json:"gates"`
-	Artifacts []evaluationArtifact    `json:"artifacts"`
+	Summary       evaluationReportSummary `json:"summary"`
+	Tracks        []evaluationTrackReport `json:"tracks"`
+	Gates         []evaluationGate        `json:"gates"`
+	Artifacts     []evaluationArtifact    `json:"artifacts"`
+	MethodReports []json.RawMessage       `json:"method_reports"`
 }
 
 type evaluationReportSummary struct {
@@ -232,9 +233,9 @@ func verifyEvaluationAPIGuards(ctx context.Context, client *http.Client, baseURL
 		"sample_limit":   4, "concurrency": 1, "seed": 1, "auto_start": true,
 	}
 	if err := evaluationJSON(ctx, client, http.MethodPost, baseURL+"/api/evaluation/v1/runs", token, invalid, nil, http.StatusBadRequest); err != nil {
-		return fmt.Errorf("auto_start authorization guard: %w", err)
+		return fmt.Errorf("removed workflow field guard: %w", err)
 	}
-	invalid["auto_start"] = false
+	delete(invalid, "auto_start")
 	invalid["unexpected_field"] = "schema drift"
 	if err := evaluationJSON(ctx, client, http.MethodPost, baseURL+"/api/evaluation/v1/runs", token, invalid, nil, http.StatusBadRequest); err != nil {
 		return fmt.Errorf("strict evaluation request guard: %w", err)
@@ -315,7 +316,6 @@ func createEvaluationRun(
 		"sample_limit":   8,
 		"concurrency":    2,
 		"seed":           seed,
-		"auto_start":     false,
 	}
 	if baselineID != "" {
 		payload["baseline_run_id"] = baselineID
@@ -437,6 +437,9 @@ func verifyEvaluationReportGates(report dashboardEvaluationReport) error {
 }
 
 func verifyEvaluationReportArtifacts(report dashboardEvaluationReport) error {
+	if report.MethodReports == nil {
+		return fmt.Errorf("evaluation report method_reports must be a non-null collection")
+	}
 	if len(report.Artifacts) == 0 {
 		return fmt.Errorf("report must include artifacts")
 	}

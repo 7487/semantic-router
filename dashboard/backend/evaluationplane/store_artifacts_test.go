@@ -87,15 +87,22 @@ func sealTestReport(t *testing.T, service *Service, runID string) {
 		t.Fatalf("read run for test seal: %v", err)
 	}
 	now := time.Now().UTC()
-	run.Status = StatusCompleted
-	if run.StartedAt == nil {
-		run.StartedAt = &now
-	}
-	run.CompletedAt = &now
-	run.Error = ""
-	run.Progress = RunProgress{Percent: 100, Completed: len(run.TrackIDs), Total: len(run.TrackIDs), Message: "Evaluation completed"}
-	if updateErr := service.store.UpdateRun(run); updateErr != nil {
-		t.Fatalf("complete test run: %v", updateErr)
+	if terminalStatus(run.Status) {
+		if run.Status != StatusCompleted || run.CompletedAt == nil {
+			t.Fatalf("seal test report requires a completed run, got %s", run.Status)
+		}
+		now = run.CompletedAt.UTC()
+	} else {
+		run.Status = StatusCompleted
+		if run.StartedAt == nil {
+			run.StartedAt = &now
+		}
+		run.CompletedAt = &now
+		run.Error = ""
+		run.Progress = RunProgress{Percent: 100, Completed: len(run.TrackIDs), Total: len(run.TrackIDs), Message: "Evaluation completed"}
+		if updateErr := service.store.UpdateRun(run); updateErr != nil {
+			t.Fatalf("complete test run: %v", updateErr)
+		}
 	}
 	reportBytes, reportErr := service.store.ReadReport(runID)
 	if reportErr != nil {

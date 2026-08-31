@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { EvaluationCatalogCampaignSlot, EvaluationRun } from '../types/evaluationPlane'
 import { decodeEvaluationCatalog } from './evaluationCatalogContract'
+import { buildEvaluationRoutingRecipePlan } from '../test/evaluationRoutingRecipeFixture'
 import {
   decodeEvaluationRun,
   decodeEvaluationRunEvent,
@@ -51,7 +52,7 @@ const run: EvaluationRun = {
   completed_at: '2026-08-30T00:01:00Z',
 }
 
-const mixture = {
+const mixtureBase = {
   id: 'mom-live',
   entrypoint_model: 'quality-router',
   aliases: ['quality-router'],
@@ -74,6 +75,10 @@ const mixture = {
   ],
   support_models: [],
   decisions: [{ name: 'route', algorithm: 'semantic', arm_ids: ['arm-a'] }],
+}
+const mixture = {
+  ...mixtureBase,
+  routing_recipe_plan: buildEvaluationRoutingRecipePlan(mixtureBase),
 }
 
 describe('evaluation current-contract codec', () => {

@@ -43,9 +43,14 @@ func (s *Store) validateCampaignRunReferencesUnlocked(campaign Campaign) error {
 			anchor.CreatedAt.After(campaign.CreatedAt) {
 			return fmt.Errorf("campaign evidence anchor does not match its sealed run")
 		}
-		manifest, err := readEvidenceBytes(filepath.Join(runDir, manifestFileName), maxStructuredArtifactBytes)
-		if err != nil || digestBytes(manifest) != expected.ManifestArtifactDigest {
+		manifestPath := filepath.Join(runDir, manifestFileName)
+		manifestBytes, err := readEvidenceBytes(manifestPath, maxStructuredArtifactBytes)
+		if err != nil || digestBytes(manifestBytes) != expected.ManifestArtifactDigest {
 			return fmt.Errorf("campaign manifest evidence is unavailable or changed")
+		}
+		manifest, _, err := readRunManifestStrict(manifestPath)
+		if err != nil || manifest.RunID != expected.RunID || manifest.ManifestDigest != expected.ManifestSemanticDigest {
+			return fmt.Errorf("campaign manifest contract is unavailable or changed")
 		}
 		report, err := s.ReadReport(expected.RunID)
 		if err != nil {
@@ -62,7 +67,7 @@ func (s *Store) validateCampaignRunReferencesUnlocked(campaign Campaign) error {
 			return fmt.Errorf("campaign private receipt is unavailable or changed")
 		}
 		if expected.ExecutionAttestationDigest != "" {
-			attestation, attestationErr := s.readExecutionAttestation(expected.RunID)
+			attestation, attestationErr := s.readExecutionAttestationForManifest(expected.RunID, manifest)
 			if attestationErr != nil || attestation.Digest != expected.ExecutionAttestationDigest {
 				return fmt.Errorf("campaign execution attestation is unavailable or changed")
 			}

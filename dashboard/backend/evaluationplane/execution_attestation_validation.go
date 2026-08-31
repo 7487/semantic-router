@@ -110,7 +110,7 @@ func (s *Service) persistExecutionAttestationDuringPublication(
 	if err != nil {
 		return "", err
 	}
-	if err := s.store.writeLifecycleBoundExecutionAttestationDuringPublication(attestation); err != nil {
+	if err := s.store.writeLifecycleBoundExecutionAttestationDuringPublication(attestation, manifest); err != nil {
 		return "", err
 	}
 	return attestation.Digest, nil
@@ -355,6 +355,15 @@ func validateBrokerMixtureBinding(mixture *ManifestMixture, entry executionAttes
 		}
 		return nil
 	}
+	if entry.Operation == workerBrokerRouterEvaluate && entry.RoutingRecipeDecision != nil {
+		switch entry.RoutingRecipeDecision.SelectionStatus {
+		case "abstained", "error", "unavailable":
+			if entry.SelectedModel != nil || entry.ArmID != nil {
+				return fmt.Errorf("non-final routing decision claims a selected frozen arm")
+			}
+			return nil
+		}
+	}
 	if entry.SelectedModel == nil || entry.ArmID == nil {
 		return fmt.Errorf("successful routed request omitted its resolved frozen arm")
 	}
@@ -503,6 +512,9 @@ func validateBrokerRecord(
 	if expectedOperation == "" || entry.Operation != expectedOperation {
 		return fmt.Errorf("broker operation does not own the record track")
 	}
+	if err := validateBrokerCaseRequestBinding(entry, record, cases); err != nil {
+		return err
+	}
 	if record.Success == nil || *record.Success != entry.Success ||
 		(record.Status == "succeeded") != entry.Success || record.Status == "unavailable" {
 		return fmt.Errorf("record outcome differs from the broker response")
@@ -558,6 +570,22 @@ func validateBrokerRecord(
 		}
 	default:
 		return fmt.Errorf("record track has no server broker attestation contract")
+	}
+	return nil
+}
+
+func validateBrokerCaseRequestBinding(
+	entry executionAttestationEntry,
+	record executionRecordEvidence,
+	cases visibleCaseSet,
+) error {
+	messageDigest, planned := cases.MessageDigests[record.CaseID]
+	if !planned || entry.RequestedModel == nil {
+		return fmt.Errorf("broker request omits its server-sealed case input")
+	}
+	expected, err := brokerRequestDigestForMessages(entry.Operation, *entry.RequestedModel, messageDigest)
+	if err != nil || entry.RequestDigest != expected {
+		return fmt.Errorf("broker request payload differs from the server-sealed visible case")
 	}
 	return nil
 }

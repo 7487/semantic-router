@@ -1,13 +1,20 @@
 import type { EvaluationReport } from '../../types/evaluationReport'
 import useEvaluationReportDiagnostics from '../../hooks/useEvaluationReportDiagnostics'
 import EvaluationMetricTable from './EvaluationMetricTable'
+import EvaluationMethodResults from './EvaluationMethodResults'
 import EvaluationMixtureReport from './EvaluationMixtureReport'
 import EvaluationReportDecision from './EvaluationReportDecision'
 import EvaluationReportDiagnostics from './EvaluationReportDiagnostics'
 import EvaluationReportDisclosures from './EvaluationReportDisclosures'
 import EvaluationReportTracks from './EvaluationReportTracks'
+import EvaluationRoutingRecipeReport from './EvaluationRoutingRecipeReport'
 import { evaluationPromotionVerdict } from './evaluationPresentation'
-import { CoverageBar, GateVerdictBadge, RunStatusBadge } from './EvaluationPrimitives'
+import {
+  CoverageBar,
+  EvaluationTag,
+  GateVerdictBadge,
+  RunStatusBadge,
+} from './EvaluationPrimitives'
 import heroStyles from './EvaluationReportHero.module.css'
 import styles from './EvaluationReportLayout.module.css'
 
@@ -25,10 +32,10 @@ export default function EvaluationReportView({ report }: { report: EvaluationRep
           <div className={heroStyles.heroBadges}>
             <RunStatusBadge status={report.run.status} />
             <GateVerdictBadge verdict={evaluationPromotionVerdict(report)} disposition="required" />
-            <span>{report.run.evidence_level} evidence</span>
-            <span>{report.run.mode}</span>
-            <span>{report.run.change_profile}</span>
-            <span>{report.attestation_revision}</span>
+            <EvaluationTag tone="info">{report.run.evidence_level} evidence</EvaluationTag>
+            <EvaluationTag>{report.run.mode}</EvaluationTag>
+            <EvaluationTag>{report.run.change_profile}</EvaluationTag>
+            <EvaluationTag mono>{report.attestation_revision}</EvaluationTag>
           </div>
         </div>
         <div>
@@ -51,6 +58,13 @@ export default function EvaluationReportView({ report }: { report: EvaluationRep
 
       <EvaluationMixtureReport report={report} />
       <EvaluationReportDecision report={report} />
+      {report.run.mixture && report.routing_recipe_report ? (
+        <EvaluationRoutingRecipeReport
+          plan={report.run.mixture.routing_recipe_plan}
+          report={report.routing_recipe_report}
+        />
+      ) : null}
+      <EvaluationMethodResults report={report} />
 
       <section className={styles.section} aria-labelledby="report-metrics-title">
         <div className={styles.sectionHeader}>
@@ -78,7 +92,7 @@ export default function EvaluationReportView({ report }: { report: EvaluationRep
             </p>
           </div>
         </div>
-        <EvaluationReportDiagnostics {...diagnostics} />
+        <EvaluationReportDiagnostics metrics={report.metrics} {...diagnostics} />
       </section>
 
       <EvaluationReportTracks report={report} />

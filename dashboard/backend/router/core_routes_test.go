@@ -320,6 +320,32 @@ func TestRegisterEvaluationPlaneRoutesExposeCurrentContract(t *testing.T) {
 	if ledgerResponse.Code != http.StatusOK || json.NewDecoder(ledgerResponse.Body).Decode(&ledger) != nil || !ledger.LedgerComplete || len(ledger.Runs) != 1 {
 		t.Fatalf("run ledger route status=%d body=%s", ledgerResponse.Code, ledgerResponse.Body.String())
 	}
+
+	proxyCalls := 0
+	mux.HandleFunc("/api/", func(w http.ResponseWriter, _ *http.Request) {
+		proxyCalls++
+		w.WriteHeader(http.StatusBadGateway)
+	})
+	for _, unknownPath := range []string{
+		"/api/evaluation",
+		"/api/evaluation/",
+		"/api/evaluation/tasks",
+		"/api/evaluation/tasks/obsolete-run",
+		"/api/evaluation/datasets",
+		"/api/evaluation/v1/unknown",
+	} {
+		response := httptest.NewRecorder()
+		mux.ServeHTTP(response, httptest.NewRequest(http.MethodGet, unknownPath, nil))
+		if response.Code != http.StatusNotFound {
+			t.Fatalf("unknown Evaluation route %s status=%d, want 404", unknownPath, response.Code)
+		}
+		if response.Header().Get("Cache-Control") != "private, no-store" {
+			t.Fatalf("unknown Evaluation route %s Cache-Control=%q", unknownPath, response.Header().Get("Cache-Control"))
+		}
+	}
+	if proxyCalls != 0 {
+		t.Fatalf("unknown Evaluation routes reached /api/ fallback %d times", proxyCalls)
+	}
 }
 
 func TestRegisterEvaluationPlaneRoutesFreezeUnavailableState(t *testing.T) {
@@ -354,6 +380,28 @@ func TestRegisterEvaluationPlaneRoutesFreezeUnavailableState(t *testing.T) {
 			t.Fatalf("public reason leaked server path: %q", cfg.EvaluationUnavailableReason)
 		}
 	})
+}
+
+func TestEvaluationNamespaceBoundaryRemainsClosedWhenDisabled(t *testing.T) {
+	mux := http.NewServeMux()
+	registerEvaluationRoutes(mux, &config.Config{EvaluationEnabled: false})
+	proxyCalls := 0
+	mux.HandleFunc("/api/", func(w http.ResponseWriter, _ *http.Request) {
+		proxyCalls++
+		w.WriteHeader(http.StatusBadGateway)
+	})
+
+	response := httptest.NewRecorder()
+	mux.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/evaluation/tasks/obsolete-run/start", nil))
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("disabled Evaluation namespace status=%d, want 404 body=%s", response.Code, response.Body.String())
+	}
+	if response.Header().Get("Cache-Control") != "private, no-store" {
+		t.Fatalf("disabled Evaluation namespace Cache-Control=%q", response.Header().Get("Cache-Control"))
+	}
+	if proxyCalls != 0 {
+		t.Fatalf("disabled Evaluation namespace reached /api/ fallback %d times", proxyCalls)
+	}
 }
 
 func TestEvaluationRoutesFailClosedWhenOnlyManagementCredentialExists(t *testing.T) {

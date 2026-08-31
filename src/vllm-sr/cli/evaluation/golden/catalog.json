@@ -49,14 +49,13 @@
         {
           "gate_id": "G5",
           "name": "Live fidelity",
-          "description": "Reference-to-fresh-live agreement on an exact candidate and case cohort.",
+          "description": "Reference-to-fresh-live agreement on the exact live-mom-core candidate and joint case cohort.",
           "disposition": "advisory",
           "binding_kind": "fidelity_pair",
           "track_id": "joint",
           "mode": "live",
           "minimum_evidence_level": "E5",
           "accepted_executor_ids": [
-            "normalized-suite-live.v1",
             "live-runtime.v1"
           ]
         },
@@ -161,14 +160,13 @@
         {
           "gate_id": "G5",
           "name": "Live fidelity",
-          "description": "Reference-to-fresh-live agreement on an exact candidate and case cohort.",
+          "description": "Reference-to-fresh-live agreement on the exact live-mom-core candidate and joint case cohort.",
           "disposition": "required",
           "binding_kind": "fidelity_pair",
           "track_id": "joint",
           "mode": "live",
           "minimum_evidence_level": "E5",
           "accepted_executor_ids": [
-            "normalized-suite-live.v1",
             "live-runtime.v1"
           ]
         },
@@ -273,14 +271,13 @@
         {
           "gate_id": "G5",
           "name": "Live fidelity",
-          "description": "Reference-to-fresh-live agreement on an exact candidate and case cohort.",
+          "description": "Reference-to-fresh-live agreement on the exact live-mom-core candidate and joint case cohort.",
           "disposition": "required",
           "binding_kind": "fidelity_pair",
           "track_id": "joint",
           "mode": "live",
           "minimum_evidence_level": "E5",
           "accepted_executor_ids": [
-            "normalized-suite-live.v1",
             "live-runtime.v1"
           ]
         },
@@ -385,14 +382,13 @@
         {
           "gate_id": "G5",
           "name": "Live fidelity",
-          "description": "Reference-to-fresh-live agreement on an exact candidate and case cohort.",
+          "description": "Reference-to-fresh-live agreement on the exact live-mom-core candidate and joint case cohort.",
           "disposition": "required",
           "binding_kind": "fidelity_pair",
           "track_id": "joint",
           "mode": "live",
           "minimum_evidence_level": "E5",
           "accepted_executor_ids": [
-            "normalized-suite-live.v1",
             "live-runtime.v1"
           ]
         },
@@ -497,14 +493,13 @@
         {
           "gate_id": "G5",
           "name": "Live fidelity",
-          "description": "Reference-to-fresh-live agreement on an exact candidate and case cohort.",
+          "description": "Reference-to-fresh-live agreement on the exact live-mom-core candidate and joint case cohort.",
           "disposition": "required",
           "binding_kind": "fidelity_pair",
           "track_id": "joint",
           "mode": "live",
           "minimum_evidence_level": "E5",
           "accepted_executor_ids": [
-            "normalized-suite-live.v1",
             "live-runtime.v1"
           ]
         },
@@ -720,14 +715,13 @@
         {
           "gate_id": "G5",
           "name": "Live fidelity",
-          "description": "Reference-to-fresh-live agreement on an exact candidate and case cohort.",
+          "description": "Reference-to-fresh-live agreement on the exact live-mom-core candidate and joint case cohort.",
           "disposition": "required",
           "binding_kind": "fidelity_pair",
           "track_id": "joint",
           "mode": "live",
           "minimum_evidence_level": "E5",
           "accepted_executor_ids": [
-            "normalized-suite-live.v1",
             "live-runtime.v1"
           ]
         },
@@ -796,15 +790,20 @@
         "live"
       ],
       "metrics": [
-        "routing.coverage",
-        "routing.accuracy",
         "routing.abstention_rate",
+        "routing.accuracy",
+        "routing.coverage",
         "routing.fallback_rate",
-        "routing.success_rate",
-        "routing.selection_entropy_bits",
-        "routing.selected_arm_count",
         "routing.latency_p50_ms",
-        "routing.latency_p95_ms"
+        "routing.latency_p95_ms",
+        "routing.robustness_pass_rate",
+        "routing.robustness_worst_slice_pass_rate",
+        "routing.selected_arm_count",
+        "routing.selection_entropy_bits",
+        "routing.success_rate",
+        "routing_recipe.e1.eligibility_complete_rate",
+        "routing_recipe.e1.selected_feasible_rate",
+        "routing_recipe.e2.oracle_regret"
       ],
       "evidence_levels": [
         "E0",
@@ -821,20 +820,28 @@
         "live"
       ],
       "metrics": [
+        "model_pool.all_arm_failure_rate",
         "model_pool.arm_count",
         "model_pool.best_single_quality",
-        "model_pool.oracle_quality",
-        "model_pool.oracle_gain",
-        "model_pool.unique_wins",
-        "model_pool.unique_win_rate",
-        "model_pool.selection_entropy_bits",
-        "model_pool.selection_arm_coverage",
-        "model_pool.quality_dominated_arm_count",
-        "model_pool.pareto_evaluable_arm_count",
-        "model_pool.pareto_dominated_arm_count",
         "model_pool.mean_pairwise_failure_jaccard",
+        "model_pool.oracle_gain",
+        "model_pool.oracle_quality",
+        "model_pool.pareto_dominated_arm_count",
+        "model_pool.pareto_evaluable_arm_count",
+        "model_pool.quality_cost_shared_support_cases",
+        "model_pool.quality_cost_shared_support_fraction",
+        "model_pool.quality_dominated_arm_count",
+        "model_pool.quality_shared_support_cases",
+        "model_pool.quality_shared_support_fraction",
+        "model_pool.selection_arm_coverage",
+        "model_pool.selection_entropy_bits",
+        "model_pool.unique_win_rate",
+        "model_pool.unique_wins",
         "model_pool.worst_arm_reliability",
-        "model_pool.all_arm_failure_rate"
+        "r2.compound_model_budget.audc",
+        "r2.compound_model_budget.nauc",
+        "r2.compound_model_budget.peak",
+        "r2.compound_model_budget.qnc"
       ],
       "evidence_levels": [
         "E0",
@@ -850,13 +857,13 @@
         "live"
       ],
       "metrics": [
-        "joint.realized_quality",
-        "joint.oracle_regret",
+        "joint.latency_p95_ms",
         "joint.normalized_regret",
-        "joint.reliability",
         "joint.oracle_capture_ratio",
-        "joint.runtime_cost_per_success",
-        "joint.latency_p95_ms"
+        "joint.oracle_regret",
+        "joint.realized_quality",
+        "joint.reliability",
+        "joint.runtime_cost_per_success"
       ],
       "evidence_levels": [
         "E0",
@@ -872,31 +879,39 @@
         "live"
       ],
       "metrics": [
-        "agentic.success_rate",
-        "agentic.task_score",
         "agentic.invalid_tool_rate",
         "agentic.mean_trajectory_steps",
         "agentic.privacy_exposures_per_trajectory",
-        "agentic.runtime_cost_per_success",
-        "agentic.task_attempt_count",
-        "agentic.task_distinct_count",
-        "agentic.task_attempt_success_rate",
-        "agentic.task_attempt_success_rate_lower_95",
-        "agentic.task_reliability",
-        "agentic.task_reliability_lower_95",
-        "agentic.task_mean_score",
-        "agentic.task_mean_steps",
-        "agentic.task_invalid_tool_rate",
-        "agentic.task_tool_required_attempt_count",
-        "agentic.task_pure_reasoning_attempt_count",
-        "agentic.task_required_tool_receipt_coverage",
-        "agentic.task_privacy_exposures_per_attempt",
-        "agentic.task_total_cost_usd",
-        "agentic.task_cost_per_success_usd",
+        "agentic.recovery_baseline_success_rate",
+        "agentic.recovery_distinct_seed_count",
+        "agentic.recovery_max_retry_amplification",
+        "agentic.recovery_maximum_latency_ms",
+        "agentic.recovery_mean_latency_delta_ms",
+        "agentic.recovery_minimum_distinct_seed_count",
+        "agentic.recovery_pair_count",
         "agentic.recovery_pass_rate",
         "agentic.recovery_pass_rate_lower_95",
-        "agentic.recovery_pair_count",
-        "agentic.recovery_seed_count"
+        "agentic.recovery_retry_amplification_threshold",
+        "agentic.recovery_success_delta",
+        "agentic.recovery_treatment_success_rate",
+        "agentic.runtime_cost_per_success",
+        "agentic.success_rate",
+        "agentic.task_attempt_count",
+        "agentic.task_attempt_success_rate",
+        "agentic.task_attempt_success_rate_lower_95",
+        "agentic.task_cost_per_success_usd",
+        "agentic.task_distinct_count",
+        "agentic.task_invalid_tool_rate",
+        "agentic.task_mean_score",
+        "agentic.task_mean_steps",
+        "agentic.task_privacy_exposures_per_attempt",
+        "agentic.task_pure_reasoning_attempt_count",
+        "agentic.task_reliability",
+        "agentic.task_reliability_lower_95",
+        "agentic.task_required_tool_receipt_coverage",
+        "agentic.task_score",
+        "agentic.task_tool_required_attempt_count",
+        "agentic.task_total_cost_usd"
       ],
       "evidence_levels": [
         "E0",
@@ -912,9 +927,9 @@
         "live"
       ],
       "metrics": [
-        "multimodal.support_rate",
+        "multimodal.privacy_violations",
         "multimodal.quality",
-        "multimodal.privacy_violations"
+        "multimodal.support_rate"
       ],
       "evidence_levels": [
         "E0",
@@ -931,25 +946,35 @@
         "live"
       ],
       "metrics": [
+        "experiment.assignment_balance_p_value",
+        "experiment.assignment_support",
+        "experiment.candidate_safe",
+        "experiment.controls_operational",
+        "experiment.minimum_assignment_count",
+        "experiment.risk_budget_max_rate",
+        "experiment.risk_event_rate",
+        "experiment.risk_event_upper_confidence_bound",
         "preference.agreement",
-        "preference.propensity_coverage",
-        "preference.effective_sample_size",
         "preference.effective_sample_ratio",
-        "preference.self_normalized_ips_agreement",
-        "preference.online_assignment_count",
-        "preference.online_exposure_coverage",
-        "preference.online_effective_sample_size",
+        "preference.effective_sample_size",
+        "preference.minimum_reward_lift",
+        "preference.online_causal_eligible",
         "preference.online_effective_sample_ratio",
-        "preference.online_segment_coverage",
-        "preference.online_target_snips_reward",
-        "preference.online_reference_snips_reward",
+        "preference.online_effective_sample_size",
+        "preference.online_ips_reward",
+        "preference.online_minimum_effective_sample_ratio",
+        "preference.online_minimum_effective_sample_size",
+        "preference.online_outcome_coverage",
         "preference.online_reward_lift",
-        "preference.online_reward_lift_ci_lower_95",
-        "preference.online_reward_lift_ci_upper_95",
-        "preference.production_srm_p_value",
-        "preference.production_risk_event_rate",
-        "preference.production_risk_event_rate_upper_95",
-        "preference.production_risk_budget_max_rate"
+        "preference.online_reward_lift_passed",
+        "preference.online_segment_count",
+        "preference.online_segment_coverage",
+        "preference.online_snips_reward",
+        "preference.propensity_coverage",
+        "preference.reference_effective_sample_ratio",
+        "preference.reference_effective_sample_size",
+        "preference.reference_snips_reward",
+        "preference.self_normalized_ips_agreement"
       ],
       "evidence_levels": [
         "E0",
@@ -966,14 +991,14 @@
         "live"
       ],
       "metrics": [
-        "safety.violation_rate",
-        "safety.violation_case_rate",
-        "safety.violation_upper_95",
         "safety.block_accuracy",
         "safety.false_negative_rate",
         "safety.false_positive_rate",
+        "safety.hard_policy_observation_count",
         "safety.hard_policy_static_passed",
-        "safety.hard_policy_observation_count"
+        "safety.violation_case_rate",
+        "safety.violation_rate",
+        "safety.violation_upper_95"
       ],
       "evidence_levels": [
         "E0",
@@ -990,22 +1015,22 @@
         "live"
       ],
       "metrics": [
-        "capacity.throughput_rps",
-        "capacity.latency_p95_ms",
-        "capacity.latency_p99_ms",
-        "capacity.success_rate",
+        "capacity.cost_per_successful_request",
         "capacity.error_rate",
         "capacity.error_rate_upper_bound",
-        "capacity.throughput_stability_cv_max",
+        "capacity.latency_p95_ms",
         "capacity.latency_p95_stability_cv_max",
+        "capacity.latency_p99_ms",
         "capacity.measurement_request_count",
-        "capacity.warmup_error_count",
         "capacity.saturation_concurrency",
         "capacity.saturation_concurrency_lower_bound",
         "capacity.saturation_observed",
         "capacity.slo_headroom",
-        "capacity.cost_per_successful_request",
-        "capacity.success_concurrency_upper_bound"
+        "capacity.success_concurrency_upper_bound",
+        "capacity.success_rate",
+        "capacity.throughput_rps",
+        "capacity.throughput_stability_cv_max",
+        "capacity.warmup_error_count"
       ],
       "evidence_levels": [
         "E0",

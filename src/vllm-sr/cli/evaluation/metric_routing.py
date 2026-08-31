@@ -73,6 +73,7 @@ def routing_metrics(records: list[ExecutionRecord]) -> list[EvaluationMetric]:
             "fraction",
             "higher_is_better",
             reduced.total,
+            planned_analysis_units=reduced.total,
         ),
         _metric(
             "routing.abstention_rate",
@@ -86,6 +87,7 @@ def routing_metrics(records: list[ExecutionRecord]) -> list[EvaluationMetric]:
             "fraction",
             "lower_is_better",
             reduced.total,
+            planned_analysis_units=reduced.total,
         ),
         _metric(
             "routing.accuracy",
@@ -95,6 +97,7 @@ def routing_metrics(records: list[ExecutionRecord]) -> list[EvaluationMetric]:
             "fraction",
             "higher_is_better",
             reduced.accuracy_count,
+            planned_analysis_units=reduced.total,
         ),
         _metric(
             "routing.fallback_rate",
@@ -104,6 +107,7 @@ def routing_metrics(records: list[ExecutionRecord]) -> list[EvaluationMetric]:
             "fraction",
             "lower_is_better",
             reduced.total,
+            planned_analysis_units=reduced.total,
         ),
         _metric(
             "routing.success_rate",
@@ -113,6 +117,7 @@ def routing_metrics(records: list[ExecutionRecord]) -> list[EvaluationMetric]:
             "fraction",
             "higher_is_better",
             reduced.success_count,
+            planned_analysis_units=reduced.total,
         ),
         _metric(
             "routing.selection_entropy_bits",
@@ -122,6 +127,7 @@ def routing_metrics(records: list[ExecutionRecord]) -> list[EvaluationMetric]:
             "bits",
             "target",
             reduced.selected_count,
+            planned_analysis_units=reduced.total,
         ),
         _metric(
             "routing.selected_arm_count",
@@ -131,6 +137,7 @@ def routing_metrics(records: list[ExecutionRecord]) -> list[EvaluationMetric]:
             "arms",
             "target",
             reduced.selected_count,
+            planned_analysis_units=reduced.total,
         ),
         _metric(
             "routing.latency_p50_ms",
@@ -140,6 +147,7 @@ def routing_metrics(records: list[ExecutionRecord]) -> list[EvaluationMetric]:
             "ms",
             "lower_is_better",
             len(reduced.latencies),
+            planned_analysis_units=reduced.total,
         ),
         _metric(
             "routing.latency_p95_ms",
@@ -149,5 +157,6 @@ def routing_metrics(records: list[ExecutionRecord]) -> list[EvaluationMetric]:
             "ms",
             "lower_is_better",
             len(reduced.latencies),
+            planned_analysis_units=reduced.total,
         ),
     ]

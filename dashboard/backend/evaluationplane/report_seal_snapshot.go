@@ -83,11 +83,11 @@ func (s *Service) buildSealedEvidenceSnapshot(runID string, checksums map[string
 	return entries, nil
 }
 
-func (s *Service) verifySealedEvidenceSnapshot(runID string, entries []sealedEvidenceFile, receipt []byte) error {
+func (s *Store) verifySealedEvidenceSnapshot(runID string, entries []sealedEvidenceFile, receipt []byte) error {
 	if err := validateSealedEvidenceMetadata(entries); err != nil {
 		return err
 	}
-	runDir, err := s.store.checkedRunDir(runID)
+	runDir, err := s.checkedRunDir(runID)
 	if err != nil {
 		return err
 	}
@@ -143,7 +143,7 @@ func (s *Service) verifySealedEvidenceSnapshot(runID string, entries []sealedEvi
 		if !ok || entry.Digest != "sha256:"+digest {
 			return fmt.Errorf("%w: sealed CAS evidence receipt changed", ErrInvalid)
 		}
-		if err := verifyEvidenceFileMetadata(entry, filepath.Join(s.store.root, "objects", "sha256", digest)); err != nil {
+		if err := verifyEvidenceFileMetadata(entry, filepath.Join(s.root, "objects", "sha256", digest)); err != nil {
 			return err
 		}
 	}

@@ -82,6 +82,10 @@ func manifestMixtureCanonicalValue(mixture *ManifestMixture) (map[string]any, er
 	if err := validateMixtureContract(mixture); err != nil {
 		return nil, err
 	}
+	plan, err := canonicalRoutingRecipePlan(mixture.RoutingRecipePlan)
+	if err != nil {
+		return nil, fmt.Errorf("canonicalize routing recipe plan: %w", err)
+	}
 	arms, err := modelArmsCanonicalValue(mixture.ModelArms)
 	if err != nil {
 		return nil, err
@@ -104,6 +108,7 @@ func manifestMixtureCanonicalValue(mixture *ManifestMixture) (map[string]any, er
 		"selector_policy_digest": mixture.SelectorPolicyDigest, "selector_digest": mixture.SelectorDigest,
 		"adaptation_digest": mixture.AdaptationDigest, "binding_digest": mixture.BindingDigest, "model_arms": arms,
 		"support_models": supportModels, "decisions": decisions,
+		"routing_recipe_plan": copyRoutingRecipePlan(plan),
 	}
 	if mixture.FallbackArmID != "" {
 		value["fallback_arm_id"] = mixture.FallbackArmID

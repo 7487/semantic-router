@@ -2,8 +2,9 @@
   width: 100%;
   overflow-x: auto;
   overscroll-behavior-inline: contain;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: 0;
   scrollbar-gutter: stable;
 }
 

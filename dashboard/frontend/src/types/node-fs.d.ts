@@ -13,6 +13,7 @@ declare module 'node:fs' {
     path: string | URL,
     options: { withFileTypes: true },
   ): DirectoryEntry[]
+  export function readdirSync(path: string | URL): string[]
 
   export function readFileSync(path: string | URL, encoding: 'utf8'): string
   export function readFileSync(path: string | URL): NodeBuffer

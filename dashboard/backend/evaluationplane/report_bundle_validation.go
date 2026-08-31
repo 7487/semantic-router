@@ -216,17 +216,31 @@ func decodeLineageDocument(data []byte) (lineageDocument, error) {
 }
 
 func (s *Service) verifyReportAnchor(runID string, report []byte, attestationRevision string) error {
-	anchor, err := s.store.readReportAnchor(runID)
-	if err != nil {
-		return err
-	}
-	reportDigest, reportSize := digestAndSize(report)
 	manifest, manifestBytes, err := s.readDurableManifest(runID)
 	if err != nil {
 		return err
 	}
+	return s.store.verifyReportAnchorBundle(runID, report, attestationRevision, manifest, manifestBytes)
+}
+
+// verifyReportAnchorBundle is the single durable seal validator used by both
+// public report reads and controlled-pair source identity recovery. The caller
+// supplies the already-validated immutable manifest so recovery does not need
+// a Service or duplicate a weaker subset of the seal contract.
+func (s *Store) verifyReportAnchorBundle(
+	runID string,
+	report []byte,
+	attestationRevision string,
+	manifest RunManifest,
+	manifestBytes []byte,
+) error {
+	anchor, err := s.readReportAnchor(runID)
+	if err != nil {
+		return err
+	}
+	reportDigest, reportSize := digestAndSize(report)
 	manifestArtifactDigest, _ := digestAndSize(manifestBytes)
-	privateReceipt, err := readEvidenceBytes(filepath.Join(s.store.runsRoot, runID, privateChecksumArtifactName), maxStructuredArtifactBytes)
+	privateReceipt, err := readEvidenceBytes(filepath.Join(s.runsRoot, runID, privateChecksumArtifactName), maxStructuredArtifactBytes)
 	if err != nil {
 		return err
 	}
@@ -238,8 +252,11 @@ func (s *Service) verifyReportAnchor(runID string, report []byte, attestationRev
 		return fmt.Errorf("%w: evaluation report no longer matches its server-owned anchor", ErrInvalid)
 	}
 	if manifest.Mode == ModeLive {
-		attestation, attestationErr := s.store.readExecutionAttestation(runID)
-		if attestationErr != nil || anchor.ExecutionAttestationDigest != attestation.Digest {
+		attestation, attestationErr := s.readExecutionAttestationForManifest(runID, manifest)
+		if attestationErr != nil || anchor.ExecutionAttestationDigest != attestation.Digest ||
+			attestation.ManifestDigest != manifest.ManifestDigest || attestation.TargetID != manifest.Target.ID ||
+			attestation.Mode != manifest.Mode || attestation.PolicySnapshotDigest != manifest.PolicySnapshotDigest ||
+			attestation.BackendTopologyDigest != manifest.Target.BackendTopologyDigest {
 			return fmt.Errorf("%w: live execution attestation no longer matches its report anchor", ErrInvalid)
 		}
 	} else if anchor.ExecutionAttestationDigest != "" {

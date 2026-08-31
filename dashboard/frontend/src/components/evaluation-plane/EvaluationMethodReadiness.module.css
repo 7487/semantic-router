@@ -44,7 +44,7 @@
 .methodFilters input,
 .methodFilters select {
   width: 100%;
-  min-height: 38px;
+  min-height: var(--control-height);
 }
 
 .resultCount {
@@ -71,26 +71,6 @@
 
 .methodTable tbody th {
   width: 28%;
-}
-
-.methodStatus {
-  display: inline-flex;
-  align-items: center;
-  min-height: 24px;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  font-size: 0.68rem;
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.methodStatus[data-state='configured'] {
-  color: var(--color-info);
-}
-
-.methodStatus[data-state='data_required'] {
-  color: var(--color-warning);
 }
 
 .methodReason {

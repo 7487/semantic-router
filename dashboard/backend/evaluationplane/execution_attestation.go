@@ -9,34 +9,35 @@ import (
 const executionAttestationContractVersion = "evaluation-execution-attestation.v1"
 
 type executionAttestationEntry struct {
-	RequestID             uint64                     `json:"request_id"`
-	Operation             string                     `json:"operation"`
-	TrackID               TrackID                    `json:"track_id,omitempty"`
-	CaseID                string                     `json:"case_id,omitempty"`
-	AttemptID             string                     `json:"attempt_id,omitempty"`
-	RequestDigest         string                     `json:"request_digest"`
-	ResponseDigest        string                     `json:"response_digest"`
-	BrokerReceipt         string                     `json:"broker_receipt"`
-	UpstreamAttempted     bool                       `json:"upstream_attempted"`
-	Success               bool                       `json:"success"`
-	StatusCode            *int                       `json:"status_code"`
-	LatencyMicroseconds   int64                      `json:"latency_microseconds"`
-	FetchedAt             *time.Time                 `json:"fetched_at,omitempty"`
-	LedgerSealedAt        *time.Time                 `json:"ledger_sealed_at,omitempty"`
-	Headers               map[string]string          `json:"headers"`
-	RequestedModel        *string                    `json:"requested_model,omitempty"`
-	ArmID                 *string                    `json:"arm_id,omitempty"`
-	SelectedModel         *string                    `json:"selected_model,omitempty"`
-	SelectionStatus       *string                    `json:"selection_status,omitempty"`
-	SelectionMethod       *string                    `json:"selection_method,omitempty"`
-	Recipe                *string                    `json:"recipe,omitempty"`
-	DecisionName          *string                    `json:"decision_name,omitempty"`
-	Algorithm             *string                    `json:"algorithm,omitempty"`
-	InputTokens           *int64                     `json:"input_tokens,omitempty"`
-	OutputTokens          *int64                     `json:"output_tokens,omitempty"`
-	ResponseContentDigest *string                    `json:"response_content_digest,omitempty"`
-	Quality               *float64                   `json:"quality,omitempty"`
-	ControlledPair        *controlledPairObservation `json:"controlled_pair,omitempty"`
+	RequestID             uint64                         `json:"request_id"`
+	Operation             string                         `json:"operation"`
+	TrackID               TrackID                        `json:"track_id,omitempty"`
+	CaseID                string                         `json:"case_id,omitempty"`
+	AttemptID             string                         `json:"attempt_id,omitempty"`
+	RequestDigest         string                         `json:"request_digest"`
+	ResponseDigest        string                         `json:"response_digest"`
+	BrokerReceipt         string                         `json:"broker_receipt"`
+	UpstreamAttempted     bool                           `json:"upstream_attempted"`
+	Success               bool                           `json:"success"`
+	StatusCode            *int                           `json:"status_code"`
+	LatencyMicroseconds   int64                          `json:"latency_microseconds"`
+	FetchedAt             *time.Time                     `json:"fetched_at,omitempty"`
+	LedgerSealedAt        *time.Time                     `json:"ledger_sealed_at,omitempty"`
+	Headers               map[string]string              `json:"headers"`
+	RequestedModel        *string                        `json:"requested_model,omitempty"`
+	ArmID                 *string                        `json:"arm_id,omitempty"`
+	SelectedModel         *string                        `json:"selected_model,omitempty"`
+	SelectionStatus       *string                        `json:"selection_status,omitempty"`
+	SelectionMethod       *string                        `json:"selection_method,omitempty"`
+	Recipe                *string                        `json:"recipe,omitempty"`
+	DecisionName          *string                        `json:"decision_name,omitempty"`
+	Algorithm             *string                        `json:"algorithm,omitempty"`
+	InputTokens           *int64                         `json:"input_tokens,omitempty"`
+	OutputTokens          *int64                         `json:"output_tokens,omitempty"`
+	ResponseContentDigest *string                        `json:"response_content_digest,omitempty"`
+	Quality               *float64                       `json:"quality,omitempty"`
+	ControlledPair        *controlledPairObservation     `json:"controlled_pair,omitempty"`
+	RoutingRecipeDecision *RoutingRecipeDecisionSnapshot `json:"routing_recipe_decision,omitempty"`
 
 	responsePayload map[string]any `json:"-"`
 }
@@ -86,6 +87,7 @@ func brokerEntryReceipt(entry executionAttestationEntry) (string, error) {
 		"input_tokens": entry.InputTokens, "output_tokens": entry.OutputTokens,
 		"response_content_digest": entry.ResponseContentDigest,
 		"controlled_pair":         entry.ControlledPair,
+		"routing_recipe_decision": entry.RoutingRecipeDecision,
 	}
 	digest, err := canonicalValueDigest(subject)
 	if err != nil {

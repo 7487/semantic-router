@@ -24,6 +24,7 @@ type Store struct {
 	runsRoot             string
 	suiteRoot            string
 	attestationRoot      string
+	controlledPairRoot   string
 	lifecycleRoot        string
 	lifecycleAuditRoot   string
 	mu                   sync.Mutex
@@ -34,6 +35,8 @@ type Store struct {
 	lifecyclePersistence lifecyclePolicyPersistence
 	lifecycleAuditWriter lifecycleAuditWriter
 	statusPersistence    runStatusPersistence
+	pairPersistence      controlledPairPersistence
+	controlledPairFault  func(string) error
 }
 
 func NewStore(root string) (*Store, error) {
@@ -55,6 +58,7 @@ func newStoreWithLifecycleLimits(root string, requestedLimits LifecycleLimits) (
 	runsRoot := filepath.Join(absRoot, "runs")
 	suiteRoot := filepath.Join(absRoot, "suites")
 	attestationRoot := filepath.Join(absRoot, "attestations")
+	controlledPairRoot := filepath.Join(absRoot, "controlled-pairs")
 	lifecycleRoot := filepath.Join(absRoot, "lifecycle")
 	lifecycleAuditRoot := filepath.Join(lifecycleRoot, lifecycleAuditDirectoryName)
 	privateDirectories := []string{
@@ -65,6 +69,7 @@ func newStoreWithLifecycleLimits(root string, requestedLimits LifecycleLimits) (
 		runsRoot,
 		suiteRoot,
 		attestationRoot,
+		controlledPairRoot,
 		lifecycleRoot,
 		lifecycleAuditRoot,
 		filepath.Join(suiteRoot, "objects", "visible", "sha256"),
@@ -74,31 +79,31 @@ func newStoreWithLifecycleLimits(root string, requestedLimits LifecycleLimits) (
 		filepath.Join(suiteRoot, "index"),
 	}
 	for _, directory := range privateDirectories {
-		if err := os.MkdirAll(directory, 0o700); err != nil {
+		if err := ensureDurablePrivateDirectoryTree(directory); err != nil {
 			return nil, fmt.Errorf("create evaluation store directory: %w", err)
 		}
 		if err := requirePrivateDirectory(directory); err != nil {
 			return nil, err
 		}
 	}
-	if err := recoverStagedRunBundles(runsRoot); err != nil {
-		return nil, err
-	}
-	if err := recoverStagedCampaigns(filepath.Join(absRoot, "campaigns")); err != nil {
-		return nil, err
-	}
 	store := &Store{
 		root: absRoot, runsRoot: runsRoot, suiteRoot: suiteRoot, attestationRoot: attestationRoot,
-		lifecycleRoot: lifecycleRoot, lifecycleAuditRoot: lifecycleAuditRoot,
+		controlledPairRoot: controlledPairRoot,
+		lifecycleRoot:      lifecycleRoot, lifecycleAuditRoot: lifecycleAuditRoot,
 		runIndex:             sharedRunMetadataIndex(absRoot),
 		lifecycle:            sharedLifecycleCoordinator(absRoot),
 		lifecycleNow:         func() time.Time { return time.Now().UTC() },
 		lifecyclePersistence: atomicLifecyclePolicyPersistence{},
 		lifecycleAuditWriter: atomicLifecycleAuditWriter{},
 		statusPersistence:    atomicRunStatusPersistence{},
+		pairPersistence:      atomicControlledPairPersistence{},
 	}
 	store.lifecycle.mu.Lock()
 	if err := store.initializeLifecyclePolicyUnlocked(limits); err != nil {
+		store.lifecycle.mu.Unlock()
+		return nil, err
+	}
+	if err := recoverLifecycleAuditTemps(lifecycleAuditRoot); err != nil {
 		store.lifecycle.mu.Unlock()
 		return nil, err
 	}
@@ -106,11 +111,15 @@ func newStoreWithLifecycleLimits(root string, requestedLimits LifecycleLimits) (
 		store.lifecycle.mu.Unlock()
 		return nil, err
 	}
-	store.lifecycle.mu.Unlock()
-	if err := store.recoverExecutionAttestations(); err != nil {
+	runEvidencePublicationMu.Lock()
+	if err := recoverStagedCampaigns(filepath.Join(absRoot, "campaigns")); err != nil {
+		runEvidencePublicationMu.Unlock()
+		store.lifecycle.mu.Unlock()
 		return nil, err
 	}
-	if err := store.refreshRunIndex(); err != nil {
+	runEvidencePublicationMu.Unlock()
+	store.lifecycle.mu.Unlock()
+	if err := store.recoverLifecycleEvidenceAndIndex(); err != nil {
 		return nil, err
 	}
 	if err := store.validateLifecycleRunBindings(); err != nil {
@@ -124,6 +133,49 @@ func newStoreWithLifecycleLimits(root string, requestedLimits LifecycleLimits) (
 	}
 	store.recoverCASGarbage()
 	return store, nil
+}
+
+func ensureDurablePrivateDirectoryTree(path string) error {
+	return ensureDurablePrivateDirectoryTreeWithSync(path, syncEvaluationDirectory)
+}
+
+func ensureDurablePrivateDirectoryTreeWithSync(
+	path string,
+	syncDirectory func(string, string) error,
+) error {
+	path = filepath.Clean(path)
+	missing := make([]string, 0, 4)
+	for current := path; ; current = filepath.Dir(current) {
+		if _, err := os.Lstat(current); err == nil {
+			break
+		} else if !os.IsNotExist(err) {
+			return err
+		}
+		missing = append(missing, current)
+		parent := filepath.Dir(current)
+		if parent == current {
+			return fmt.Errorf("cannot locate existing parent for evaluation directory")
+		}
+	}
+	for index := len(missing) - 1; index >= 0; index-- {
+		directory := missing[index]
+		if err := os.Mkdir(directory, 0o700); err != nil && !os.IsExist(err) {
+			return err
+		}
+		if err := requirePrivateDirectory(directory); err != nil {
+			return err
+		}
+		if err := syncDirectory(filepath.Dir(directory), "evaluation directory hierarchy"); err != nil {
+			// The directory is still empty at this point. Remove the uncertain
+			// namespace entry so a retry must recreate and resync this same parent.
+			_ = os.Remove(directory)
+			return err
+		}
+	}
+	// Also sync an already-existing final entry. If an earlier process returned
+	// after mkdir but its parent fsync failed, this retry closes that exact
+	// durability uncertainty before descendants are used.
+	return syncDirectory(filepath.Dir(path), "evaluation directory hierarchy retry")
 }
 
 func (s *Store) Root() string { return s.root }
@@ -142,6 +194,15 @@ func (s *Store) GetRun(id string) (Run, error) {
 }
 
 func (s *Store) UpdateRun(run Run) error {
+	paired, err := s.acquireControlledPairMutationBarrier(run.ID)
+	if err != nil {
+		return err
+	}
+	defer s.releaseControlledPairMutationBarrier(paired)
+	return s.updateRunWithinLifecycle(run, paired)
+}
+
+func (s *Store) updateRunWithinLifecycle(run Run, paired bool) error {
 	if err := validateStoredRun(run.ID, run); err != nil {
 		return fmt.Errorf("%w: evaluation run status is invalid: %w", ErrInvalid, err)
 	}
@@ -152,6 +213,15 @@ func (s *Store) UpdateRun(run Run) error {
 	runDir, err := s.checkedRunDir(run.ID)
 	if err != nil {
 		return err
+	}
+	if paired {
+		current, err := s.getRunPhysical(run.ID)
+		if err != nil {
+			return err
+		}
+		if err := validateControlledPairStatusMutation(current, run); err != nil {
+			return err
+		}
 	}
 	if err := s.statusPersistence.Write(filepath.Join(runDir, runFileName), run); err != nil {
 		// Atomic publication may have completed before a directory sync error.
@@ -225,6 +295,17 @@ func (s *Store) WriteReport(id string, report any) error {
 }
 
 func (s *Store) checkedRunDir(id string) (string, error) {
+	runDir, err := s.checkedRunDirPhysical(id)
+	if err != nil {
+		return "", err
+	}
+	if _, _, err := s.controlledPairRunSnapshot(id, runDir); err != nil {
+		return "", err
+	}
+	return runDir, nil
+}
+
+func (s *Store) checkedRunDirPhysical(id string) (string, error) {
 	if err := validateResourceID(id); err != nil {
 		return "", err
 	}
@@ -249,6 +330,11 @@ func (s *Store) getRunUnlocked(id string) (Run, error) {
 	runDir, err := s.checkedRunDir(id)
 	if err != nil {
 		return Run{}, err
+	}
+	if snapshot, visible, err := s.controlledPairRunSnapshot(id, runDir); err != nil {
+		return Run{}, err
+	} else if visible {
+		return snapshot, nil
 	}
 	var run Run
 	if err := readJSON(filepath.Join(runDir, runFileName), &run); err != nil {

@@ -164,6 +164,10 @@ class ExecutionRecord(StrictModel):
     attempt_id: str
     status: Literal["succeeded", "failed", "unavailable"]
     arm_id: str | None = None
+    method_id: str | None = None
+    action_id: str | None = None
+    budget_tokens: int | None = Field(default=None, gt=0)
+    slice_ids: tuple[str, ...] = ()
     selected_arm_id: str | None = None
     selection_status: str | None = None
     selection_method: str | None = None
@@ -210,6 +214,32 @@ class ExecutionRecord(StrictModel):
     error: str | None = None
 
     _id = field_validator("id", "case_id", "attempt_id")(_validate_id)
+
+    @model_validator(mode="after")
+    def validate_method_coordinates(self) -> ExecutionRecord:
+        if self.method_id is None:
+            if (
+                self.action_id is not None
+                or self.budget_tokens is not None
+                or self.slice_ids
+            ):
+                raise ValueError("method coordinates require a method identity")
+            return self
+        _validate_id(self.method_id)
+        if self.method_id == "r2.compound-model-budget.v2":
+            if (
+                self.track_id != "model_pool"
+                or self.action_id is None
+                or self.budget_tokens is None
+                or self.quality is None
+                or not self.slice_ids
+            ):
+                raise ValueError("R2 evidence requires complete compound coordinates")
+        if len(self.slice_ids) != len(set(self.slice_ids)):
+            raise ValueError("method slice ids must be unique")
+        for slice_id in self.slice_ids:
+            _validate_id(slice_id)
+        return self
 
     @field_validator("track_id")
     @classmethod

@@ -95,6 +95,9 @@ func decodeReportStrict(runID string, data []byte) (Report, error) {
 	if err := validateReportShape(runID, report); err != nil {
 		return Report{}, fmt.Errorf("%w: %w", ErrInvalid, err)
 	}
+	if err := validatePublishedRoutingRecipeReportShape(report); err != nil {
+		return Report{}, fmt.Errorf("%w: %w", ErrInvalid, err)
+	}
 	return report, nil
 }
 
@@ -114,6 +117,9 @@ func decodeWorkerReportStrict(runID string, data []byte) (Report, error) {
 		Metrics: draft.Metrics, Gates: draft.Gates, Costs: draft.Costs,
 		Recommendations: draft.Recommendations, Provenance: draft.Provenance,
 		Artifacts: draft.Artifacts,
+		// Method reports are server-owned reductions.  Workers never submit
+		// aggregates that could be mistaken for independently attested curves.
+		MethodReports: []CompoundModelBudgetReport{},
 	}
 	if err := validateReportShape(runID, report); err != nil {
 		return Report{}, fmt.Errorf("%w: %w", ErrInvalid, err)
@@ -138,7 +144,7 @@ func validateReportShape(runID string, report Report) error {
 		return fmt.Errorf("evaluation report provenance identity mismatch")
 	}
 	if report.Run.SuiteIDs == nil || report.Run.TrackIDs == nil || report.Tracks == nil ||
-		report.Metrics == nil || report.Gates == nil || report.Recommendations == nil || report.Artifacts == nil {
+		report.Metrics == nil || report.Gates == nil || report.Recommendations == nil || report.Artifacts == nil || report.MethodReports == nil {
 		return fmt.Errorf("evaluation report required collections cannot be null")
 	}
 	for _, track := range report.Tracks {

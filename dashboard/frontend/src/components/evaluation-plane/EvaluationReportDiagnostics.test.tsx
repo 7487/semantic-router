@@ -128,6 +128,7 @@ describe('EvaluationReportDiagnostics', () => {
   it('isolates an invalid capacity artifact while preserving valid outcome diagnostics', () => {
     const markup = renderToStaticMarkup(
       createElement(EvaluationReportDiagnostics, {
+        metrics: [],
         failureSummary,
         capacityProfile: null,
         failureSummaryIssue: null,
@@ -149,6 +150,7 @@ describe('EvaluationReportDiagnostics', () => {
   it('distinguishes an unavailable artifact from an invalid artifact', () => {
     const markup = renderToStaticMarkup(
       createElement(EvaluationReportDiagnostics, {
+        metrics: [],
         failureSummary: null,
         capacityProfile: null,
         failureSummaryIssue: {
@@ -168,6 +170,7 @@ describe('EvaluationReportDiagnostics', () => {
   it('renders the frozen protocol, repeated observations, UCB, and stability evidence', () => {
     const markup = renderToStaticMarkup(
       createElement(EvaluationReportDiagnostics, {
+        metrics: [],
         failureSummary,
         capacityProfile,
         failureSummaryIssue: null,

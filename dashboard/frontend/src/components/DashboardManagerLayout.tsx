@@ -21,7 +21,7 @@ export default function DashboardManagerLayout({
   children,
 }: DashboardManagerLayoutProps) {
   return (
-    <section className={styles.page}>
+    <section className={`${styles.page} ${compactHero ? styles.compactPage : ''}`}>
       <DashboardSurfaceHero
         compact={compactHero}
         eyebrow={eyebrow}

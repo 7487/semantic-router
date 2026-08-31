@@ -163,7 +163,7 @@ func (s *Service) loadCampaignRunEvidence(
 	}
 	item := campaignRunEvidence{report: report, records: records, manifest: manifest}
 	if report.Run.Mode == ModeLive {
-		attestation, attestationErr := s.store.readExecutionAttestation(binding.runID)
+		attestation, attestationErr := s.store.readExecutionAttestationForManifest(binding.runID, manifest)
 		if attestationErr != nil || storedAnchor.ExecutionAttestationDigest == "" ||
 			storedAnchor.ExecutionAttestationDigest != attestation.Digest {
 			return campaignRunEvidence{}, fmt.Errorf("%w: %s lacks an exact execution attestation", ErrInvalid, label)

@@ -22,6 +22,15 @@ func (atomicRunStatusPersistence) Write(path string, run Run) error {
 // server-owned evidence publication. No canonical worker evidence may be
 // published before this transition commits.
 func (s *Store) commitRunSealing(id string) (Run, error) {
+	paired, err := s.acquireControlledPairMutationBarrier(id)
+	if err != nil {
+		return Run{}, err
+	}
+	defer s.releaseControlledPairMutationBarrier(paired)
+	return s.commitRunSealingWithinLifecycle(id)
+}
+
+func (s *Store) commitRunSealingWithinLifecycle(id string) (Run, error) {
 	if err := validateResourceID(id); err != nil {
 		return Run{}, err
 	}
@@ -58,10 +67,10 @@ func (s *Store) commitRunSealing(id string) (Run, error) {
 	return sealing, nil
 }
 
-// commitSealedEvidenceLevels persists the run headline and per-track evidence
-// strengths independently derived by the server while preserving every other
-// sealing-state field.
-func (s *Store) commitSealedEvidenceLevels(id string, levels sealedEvidenceLevels) (Run, error) {
+// commitSealedEvidenceLevelsWithinLifecycle persists the server-derived run
+// headline and per-track evidence strengths while the caller holds the paired
+// lifecycle mutation barrier.
+func (s *Store) commitSealedEvidenceLevelsWithinLifecycle(id string, levels sealedEvidenceLevels) (Run, error) {
 	if err := validateResourceID(id); err != nil {
 		return Run{}, err
 	}
@@ -105,6 +114,15 @@ func (s *Store) commitSealedEvidenceLevels(id string, levels sealedEvidenceLevel
 // control event across all Store instances sharing this root. The returned SSE
 // event is derived from that committed status and the immutable log tail.
 func (s *Store) commitTerminalRun(run Run) (Event, error) {
+	paired, err := s.acquireControlledPairMutationBarrier(run.ID)
+	if err != nil {
+		return Event{}, err
+	}
+	defer s.releaseControlledPairMutationBarrier(paired)
+	return s.commitTerminalRunWithinLifecycle(run)
+}
+
+func (s *Store) commitTerminalRunWithinLifecycle(run Run) (Event, error) {
 	if err := validateStoredRun(run.ID, run); err != nil {
 		return Event{}, fmt.Errorf("%w: terminal run status is invalid: %w", ErrInvalid, err)
 	}

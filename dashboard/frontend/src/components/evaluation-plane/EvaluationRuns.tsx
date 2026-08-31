@@ -80,10 +80,7 @@ export default function EvaluationRuns({
   const ledger = useEvaluationRunLedger(runs)
   return (
     <div className={styles.sectionStack}>
-      <section
-        className={`${styles.surface} ${styles.workspaceSurface}`}
-        aria-labelledby="evaluation-runs-title"
-      >
+      <section className={styles.surface} aria-labelledby="evaluation-runs-title">
         <header className={styles.surfaceHeader}>
           <div>
             <span className={styles.eyebrow}>Execution ledger</span>

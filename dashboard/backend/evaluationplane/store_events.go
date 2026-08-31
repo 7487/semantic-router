@@ -84,18 +84,27 @@ func (s *Store) EventsAfter(id string, after uint64) ([]Event, error) {
 		return nil, fmt.Errorf("open evaluation event log: %w", openErr)
 	}
 	defer func() { _ = file.Close() }()
-	info, statErr := file.Stat()
-	if statErr != nil {
-		return nil, fmt.Errorf("stat evaluation event log: %w", statErr)
+	visibleLimit, limited, limitErr := s.controlledPairEventLimit(id, runDir)
+	if limitErr != nil {
+		return nil, limitErr
 	}
-	if info.Size() > maxEventLogBytes {
-		return nil, fmt.Errorf("%w: evaluation event log exceeds its per-run byte limit", ErrInvalid)
+	if !limited {
+		info, statErr := file.Stat()
+		if statErr != nil {
+			return nil, fmt.Errorf("stat evaluation event log: %w", statErr)
+		}
+		if info.Size() > maxEventLogBytes {
+			return nil, fmt.Errorf("%w: evaluation event log exceeds its per-run byte limit", ErrInvalid)
+		}
 	}
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(make([]byte, 4*1024), maxWorkerEventLineBytes)
 	var events []Event
 	var scanned uint64
-	for scanner.Scan() {
+	for !limited || scanned < visibleLimit {
+		if !scanner.Scan() {
+			break
+		}
 		scanned++
 		if scanned > maxEventsPerRun {
 			return nil, fmt.Errorf("%w: evaluation event log exceeds its per-run event limit", ErrInvalid)

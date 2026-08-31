@@ -127,8 +127,21 @@ func resolveCreateRunExecutor(
 		} else if selectedExecutor != executor {
 			return nil, fmt.Errorf("%w: one run cannot mix suite executor identities", ErrInvalid)
 		}
+		var liveTracks map[TrackID]struct{}
+		if request.Mode == ModeLive && executor == normalizedSuiteLiveExecutorID {
+			liveTracks = normalizedSuiteLiveMethodTracks(suite)
+			for _, trackID := range request.TrackIDs {
+				if _, admitted := liveTracks[trackID]; containsTrack(suite.TrackIDs, trackID) && !admitted {
+					return nil, fmt.Errorf("%w: suite %q has no first-party normalized-live method for track %q", ErrInvalid, suiteID, trackID)
+				}
+			}
+		}
 		for _, trackID := range suite.TrackIDs {
-			selectedSuiteTracks[trackID] = true
+			if liveTracks == nil {
+				selectedSuiteTracks[trackID] = true
+			} else if _, admitted := liveTracks[trackID]; admitted {
+				selectedSuiteTracks[trackID] = true
+			}
 		}
 	}
 	contract, registered := registry.executor(selectedExecutor)

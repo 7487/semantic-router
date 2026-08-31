@@ -326,6 +326,7 @@ func TestRoutingBrokerAttestationBindsRealizedSelectionMethod(t *testing.T) {
 
 			mixture := brokerTestMixture()
 			broker := newWorkerHTTPBroker(RunManifest{
+				Mode:        ModeLive,
 				Concurrency: 1,
 				TrackIDs:    []TrackID{"routing"},
 				Target: ManifestTarget{
@@ -360,6 +361,20 @@ func TestRoutingBrokerAttestationBindsRealizedSelectionMethod(t *testing.T) {
 			if entry.Algorithm == nil || *entry.Algorithm != test.selectionMethod ||
 				entry.SelectionMethod == nil || *entry.SelectionMethod != test.selectionMethod {
 				t.Fatalf("routing execution projection = %+v", entry)
+			}
+			if entry.RoutingRecipeDecision == nil ||
+				entry.RoutingRecipeDecision.DecisionID != routingRecipeBrokerDecisionID(1) ||
+				entry.RoutingRecipeDecision.CaseID != "case-1" ||
+				entry.RoutingRecipeDecision.SelectionStatus != "selected" ||
+				entry.RoutingRecipeDecision.SelectedArmID != "arm-fast" ||
+				len(entry.RoutingRecipeDecision.RankedArmIDs) != 1 ||
+				entry.RoutingRecipeDecision.RankedArmIDs[0] != "arm-fast" ||
+				entry.FetchedAt == nil ||
+				!entry.RoutingRecipeDecision.ObservedAt.Equal(entry.FetchedAt.UTC()) {
+				t.Fatalf("broker-owned routing decision snapshot = %+v", entry.RoutingRecipeDecision)
+			}
+			if err := validateBrokerRoutingRecipeDecision(mixture, entry); err != nil {
+				t.Fatalf("broker-owned routing decision rejected: %v", err)
 			}
 			if configured := entry.responsePayload["decision_result"].(map[string]any)["algorithm"]; configured != "static" {
 				t.Fatalf("configured routing diagnostic algorithm = %v, want static", configured)
@@ -460,8 +475,15 @@ func TestWorkerHTTPBrokerPublishesOnlyBoundedTypedChatRequests(t *testing.T) {
 		Success: &routedEntry.Success, Quality: &quality, LatencyMS: &latencyMS,
 		InputTokens: routedEntry.InputTokens, OutputTokens: routedEntry.OutputTokens, RuntimeCost: runtimeCost,
 	}
+	messageDigest, err := canonicalMessageListDigest([]brokerMessage{{
+		Role: "user", Content: json.RawMessage(`"hello"`),
+	}})
+	if err != nil {
+		t.Fatalf("digest sealed visible case: %v", err)
+	}
 	if err := validateBrokerRecord(
-		routedEntry, record, visibleCaseSet{}, gradingCaseEvidence{ExpectedAnswer: &expectedAnswer},
+		routedEntry, record, visibleCaseSet{MessageDigests: map[string]string{"case-1": messageDigest}},
+		gradingCaseEvidence{ExpectedAnswer: &expectedAnswer},
 		broker.manifest.Target.Mixture.ModelArms, nil,
 	); err != nil {
 		t.Fatalf("header-only joint record rejected: %v", err)
@@ -574,7 +596,7 @@ func brokerTestMixture() *ManifestMixture {
 	selectorPolicyDigest := digestString("selector-policy")
 	selectorDigest := selectorSnapshotDigest(selectorPolicyDigest, []SupportModel{})
 	decisions := []MixtureDecisionBinding{{Name: "quality", Algorithm: "weighted", ArmIDs: []string{"arm-fast", "arm-strong"}}}
-	return &ManifestMixture{
+	mixture := &ManifestMixture{
 		SchemaVersion: SchemaVersion, ID: id, EntrypointModel: aliases[0],
 		Aliases: aliases, RecipeName: recipeName,
 		RecipeDigest: recipeDigest, PoolDigest: poolDigest,
@@ -585,4 +607,6 @@ func brokerTestMixture() *ManifestMixture {
 		SupportModels:    []SupportModel{},
 		Decisions:        decisions,
 	}
+	mustFreezeTestRoutingRecipePlan(mixture)
+	return mixture
 }

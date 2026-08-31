@@ -143,8 +143,11 @@ export default function EvaluationRunLedger({
               key={run.id}
               className={`${styles.runRow} ${selectedRunID === run.id ? styles.runSelected : ''}`}
             >
+              {/* The row is a selectable ledger item; it deliberately keeps listbox-like affordance
+                  instead of inheriting the page action-button hierarchy. */}
               <button
                 type="button"
+                data-evaluation-ledger-row="true"
                 className={styles.runSummary}
                 aria-label={`Inspect ${run.name}`}
                 aria-current={selectedRunID === run.id ? 'true' : undefined}

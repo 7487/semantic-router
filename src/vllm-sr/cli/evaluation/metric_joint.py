@@ -115,6 +115,7 @@ def joint_metrics(
             "score",
             "higher_is_better",
             reduced.realized_count,
+            planned_analysis_units=len(records),
         ),
         _metric(
             "joint.oracle_regret",
@@ -124,6 +125,7 @@ def joint_metrics(
             "score",
             "lower_is_better",
             reduced.oracle_regret_count,
+            planned_analysis_units=len(records),
         ),
         _metric(
             "joint.normalized_regret",
@@ -133,6 +135,7 @@ def joint_metrics(
             "fraction",
             "lower_is_better",
             reduced.normalized_regret_count,
+            planned_analysis_units=len(records),
         ),
         _metric(
             "joint.reliability",
@@ -142,6 +145,7 @@ def joint_metrics(
             "fraction",
             "higher_is_better",
             reduced.reliability_count,
+            planned_analysis_units=len(records),
         ),
         _metric(
             "joint.oracle_capture_ratio",
@@ -151,6 +155,7 @@ def joint_metrics(
             "fraction",
             "higher_is_better",
             reduced.oracle_capture_count,
+            planned_analysis_units=len(records),
         ),
         _metric(
             "joint.runtime_cost_per_success",
@@ -160,6 +165,7 @@ def joint_metrics(
             "USD/success",
             "lower_is_better",
             reduced.successful_count,
+            planned_analysis_units=len(records),
         ),
         _metric(
             "joint.latency_p95_ms",
@@ -169,5 +175,6 @@ def joint_metrics(
             "ms",
             "lower_is_better",
             len(reduced.latencies),
+            planned_analysis_units=len(records),
         ),
     ]

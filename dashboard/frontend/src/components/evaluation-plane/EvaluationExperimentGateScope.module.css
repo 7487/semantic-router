@@ -17,14 +17,9 @@
 
 .profileHeader select {
   width: 100%;
-  min-height: 40px;
-  border-radius: var(--radius-md);
+  min-height: var(--control-height);
+  border-radius: var(--control-radius);
   background: var(--surface-shell);
-}
-
-.profileHeader select option {
-  background: var(--surface-panel);
-  color: var(--text-primary);
 }
 
 .profileHeader small {
@@ -38,7 +33,7 @@
   display: grid;
   gap: 0.25rem;
   min-width: 230px;
-  padding: 0.7rem 0.8rem;
+  padding: 0.45rem 0 0.45rem 0.8rem;
   border-left: 1px solid var(--border-subtle);
   background: transparent;
 }
@@ -89,21 +84,9 @@
   font-size: 0.75rem;
 }
 
-.gateMatrix article > span {
+.gateMatrix article > [data-evaluation-tag='true'] {
   align-self: start;
-  padding: 0.18rem 0.4rem;
-  border: 0;
-  color: var(--text-secondary);
-  font-size: 0.68rem;
   text-transform: capitalize;
-}
-
-.gateMatrix article[data-disposition='required'] > span {
-  color: #a5f3c1;
-}
-
-.gateMatrix article[data-disposition='advisory'] > span {
-  color: #f9d38b;
 }
 
 .gateMatrix article > small {
@@ -112,8 +95,8 @@
 }
 
 .gateDisclosure {
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .gateDisclosure > summary {
@@ -121,7 +104,8 @@
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding: 0.7rem 0.8rem;
+  min-height: var(--control-height);
+  padding: 0.55rem 0;
   cursor: pointer;
   list-style: none;
 }

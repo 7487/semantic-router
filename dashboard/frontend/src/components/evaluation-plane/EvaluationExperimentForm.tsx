@@ -8,7 +8,7 @@ import EvaluationExperimentBudget from './EvaluationExperimentBudget'
 import EvaluationExperimentCapacitySLO from './EvaluationExperimentCapacitySLO'
 import EvaluationExperimentGateScope from './EvaluationExperimentGateScope'
 import EvaluationExperimentIdentity from './EvaluationExperimentIdentity'
-import { EvaluationActionButton } from './EvaluationPrimitives'
+import { EvaluationActionButton, EvaluationTag } from './EvaluationPrimitives'
 import useEvaluationExperimentForm from './useEvaluationExperimentForm'
 import styles from './EvaluationForm.module.css'
 
@@ -86,12 +86,12 @@ export default function EvaluationExperimentForm({
           </p>
         </div>
         <div className={styles.introBadges}>
-          <span className={styles.evidence}>
+          <EvaluationTag tone="info" mono>
             {form.catalogEvidenceClass
               ? `Catalog evidence class ${form.catalogEvidenceClass}`
               : 'Evidence class pending'}
-          </span>
-          <span className={styles.evidence}>{catalog.gate_contract_version}</span>
+          </EvaluationTag>
+          <EvaluationTag mono>{catalog.gate_contract_version}</EvaluationTag>
         </div>
       </div>
 

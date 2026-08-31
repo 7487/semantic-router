@@ -1,5 +1,6 @@
 import type { EvaluationMetric, EvaluationReport } from '../../types/evaluationReport'
 import { formatMetric } from './evaluationPresentation'
+import { EvaluationTag } from './EvaluationPrimitives'
 import styles from './EvaluationMixtureReport.module.css'
 import layoutStyles from './EvaluationReportLayout.module.css'
 
@@ -71,15 +72,15 @@ export default function EvaluationMixtureReport({ report }: { report: Evaluation
           </p>
         </div>
         <div className={styles.mixtureSubjectFacts}>
-          <span>
+          <EvaluationTag>
             {mixture.model_arms.length} model {mixture.model_arms.length === 1 ? 'arm' : 'arms'}
-          </span>
-          <span>
+          </EvaluationTag>
+          <EvaluationTag>
             {mixture.decisions.length} {mixture.decisions.length === 1 ? 'decision' : 'decisions'}
-          </span>
-          <span>
+          </EvaluationTag>
+          <EvaluationTag>
             {mixture.aliases.length} entrypoint {mixture.aliases.length === 1 ? 'name' : 'names'}
-          </span>
+          </EvaluationTag>
         </div>
       </div>
 
@@ -181,7 +182,9 @@ export default function EvaluationMixtureReport({ report }: { report: Evaluation
                         Arm {arm.id} · {(arm.modalities || ['text']).join(' · ')}
                       </span>
                     </div>
-                    {mixture.fallback_arm_id === arm.id ? <em>Fallback</em> : null}
+                    {mixture.fallback_arm_id === arm.id ? (
+                      <EvaluationTag tone="positive">Fallback</EvaluationTag>
+                    ) : null}
                   </header>
                   <dl>
                     <div>

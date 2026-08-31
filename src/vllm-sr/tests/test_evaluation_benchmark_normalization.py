@@ -17,7 +17,18 @@ from cli.evaluation.benchmark_normalization_registry import (
 from cli.evaluation.benchmark_registry import get_benchmark_adapter
 from cli.evaluation.builtin_executors import DEFAULT_EXECUTOR_REGISTRY
 from cli.evaluation.executor_contracts import BUILTIN_NORMALIZED_SUITE_EXECUTORS
+from cli.evaluation.metric_compound_model_budget import r2_compound_report
+from cli.evaluation.method_contract_v2 import COMPOUND_MODEL_BUDGET_METHOD_ID
+from cli.evaluation.method_registry_v2 import method_plugin_for_benchmark
 from cli.evaluation.normalized_suite_executor import execute_normalized_suites
+from cli.evaluation.normalized_suite_live_admission import (
+    NORMALIZED_MULTIMODAL_LIVE_METHOD_ID,
+    multimodal_hidden_answer_source_is_eligible,
+)
+from cli.evaluation.normalized_suite_live_robustness import (
+    DECLARED_SHIFT_LIVE_METHOD_ID,
+    declared_shift_source_is_eligible,
+)
 from cli.evaluation.suite_catalog import NormalizedSuiteCatalog
 from cli.evaluation.suite_contract import BenchmarkSourceReceipt
 from cli.evaluation.suite_store import NormalizedSuiteStore
@@ -119,22 +130,77 @@ def test_every_executable_adapter_normalizes_installs_and_executes(
     assert qualification.native_execution_attested is False
     assert qualification.promotion_eligible is False
     assert manifest.qualification_receipt.qualified_gate_ids == ()
-    catalog = NormalizedSuiteCatalog(
+    suite_catalog = NormalizedSuiteCatalog(
         store,
         DEFAULT_EXECUTOR_REGISTRY,
         BUILTIN_NORMALIZED_SUITE_EXECUTORS,
-    ).get(manifest.id)
-    live_g4_methods = tuple(
+    )
+    catalog = suite_catalog.get(manifest.id)
+    assert catalog.evidence_level == "E0"
+    imported_methods = tuple(
         method
         for method in catalog.methods
-        if method.id == "declared-shift.server-live.v1"
+        if method.evidence_source == "normalized_import"
     )
-    if manifest.artifacts.perturbations is not None and "routing" in manifest.track_ids:
-        assert len(live_g4_methods) == 1
-        assert live_g4_methods[0].qualified_gate_ids == ("G4",)
-        assert live_g4_methods[0].evidence_source == "server_brokered_live"
+    assert len(imported_methods) == len(manifest.track_ids)
+    assert all(method.status == "configured" for method in imported_methods)
+    assert all(not method.qualified_gate_ids for method in imported_methods)
+    assert all(method.reason is None for method in imported_methods)
+    assert f"research-method:{method_plugin_for_benchmark(adapter_id).status}" in (
+        catalog.tags
+    )
+    declared_shift_methods = tuple(
+        method
+        for method in catalog.methods
+        if method.id == DECLARED_SHIFT_LIVE_METHOD_ID
+    )
+    expected_declared_shift_live = adapter_id == "routerarena"
+    assert (
+        declared_shift_source_is_eligible(store, manifest)
+        is expected_declared_shift_live
+    )
+    multimodal_live_methods = tuple(
+        method
+        for method in catalog.methods
+        if method.id == NORMALIZED_MULTIMODAL_LIVE_METHOD_ID
+    )
+    expected_multimodal_live = adapter_id == "mmr-bench"
+    assert (
+        multimodal_hidden_answer_source_is_eligible(store, manifest)
+        is expected_multimodal_live
+    )
+    if expected_declared_shift_live or expected_multimodal_live:
+        assert catalog.modes == ("replay", "live")
+        assert catalog.executors == {
+            "replay": "normalized-suite-replay.v1",
+            "live": "normalized-suite-live.v1",
+        }
+        assert "target-live" in catalog.tags
     else:
-        assert live_g4_methods == ()
+        assert catalog.modes == ("replay",)
+        assert catalog.executors == {"replay": "normalized-suite-replay.v1"}
+        assert "target-live" not in catalog.tags
+    if expected_declared_shift_live:
+        assert len(declared_shift_methods) == 1
+        assert declared_shift_methods[0].evidence_source == "server_brokered_live"
+        assert declared_shift_methods[0].status == "configured"
+        assert declared_shift_methods[0].qualified_gate_ids == ("G4",)
+    else:
+        assert declared_shift_methods == ()
+    if expected_multimodal_live:
+        assert manifest.track_ids == ("model_pool", "multimodal")
+        assert len(multimodal_live_methods) == 1
+        assert multimodal_live_methods[0].track_id == "multimodal"
+        assert multimodal_live_methods[0].evidence_source == "live_runtime"
+        assert multimodal_live_methods[0].status == "configured"
+        assert multimodal_live_methods[0].qualified_gate_ids == ()
+        assert all(
+            method.evidence_source == "normalized_import"
+            for method in catalog.methods
+            if method.track_id == "model_pool"
+        )
+    else:
+        assert multimodal_live_methods == ()
     execution = execute_normalized_suites(
         store=store,
         manifests=(manifest,),
@@ -146,6 +212,60 @@ def test_every_executable_adapter_normalizes_installs_and_executes(
     )
     assert execution.records
     assert all(record.status != "unavailable" for record in execution.records)
+
+
+def test_r2_registered_parser_reduces_the_exact_shared_model_budget_domain(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_source(monkeypatch)
+    export_root = tmp_path / "native"
+    source_root = tmp_path / "sources"
+    source_root.mkdir()
+    write_native_fixture("r2-router", export_root)
+    result = normalize_benchmark_suite(
+        adapter_id="r2-router",
+        source_root=source_root,
+        export_root=export_root,
+        output_root=tmp_path / "normalized",
+        suite_id="r2-compound-fixture",
+    )
+    store = NormalizedSuiteStore(tmp_path / "suite-store")
+    manifest = store.install(
+        result.request,
+        result.bundle_path,
+        source_root=source_root,
+        native_export_root=export_root,
+    )
+
+    execution = execute_normalized_suites(
+        store=store,
+        manifests=(manifest,),
+        track_ids=("model_pool",),
+        sample_limit=1,
+        seed=42,
+        executor_id="normalized-suite-replay.v1",
+        target_id="benchmark-source",
+    )
+    compound = [
+        record
+        for record in execution.records
+        if record.method_id == COMPOUND_MODEL_BUDGET_METHOD_ID
+    ]
+    assert len(compound) == 30
+    assert len({record.action_id for record in compound}) == 2
+    assert len({record.budget_tokens for record in compound}) == 15
+    assert len({(record.action_id, record.budget_tokens) for record in compound}) == 30
+
+    report = r2_compound_report(execution.records)
+    assert report is not None
+    assert len(report.action_refs) == 2
+    assert len(report.raw_shared_domain_curve) == 30
+    assert report.audc == pytest.approx(3990.0)
+    assert report.nauc == pytest.approx(0.5)
+    assert report.peak == pytest.approx(1.0)
+    assert report.qnc == pytest.approx(0.5)
+    assert report.missing_case_action_budget_cells == 0
 
 
 def test_parser_verified_install_replays_and_binds_the_supplied_native_export(

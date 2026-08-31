@@ -7,6 +7,10 @@
   gap: 1.25rem;
 }
 
+.compactPage {
+  max-width: 1320px;
+}
+
 .body {
   width: 100%;
   max-width: 1320px;

@@ -22,6 +22,8 @@ type importedSuiteFixtureOptions struct {
 	visibleCaseBytes       []byte
 	gradingCaseBytes       []byte
 	perturbationBytes      []byte
+	multimodalBytes        []byte
+	mediaManifestBytes     []byte
 	caseCount              int
 	armIDs                 []string
 }
@@ -101,17 +103,25 @@ func writeImportedSuiteFixtureArtifacts(
 	root string,
 	visibleCase []byte,
 	gradingCase []byte,
+	options importedSuiteFixtureOptions,
 ) map[string]any {
 	t.Helper()
 	artifacts := map[string]any{}
-	contents := map[string]struct {
+	type fixtureArtifactContent struct {
 		domain, mediaType string
 		data              []byte
-	}{
+	}
+	contents := map[string]fixtureArtifactContent{
 		"visible_cases":    {"visible", "application/x-ndjson", visibleCase},
 		"grading_cases":    {"grading", "application/x-ndjson", gradingCase},
 		"decisions":        {"grading", "application/x-ndjson", []byte("{\"schema_version\":\"evaluation-suite.v1\",\"case_id\":\"case-1\",\"selected_arm_id\":\"arm-a\",\"selection_status\":\"selected\",\"success\":true,\"fallback\":false,\"source_record_digest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}\n")},
 		"license_manifest": {"metadata", "application/json", []byte("{\"schema_version\":\"evaluation-suite-license.v1\",\"licenses\":[{\"id\":\"upstream\",\"name\":\"fixture\",\"redistribution\":\"metadata_only\"}]}")},
+	}
+	if len(options.multimodalBytes) != 0 {
+		contents["multimodal_observations"] = fixtureArtifactContent{"grading", "application/x-ndjson", options.multimodalBytes}
+	}
+	if len(options.mediaManifestBytes) != 0 {
+		contents["media_manifest"] = fixtureArtifactContent{"metadata", "application/x-ndjson", options.mediaManifestBytes}
 	}
 	for role, content := range contents {
 		digest := suiteDocumentDigest(content.data)
@@ -145,7 +155,7 @@ func writeImportedSuiteFixture(t *testing.T, root, suiteID string, custom ...imp
 	if options.sourceRevisionOverride != "" {
 		sourceRevision = options.sourceRevisionOverride
 	}
-	artifacts := writeImportedSuiteFixtureArtifacts(t, root, visibleCase, gradingCaseBytes)
+	artifacts := writeImportedSuiteFixtureArtifacts(t, root, visibleCase, gradingCaseBytes, options)
 	addImportedSuitePerturbation(t, root, options.perturbationBytes, artifacts)
 	manifest := importedSuiteFixtureManifest(
 		t, suiteID, options, contract, sourceRevision, artifacts,
@@ -309,7 +319,7 @@ func declaredShiftCatalogFixtureOptions(t *testing.T, parserVerified bool, sourc
 	}
 }
 
-func TestInstalledCatalogExposesOnlyQualifiedLiveDeclaredShiftMethod(t *testing.T) {
+func TestInstalledCatalogAdmitsOnlyQualifiedServerLiveDeclaredShift(t *testing.T) {
 	service, _ := newTestService(t, &controlledProcess{}, 1)
 	writeImportedSuiteFixture(
 		t, service.suiteStorePath, "qualified-declared-shift",
@@ -325,12 +335,14 @@ func TestInstalledCatalogExposesOnlyQualifiedLiveDeclaredShiftMethod(t *testing.
 		t.Fatalf("Catalog: %v", err)
 	}
 	methodsBySuite := make(map[string]map[string]CatalogMethod)
+	suitesByID := make(map[string]CatalogSuite)
 	for _, suite := range catalog.Suites {
 		methods := make(map[string]CatalogMethod, len(suite.Methods))
 		for _, method := range suite.Methods {
 			methods[method.ID] = method
 		}
 		methodsBySuite[suite.ID] = methods
+		suitesByID[suite.ID] = suite
 	}
 	qualified := methodsBySuite["qualified-declared-shift"][declaredShiftLiveMethodID]
 	if qualified.ID != declaredShiftLiveMethodID || qualified.TrackID != "routing" ||
@@ -338,15 +350,47 @@ func TestInstalledCatalogExposesOnlyQualifiedLiveDeclaredShiftMethod(t *testing.
 		len(qualified.QualifiedGateIDs) != 1 || qualified.QualifiedGateIDs[0] != "G4" {
 		t.Fatalf("qualified declared-shift method is not exact: %+v", qualified)
 	}
+	qualifiedSuite := suitesByID["qualified-declared-shift"]
+	if qualifiedSuite.Executors[ModeLive] != normalizedSuiteLiveExecutorID ||
+		!containsMode(qualifiedSuite.Modes, ModeLive) {
+		t.Fatalf("qualified declared-shift source is not live reachable: %+v", qualifiedSuite)
+	}
 	if _, present := methodsBySuite["unverified-declared-shift"][declaredShiftLiveMethodID]; present {
 		t.Fatal("an unverified normalized import advertised the server-live declared-shift method")
 	}
+	if _, present := suitesByID["unverified-declared-shift"].Executors[ModeLive]; present ||
+		containsMode(suitesByID["unverified-declared-shift"].Modes, ModeLive) {
+		t.Fatal("an unverified normalized import advertised live execution")
+	}
 	for _, suiteID := range []string{"qualified-declared-shift", "unverified-declared-shift"} {
-		method := methodsBySuite[suiteID]["routerarena.predictions-and-robustness.v2.routing"]
-		if method.EvidenceSource != "normalized_import" || len(method.QualifiedGateIDs) != 0 {
+		method := methodsBySuite[suiteID]["routerarena.normalized.v2.routing"]
+		if method.EvidenceSource != "normalized_import" || len(method.QualifiedGateIDs) != 0 || method.Status != "configured" {
 			t.Fatalf("suite %q promoted its normalized import method: %+v", suiteID, method)
 		}
 	}
+}
+
+func TestInstalledImportReadinessDoesNotInheritResearchNativeStatus(t *testing.T) {
+	service, _ := newTestService(t, &controlledProcess{}, 1)
+	writeImportedSuiteFixture(t, service.suiteStorePath, "xroute-import", importedSuiteFixtureOptions{
+		adapterID: "xroutebench", trackIDs: []TrackID{"model_pool"},
+	})
+	catalog, err := service.Catalog()
+	if err != nil {
+		t.Fatalf("Catalog: %v", err)
+	}
+	for _, suite := range catalog.Suites {
+		if suite.ID != "xroute-import" {
+			continue
+		}
+		if len(suite.Methods) != 1 || suite.Methods[0].ID != "xroutebench.normalized.v2.model_pool" ||
+			suite.Methods[0].Status != "configured" || suite.Methods[0].EvidenceSource != "normalized_import" ||
+			len(suite.Methods[0].QualifiedGateIDs) != 0 || suite.Methods[0].Reason != "" {
+			t.Fatalf("installed import inherited research-native readiness: %+v", suite.Methods)
+		}
+		return
+	}
+	t.Fatal("installed xroute import is missing")
 }
 
 func TestInstalledCatalogRejectsQualifiedDeclaredShiftWithUnknownPairCase(t *testing.T) {
@@ -357,6 +401,117 @@ func TestInstalledCatalogRejectsQualifiedDeclaredShiftWithUnknownPairCase(t *tes
 	)
 	if _, err := service.Catalog(); err == nil {
 		t.Fatal("a parser-qualified declared-shift artifact referencing an unknown case was accepted")
+	}
+}
+
+func multimodalLiveCatalogFixtureOptions(t *testing.T, parserVerified bool) importedSuiteFixtureOptions {
+	t.Helper()
+	origin := "user_provided_import"
+	if parserVerified {
+		origin = "registered_parser_import"
+	}
+	return importedSuiteFixtureOptions{
+		adapterID: "mmr-bench", trackIDs: []TrackID{"model_pool", "multimodal"},
+		origin: origin, parserVerified: parserVerified,
+		gradingCaseOverrides: map[string]any{"expected_answer": "fixture-answer"},
+		multimodalBytes: testJSONLines(t, map[string]any{
+			"schema_version": normalizedSuiteSchemaVersion, "case_id": "case-1", "modality": "image",
+			"supported": true, "quality": 1.0, "privacy_violations": 0,
+			"source_record_digest": digestString("mmr-observation"),
+		}),
+		mediaManifestBytes: testJSONLines(t, map[string]any{
+			"schema_version": normalizedSuiteSchemaVersion, "id": "fixture-image",
+			"digest": suiteDocumentDigest([]byte{0}), "media_type": "image/png", "size_bytes": 1,
+			"modality": "image", "license_id": "upstream",
+		}),
+	}
+}
+
+func TestInstalledCatalogAdmitsOnlyExactParserVerifiedMultimodalLiveCohort(t *testing.T) {
+	service, _ := newTestService(t, &controlledProcess{}, 1)
+	writeImportedSuiteFixture(t, service.suiteStorePath, "qualified-mmr", multimodalLiveCatalogFixtureOptions(t, true))
+	writeImportedSuiteFixture(t, service.suiteStorePath, "unverified-mmr", multimodalLiveCatalogFixtureOptions(t, false))
+
+	catalog, err := service.Catalog()
+	if err != nil {
+		t.Fatalf("Catalog: %v", err)
+	}
+	byID := make(map[string]CatalogSuite)
+	for _, suite := range catalog.Suites {
+		byID[suite.ID] = suite
+	}
+	qualified := byID["qualified-mmr"]
+	if qualified.Executors[ModeLive] != normalizedSuiteLiveExecutorID || !containsMode(qualified.Modes, ModeLive) {
+		t.Fatalf("qualified MMR cohort is not live reachable: %+v", qualified)
+	}
+	methodFound := false
+	for _, method := range qualified.Methods {
+		if method.ID == normalizedMultimodalLiveMethodID {
+			methodFound = method.TrackID == "multimodal" && method.Status == "configured" &&
+				method.EvidenceSource == "live_runtime" && len(method.QualifiedGateIDs) == 0
+		}
+	}
+	if !methodFound {
+		t.Fatalf("qualified MMR cohort omitted its exact server-live method: %+v", qualified.Methods)
+	}
+	if _, present := byID["unverified-mmr"].Executors[ModeLive]; present ||
+		containsMode(byID["unverified-mmr"].Modes, ModeLive) {
+		t.Fatal("an unverified MMR import advertised live execution")
+	}
+}
+
+func TestInstalledMultimodalLiveAdmissionFailsClosedOnMissingHiddenAnswer(t *testing.T) {
+	service, _ := newTestService(t, &controlledProcess{}, 1)
+	options := multimodalLiveCatalogFixtureOptions(t, true)
+	options.gradingCaseOverrides = nil
+	writeImportedSuiteFixture(t, service.suiteStorePath, "mmr-without-answer", options)
+	if _, err := service.Catalog(); err == nil {
+		t.Fatal("parser-qualified multimodal live source without a hidden answer was accepted")
+	}
+}
+
+func TestInstalledFirstPartyNormalizedLiveCreateAdmissionIsTrackExact(t *testing.T) {
+	service, _ := newTestService(t, &controlledProcess{}, 1)
+	if err := os.WriteFile(service.configPath, []byte(modelArmTestYAML), 0o600); err != nil {
+		t.Fatalf("write Mixture-of-Models config: %v", err)
+	}
+	writeImportedSuiteFixture(
+		t, service.suiteStorePath, "qualified-declared-shift",
+		declaredShiftCatalogFixtureOptions(t, true, "source"),
+	)
+	writeImportedSuiteFixture(t, service.suiteStorePath, "qualified-mmr", multimodalLiveCatalogFixtureOptions(t, true))
+
+	declaredShift := validCreateRequest()
+	declaredShift.ClientRequestID = newTestClientRequestID()
+	declaredShift.Name = "qualified declared shift"
+	declaredShift.SuiteIDs = []string{"qualified-declared-shift"}
+	declaredShift.TrackIDs = []TrackID{"routing"}
+	declaredShift.Mode = ModeLive
+	declaredShift.TargetID = mixtureTargetID("default")
+	declaredShift.ChangeProfile = "recipe"
+	declaredShift.SampleLimit = 2
+	if _, err := service.CreateRun(context.Background(), declaredShift); err != nil {
+		t.Fatalf("CreateRun qualified declared shift: %v", err)
+	}
+
+	multimodal := declaredShift
+	multimodal.ClientRequestID = newTestClientRequestID()
+	multimodal.Name = "qualified multimodal fidelity cohort"
+	multimodal.SuiteIDs = []string{"qualified-mmr"}
+	multimodal.TrackIDs = []TrackID{"multimodal"}
+	multimodal.ChangeProfile = "agent_multimodal"
+	multimodal.SampleLimit = 1
+	if _, err := service.CreateRun(context.Background(), multimodal); err != nil {
+		t.Fatalf("CreateRun qualified multimodal live cohort: %v", err)
+	}
+
+	modelPool := multimodal
+	modelPool.ClientRequestID = newTestClientRequestID()
+	modelPool.Name = "unregistered normalized model pool live method"
+	modelPool.TrackIDs = []TrackID{"model_pool"}
+	modelPool.ChangeProfile = "model_pool"
+	if _, err := service.CreateRun(context.Background(), modelPool); err == nil {
+		t.Fatal("MMR live admission leaked from multimodal into model_pool")
 	}
 }
 
@@ -379,7 +534,6 @@ func TestInstalledSuiteCatalogAndCreateFreezeSameExecutor(t *testing.T) {
 		}
 	}
 	if installed == nil || installed.Executors[ModeReplay] != normalizedSuiteExecutorID ||
-		installed.Executors[ModeLive] != normalizedSuiteLiveExecutorID ||
 		installed.Revision != revision || installed.EvidenceLevel != "E0" {
 		t.Fatalf("installed suite is not executable catalog evidence: %+v", installed)
 	}
@@ -402,42 +556,12 @@ func TestInstalledSuiteCatalogAndCreateFreezeSameExecutor(t *testing.T) {
 		t.Fatalf("manifest did not freeze installed suite: %+v", manifest)
 	}
 
-	liveRequest := validCreateRequest()
+	liveRequest := request
 	liveRequest.ClientRequestID = newTestClientRequestID()
-	liveRequest.Name = "imported routing target execution"
-	liveRequest.SuiteIDs = []string{"imported.routing"}
-	liveRequest.TrackIDs = []TrackID{"routing"}
 	liveRequest.Mode = ModeLive
 	liveRequest.TargetID = mixtureTargetID("default")
-	liveRequest.ChangeProfile = "recipe"
-	liveRequest.SampleLimit = 1
-	liveRun, err := service.CreateRun(context.Background(), liveRequest)
-	if err != nil {
-		t.Fatalf("CreateRun live installed suite: %v", err)
-	}
-	liveManifest, _, err := service.readDurableManifest(liveRun.ID)
-	if err != nil {
-		t.Fatalf("read live manifest: %v", err)
-	}
-	if liveManifest.SuiteRevisions["imported.routing"] != revision ||
-		liveManifest.SuiteExecutors["imported.routing"] != normalizedSuiteLiveExecutorID ||
-		liveManifest.Target.ID != mixtureTargetID("default") || liveManifest.Mode != ModeLive {
-		t.Fatalf("live manifest did not bind the workload to its target executor: %+v", liveManifest)
-	}
-	if liveManifest.CodeRevision != testSourceRevision || liveManifest.Target.Mixture == nil {
-		t.Fatalf("live manifest lost evaluation source or Mixture identity: %+v", liveManifest)
-	}
-	for _, arm := range liveManifest.Target.Mixture.ModelArms {
-		if arm.RuntimeRevision != nil {
-			t.Fatalf("evaluation source revision leaked into model arm %q: %q", arm.ID, *arm.RuntimeRevision)
-		}
-	}
-
-	wrongLiveTarget := liveRequest
-	wrongLiveTarget.ClientRequestID = newTestClientRequestID()
-	wrongLiveTarget.TargetID = "benchmark-source"
-	if _, err := service.CreateRun(context.Background(), wrongLiveTarget); err == nil {
-		t.Fatal("normalized target execution accepted the historical source target")
+	if _, err := service.CreateRun(context.Background(), liveRequest); err == nil {
+		t.Fatal("exploratory normalized import exposed an unrunnable live mode")
 	}
 	wrongReplayTarget := request
 	wrongReplayTarget.ClientRequestID = newTestClientRequestID()

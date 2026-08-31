@@ -240,203 +240,205 @@ export function EvaluationPage() {
         { label: 'Current suites', value: runnableLevels },
       ]}
     >
-      <EvaluationPageStatus
-        readonlyLoading={readonlyLoading}
-        serverReadonly={serverReadonly}
-        hasCatalog={plane.catalog !== null}
-        catalogError={plane.catalogError}
-        runsError={plane.runsError}
-        runsLoaded={plane.runsLoaded}
-        refreshing={plane.refreshing}
-        runLedgerComplete={plane.runLedgerComplete}
-        runLedgerWarningCount={plane.runLedgerWarningCount}
-        runLedgerWarnings={plane.runLedgerWarnings}
-        mutationError={plane.mutationError}
-        onRefresh={plane.refresh}
-        onClearMutationError={plane.clearMutationError}
-      />
+      <div className={styles.evaluationScope} data-testid="evaluation-scope">
+        <EvaluationPageStatus
+          readonlyLoading={readonlyLoading}
+          serverReadonly={serverReadonly}
+          hasCatalog={plane.catalog !== null}
+          catalogError={plane.catalogError}
+          runsError={plane.runsError}
+          runsLoaded={plane.runsLoaded}
+          refreshing={plane.refreshing}
+          runLedgerComplete={plane.runLedgerComplete}
+          runLedgerWarningCount={plane.runLedgerWarningCount}
+          runLedgerWarnings={plane.runLedgerWarnings}
+          mutationError={plane.mutationError}
+          onRefresh={plane.refresh}
+          onClearMutationError={plane.clearMutationError}
+        />
 
-      <EvaluationNavigation active={activeView} onChange={navigate} />
+        <EvaluationNavigation active={activeView} onChange={navigate} />
 
-      <section
-        id="evaluation-panel"
-        ref={panelRef}
-        role="tabpanel"
-        aria-labelledby={`evaluation-tab-${activeView}`}
-        tabIndex={-1}
-        className={styles.panelRegion}
-      >
-        {plane.loading ? (
-          <div className={styles.loading}>
-            <ProductLoadingState label="Loading evaluation plane" />
-          </div>
-        ) : null}
-        {!plane.loading && plane.catalogError && !plane.catalog ? (
-          <div className={styles.loadError} role="alert">
-            <h2>Evaluation catalog unavailable</h2>
-            <p>{plane.catalogError}</p>
-            <EvaluationActionButton type="button" onClick={plane.refresh}>
-              Retry
-            </EvaluationActionButton>
-          </div>
-        ) : null}
-        {!plane.loading && plane.catalog ? (
-          <>
-            {activeView === 'overview' ? (
-              <EvaluationOverview
-                catalog={plane.catalog}
-                runs={plane.runs}
-                totalRuns={plane.totalRuns}
-                hasMoreRuns={plane.hasMoreRuns}
-                loadingMoreRuns={plane.loadingMoreRuns}
-                runLedgerAvailable={plane.runsLoaded}
-                runLedgerComplete={plane.runLedgerComplete}
-                latestReport={latestReportState.report}
-                requestedReportRunID={latestCompletedID}
-                reportLoading={latestReportState.loading}
-                reportError={latestReportState.error}
-                onRetryReport={() => void latestReportState.refresh()}
-                onLoadMoreRuns={() => void plane.loadMoreRuns()}
-                onNavigate={navigate}
-                onOpenReport={(id) =>
-                  setRoute({
-                    view: 'reports',
-                    reportRunID: id,
-                    controlledPairID: route.controlledPairID,
-                    controlledPairProfileID: route.controlledPairProfileID,
-                  })
-                }
-              />
-            ) : null}
-            {activeView === 'new' ? (
-              <EvaluationExperimentForm
-                catalog={plane.catalog}
-                runs={plane.runs}
-                totalRuns={plane.totalRuns}
-                canCreate={canWrite}
-                canAutoStart={canWrite && canRun}
-                runLedgerAvailable={plane.runsLoaded}
-                runLedgerComplete={plane.runLedgerComplete}
-                hasMoreRuns={plane.hasMoreRuns}
-                loadingMoreRuns={plane.loadingMoreRuns}
-                pending={plane.mutationPending}
-                initialEntrypoint={route.view === 'new' ? route.entrypoint : null}
-                onLoadMoreRuns={() => void plane.loadMoreRuns()}
-                onSubmit={createRun}
-              />
-            ) : null}
-            {activeView === 'runs' ? (
-              <EvaluationRuns
-                runs={plane.runs}
-                selectedRunID={selectedRunID}
-                selectedRun={selectedRun}
-                selectedRunLoading={selectedRunState.loading}
-                selectedRunError={selectedRunState.error}
-                onRetrySelectedRun={() => void selectedRunState.refresh()}
-                selectedPair={selectedPairState.execution}
-                selectedPairLoading={selectedPairState.loading}
-                selectedPairRefreshing={selectedPairState.refreshing}
-                selectedPairError={selectedPairState.error}
-                onRetrySelectedPair={() => void selectedPairState.refresh()}
-                events={eventState.events}
-                eventsConnected={eventState.connected}
-                eventsError={eventState.error}
-                onReconnectEvents={eventState.retry}
-                canRun={canRun}
-                canDelete={canWrite}
-                refreshing={plane.refreshing}
-                loadingMore={plane.loadingMoreRuns}
-                runLedgerAvailable={plane.runsLoaded}
-                autoRefreshPaused={plane.runPollingPaused}
-                totalRuns={plane.totalRuns}
-                hasMoreRuns={plane.hasMoreRuns}
-                lastUpdatedAt={plane.lastUpdatedAt}
-                mutationKey={plane.mutationKey}
-                onSelect={(run) =>
-                  setRoute(
-                    {
-                      view: 'runs',
-                      runID: run.id,
-                      controlledPairID: route.controlledPairID,
-                      controlledPairProfileID: route.controlledPairProfileID,
-                    },
-                    true,
-                  )
-                }
-                onStart={(run) => void plane.startRun(run.id)}
-                onCancel={setCancelTarget}
-                onDelete={setDeleteTarget}
-                onOpenReport={openReport}
-                onRefresh={refreshSelectedRun}
-                onLoadMore={() => void plane.loadMoreRuns()}
-              />
-            ) : null}
-            {activeView === 'reports' ? (
-              <EvaluationReports
-                runs={plane.runs}
-                selectedRunID={reportRunID || ''}
-                report={reportState.report}
-                loading={reportState.loading}
-                runLedgerAvailable={plane.runsLoaded}
-                totalRuns={plane.totalRuns}
-                hasMoreRuns={plane.hasMoreRuns}
-                loadingMoreRuns={plane.loadingMoreRuns}
-                error={reportState.error}
-                onSelect={(id) =>
-                  setRoute(
-                    {
+        <section
+          id="evaluation-panel"
+          ref={panelRef}
+          role="tabpanel"
+          aria-labelledby={`evaluation-tab-${activeView}`}
+          tabIndex={-1}
+          className={styles.panelRegion}
+        >
+          {plane.loading ? (
+            <div className={styles.loading}>
+              <ProductLoadingState label="Loading evaluation plane" />
+            </div>
+          ) : null}
+          {!plane.loading && plane.catalogError && !plane.catalog ? (
+            <div className={styles.loadError} role="alert">
+              <h2>Evaluation catalog unavailable</h2>
+              <p>{plane.catalogError}</p>
+              <EvaluationActionButton type="button" onClick={plane.refresh}>
+                Retry
+              </EvaluationActionButton>
+            </div>
+          ) : null}
+          {!plane.loading && plane.catalog ? (
+            <>
+              {activeView === 'overview' ? (
+                <EvaluationOverview
+                  catalog={plane.catalog}
+                  runs={plane.runs}
+                  totalRuns={plane.totalRuns}
+                  hasMoreRuns={plane.hasMoreRuns}
+                  loadingMoreRuns={plane.loadingMoreRuns}
+                  runLedgerAvailable={plane.runsLoaded}
+                  runLedgerComplete={plane.runLedgerComplete}
+                  latestReport={latestReportState.report}
+                  requestedReportRunID={latestCompletedID}
+                  reportLoading={latestReportState.loading}
+                  reportError={latestReportState.error}
+                  onRetryReport={() => void latestReportState.refresh()}
+                  onLoadMoreRuns={() => void plane.loadMoreRuns()}
+                  onNavigate={navigate}
+                  onOpenReport={(id) =>
+                    setRoute({
                       view: 'reports',
                       reportRunID: id,
                       controlledPairID: route.controlledPairID,
                       controlledPairProfileID: route.controlledPairProfileID,
-                    },
-                    true,
-                  )
-                }
-                onRetry={() => void reportState.refresh()}
-                onLoadMoreRuns={() => void plane.loadMoreRuns()}
-              />
-            ) : null}
-            {route.view === 'compare' ? (
-              <EvaluationCompareWorkspace
-                catalog={plane.catalog}
-                runs={plane.runs}
-                totalRuns={plane.totalRuns}
-                runLedgerAvailable={plane.runsLoaded}
-                runLedgerComplete={plane.runLedgerComplete}
-                hasMoreRuns={plane.hasMoreRuns}
-                loadingMoreRuns={plane.loadingMoreRuns}
-                loadingAllRuns={plane.loadingAllRuns}
-                canCreateCampaign={canWrite}
-                route={route}
-                defaultPair={defaultPair}
-                onRouteChange={(nextRoute) => setRoute(nextRoute, true)}
-                onLoadMoreRuns={() => void plane.loadMoreRuns()}
-                onLoadAllRuns={() => void plane.loadAllRuns()}
-                onRefreshRuns={() => plane.refreshRuns()}
-                onCreateRun={() => navigate('new')}
-              />
-            ) : null}
-          </>
-        ) : null}
-      </section>
+                    })
+                  }
+                />
+              ) : null}
+              {activeView === 'new' ? (
+                <EvaluationExperimentForm
+                  catalog={plane.catalog}
+                  runs={plane.runs}
+                  totalRuns={plane.totalRuns}
+                  canCreate={canWrite}
+                  canAutoStart={canWrite && canRun}
+                  runLedgerAvailable={plane.runsLoaded}
+                  runLedgerComplete={plane.runLedgerComplete}
+                  hasMoreRuns={plane.hasMoreRuns}
+                  loadingMoreRuns={plane.loadingMoreRuns}
+                  pending={plane.mutationPending}
+                  initialEntrypoint={route.view === 'new' ? route.entrypoint : null}
+                  onLoadMoreRuns={() => void plane.loadMoreRuns()}
+                  onSubmit={createRun}
+                />
+              ) : null}
+              {activeView === 'runs' ? (
+                <EvaluationRuns
+                  runs={plane.runs}
+                  selectedRunID={selectedRunID}
+                  selectedRun={selectedRun}
+                  selectedRunLoading={selectedRunState.loading}
+                  selectedRunError={selectedRunState.error}
+                  onRetrySelectedRun={() => void selectedRunState.refresh()}
+                  selectedPair={selectedPairState.execution}
+                  selectedPairLoading={selectedPairState.loading}
+                  selectedPairRefreshing={selectedPairState.refreshing}
+                  selectedPairError={selectedPairState.error}
+                  onRetrySelectedPair={() => void selectedPairState.refresh()}
+                  events={eventState.events}
+                  eventsConnected={eventState.connected}
+                  eventsError={eventState.error}
+                  onReconnectEvents={eventState.retry}
+                  canRun={canRun}
+                  canDelete={canWrite}
+                  refreshing={plane.refreshing}
+                  loadingMore={plane.loadingMoreRuns}
+                  runLedgerAvailable={plane.runsLoaded}
+                  autoRefreshPaused={plane.runPollingPaused}
+                  totalRuns={plane.totalRuns}
+                  hasMoreRuns={plane.hasMoreRuns}
+                  lastUpdatedAt={plane.lastUpdatedAt}
+                  mutationKey={plane.mutationKey}
+                  onSelect={(run) =>
+                    setRoute(
+                      {
+                        view: 'runs',
+                        runID: run.id,
+                        controlledPairID: route.controlledPairID,
+                        controlledPairProfileID: route.controlledPairProfileID,
+                      },
+                      true,
+                    )
+                  }
+                  onStart={(run) => void plane.startRun(run.id)}
+                  onCancel={setCancelTarget}
+                  onDelete={setDeleteTarget}
+                  onOpenReport={openReport}
+                  onRefresh={refreshSelectedRun}
+                  onLoadMore={() => void plane.loadMoreRuns()}
+                />
+              ) : null}
+              {activeView === 'reports' ? (
+                <EvaluationReports
+                  runs={plane.runs}
+                  selectedRunID={reportRunID || ''}
+                  report={reportState.report}
+                  loading={reportState.loading}
+                  runLedgerAvailable={plane.runsLoaded}
+                  totalRuns={plane.totalRuns}
+                  hasMoreRuns={plane.hasMoreRuns}
+                  loadingMoreRuns={plane.loadingMoreRuns}
+                  error={reportState.error}
+                  onSelect={(id) =>
+                    setRoute(
+                      {
+                        view: 'reports',
+                        reportRunID: id,
+                        controlledPairID: route.controlledPairID,
+                        controlledPairProfileID: route.controlledPairProfileID,
+                      },
+                      true,
+                    )
+                  }
+                  onRetry={() => void reportState.refresh()}
+                  onLoadMoreRuns={() => void plane.loadMoreRuns()}
+                />
+              ) : null}
+              {route.view === 'compare' ? (
+                <EvaluationCompareWorkspace
+                  catalog={plane.catalog}
+                  runs={plane.runs}
+                  totalRuns={plane.totalRuns}
+                  runLedgerAvailable={plane.runsLoaded}
+                  runLedgerComplete={plane.runLedgerComplete}
+                  hasMoreRuns={plane.hasMoreRuns}
+                  loadingMoreRuns={plane.loadingMoreRuns}
+                  loadingAllRuns={plane.loadingAllRuns}
+                  canCreateCampaign={canWrite}
+                  route={route}
+                  defaultPair={defaultPair}
+                  onRouteChange={(nextRoute) => setRoute(nextRoute, true)}
+                  onLoadMoreRuns={() => void plane.loadMoreRuns()}
+                  onLoadAllRuns={() => void plane.loadAllRuns()}
+                  onRefreshRuns={() => plane.refreshRuns()}
+                  onCreateRun={() => navigate('new')}
+                />
+              ) : null}
+            </>
+          ) : null}
+        </section>
 
-      <EvaluationRunActionDialogs
-        cancelTarget={cancelTarget}
-        deleteTarget={deleteTarget}
-        mutationKey={plane.mutationKey}
-        error={plane.mutationError}
-        onCloseCancel={() => {
-          setCancelTarget(null)
-          plane.clearMutationError()
-        }}
-        onCloseDelete={() => {
-          setDeleteTarget(null)
-          plane.clearMutationError()
-        }}
-        onConfirmCancel={confirmCancel}
-        onConfirmDelete={confirmDelete}
-      />
+        <EvaluationRunActionDialogs
+          cancelTarget={cancelTarget}
+          deleteTarget={deleteTarget}
+          mutationKey={plane.mutationKey}
+          error={plane.mutationError}
+          onCloseCancel={() => {
+            setCancelTarget(null)
+            plane.clearMutationError()
+          }}
+          onCloseDelete={() => {
+            setDeleteTarget(null)
+            plane.clearMutationError()
+          }}
+          onConfirmCancel={confirmCancel}
+          onConfirmDelete={confirmDelete}
+        />
+      </div>
     </DashboardManagerLayout>
   )
 }

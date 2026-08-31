@@ -27,6 +27,32 @@ interface EvaluationActionButtonProps extends ButtonHTMLAttributes<HTMLButtonEle
   compact?: boolean
 }
 
+interface EvaluationTagProps {
+  children: ReactNode
+  tone?: 'neutral' | 'info' | 'positive' | 'warning' | 'negative'
+  mono?: boolean
+  title?: string
+}
+
+export function EvaluationTag({
+  children,
+  tone = 'neutral',
+  mono = false,
+  title,
+}: EvaluationTagProps) {
+  const toneClass = tone === 'neutral' ? '' : styles[`tag_${tone}`]
+  return (
+    <span
+      className={`${styles.tag} ${toneClass} ${mono ? styles.tagMono : ''}`.trim()}
+      data-evaluation-tag="true"
+      data-tone={tone}
+      title={title}
+    >
+      {children}
+    </span>
+  )
+}
+
 export function EvaluationActionButton({
   variant = 'secondary',
   compact = false,
@@ -42,6 +68,8 @@ export function EvaluationActionButton({
   return (
     <button
       {...props}
+      data-density={compact ? 'compact' : 'regular'}
+      data-evaluation-action="true"
       className={`${variantClass} ${compact ? styles.compactButton : ''} ${className}`.trim()}
     />
   )
@@ -56,7 +84,15 @@ export function RunStatusBadge({
     status in RUN_STATUS_LABELS
       ? RUN_STATUS_LABELS[status as EvaluationRunStatus]
       : TRACK_STATUS_LABELS[status]
-  return <span className={`${styles.badge} ${styles[`status_${status}`]}`}>{label}</span>
+  return (
+    <span
+      className={`${styles.badge} ${styles[`status_${status}`]}`}
+      data-evaluation-tag="true"
+      data-tone={status}
+    >
+      {label}
+    </span>
+  )
 }
 
 export function GateVerdictBadge({
@@ -70,6 +106,8 @@ export function GateVerdictBadge({
   return (
     <span
       className={`${styles.badge} ${styles[`gate_${verdict}`]}`}
+      data-evaluation-tag="true"
+      data-tone={verdict}
       title={presentation.explanation}
     >
       {presentation.label}
@@ -81,9 +119,9 @@ export function TrackChips({ trackIDs }: { trackIDs: EvaluationTrackId[] }) {
   return (
     <div className={styles.chips} aria-label="Evaluation tracks">
       {trackIDs.map((trackID) => (
-        <span key={trackID} className={styles.chip} title={TRACK_PRESENTATION[trackID].description}>
+        <EvaluationTag key={trackID} title={TRACK_PRESENTATION[trackID].description}>
           {TRACK_PRESENTATION[trackID].label}
-        </span>
+        </EvaluationTag>
       ))}
     </div>
   )

@@ -280,10 +280,12 @@ func writeSafetyReportBundle(spec ProcessSpec, options safetyReportOptions) erro
 		{
 			ID: "safety.hard_policy_static_passed", Name: "Runtime hard-policy static proof result", TrackID: "safety",
 			Unit: "boolean", Direction: "higher_is_better", SampleCount: 0,
+			AnalysisProvenance: validMetricAnalysisProvenanceFor("safety.hard_policy_static_passed", 0),
 		},
 		{
 			ID: "safety.hard_policy_observation_count", Name: "Hard-policy dynamic observation count", TrackID: "safety",
 			Unit: "observations", Direction: "higher_is_better", SampleCount: 0,
+			AnalysisProvenance: validMetricAnalysisProvenanceFor("safety.hard_policy_observation_count", 0),
 		},
 	}
 	metrics[1].ConfidenceInterval = serverWilsonInterval(1, 1)

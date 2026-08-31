@@ -15,7 +15,9 @@ type CollectionRequest struct {
 }
 
 type CollectionPlanItem struct {
-	RunID          string         `json:"run_id"`
+	RunID          string         `json:"run_id,omitempty"`
+	PairID         string         `json:"pair_id,omitempty"`
+	RunIDs         []string       `json:"run_ids,omitempty"`
 	RetentionClass RetentionClass `json:"retention_class"`
 	DeleteAfter    time.Time      `json:"delete_after"`
 	EstimatedBytes int64          `json:"estimated_bytes"`
@@ -32,10 +34,11 @@ type CollectionPlan struct {
 }
 
 type CollectionResult struct {
-	SchemaVersion string         `json:"schema_version"`
-	Applied       bool           `json:"applied"`
-	Plan          CollectionPlan `json:"plan"`
-	DeletedRunIDs []string       `json:"deleted_run_ids"`
+	SchemaVersion  string         `json:"schema_version"`
+	Applied        bool           `json:"applied"`
+	Plan           CollectionPlan `json:"plan"`
+	DeletedRunIDs  []string       `json:"deleted_run_ids"`
+	DeletedPairIDs []string       `json:"deleted_pair_ids,omitempty"`
 }
 
 type collectionPlanIdentity struct {
@@ -45,7 +48,9 @@ type collectionPlanIdentity struct {
 }
 
 type collectionItemIdentity struct {
-	RunID           string         `json:"run_id"`
+	RunID           string         `json:"run_id,omitempty"`
+	PairID          string         `json:"pair_id,omitempty"`
+	RunIDs          []string       `json:"run_ids,omitempty"`
 	Status          RunStatus      `json:"status"`
 	CompletedAt     time.Time      `json:"completed_at"`
 	RetentionClass  RetentionClass `json:"retention_class"`
@@ -82,29 +87,48 @@ func (s *Service) CollectLifecycle(actor Actor, request CollectionRequest) (Coll
 			return CollectionResult{}, fmt.Errorf("%w: dry-run collection cannot supply plan_digest", ErrInvalid)
 		}
 		return CollectionResult{
-			SchemaVersion: lifecyclePolicySchemaVersion, Applied: false, Plan: plan, DeletedRunIDs: []string{},
+			SchemaVersion: lifecyclePolicySchemaVersion, Applied: false, Plan: plan,
+			DeletedRunIDs: []string{}, DeletedPairIDs: []string{},
 		}, nil
 	}
 	if !digestPattern.MatchString(request.PlanDigest) || request.PlanDigest != plan.PlanDigest {
 		return CollectionResult{}, fmt.Errorf("%w: collection plan is stale or does not match", ErrConflict)
 	}
-	s.mu.Lock()
 	for _, candidate := range plan.Candidates {
-		if _, active := s.active[candidate.RunID]; active {
-			s.mu.Unlock()
-			return CollectionResult{}, fmt.Errorf("%w: collection candidate is still exiting", ErrConflict)
+		ids := candidate.RunIDs
+		if candidate.RunID != "" {
+			ids = []string{candidate.RunID}
+		}
+		for _, runID := range ids {
+			if s.store.lifecycle.contains(runID) {
+				return CollectionResult{}, fmt.Errorf("%w: collection candidate is still exiting", ErrConflict)
+			}
 		}
 	}
-	s.mu.Unlock()
 	deleted := make([]string, 0, len(plan.Candidates))
+	deletedPairs := make([]string, 0)
 	for _, candidate := range plan.Candidates {
+		if candidate.PairID != "" {
+			if err := s.store.deleteControlledPairAs(actor, candidate.PairID); err != nil {
+				return CollectionResult{}, err
+			}
+			s.mu.Lock()
+			for _, runID := range candidate.RunIDs {
+				s.cleanupDeletedRunSubscribersLocked(runID)
+			}
+			s.mu.Unlock()
+			deleted = append(deleted, candidate.RunIDs...)
+			deletedPairs = append(deletedPairs, candidate.PairID)
+			continue
+		}
 		if err := s.deleteRunInternal(actor, candidate.RunID); err != nil {
 			return CollectionResult{}, err
 		}
 		deleted = append(deleted, candidate.RunID)
 	}
 	return CollectionResult{
-		SchemaVersion: lifecyclePolicySchemaVersion, Applied: true, Plan: plan, DeletedRunIDs: deleted,
+		SchemaVersion: lifecyclePolicySchemaVersion, Applied: true, Plan: plan,
+		DeletedRunIDs: deleted, DeletedPairIDs: deletedPairs,
 	}, nil
 }
 
@@ -163,12 +187,22 @@ func (s *Store) collectCollectionPlanCandidates(
 			"active": 0, "held": 0, "protected": 0, "referenced": 0, "not_expired": 0,
 		},
 	}
+	pairMembers, err := s.collectControlledPairCandidatesUnlocked(runs, now, &build)
+	if err != nil {
+		return collectionPlanBuild{}, err
+	}
 	for _, run := range runs {
+		if pairMembers[run.ID] {
+			continue
+		}
 		lifecycle, lifecycleErr := s.readRunLifecycle(run)
 		if lifecycleErr != nil {
 			return collectionPlanBuild{}, fmt.Errorf("%w: collection requires valid lifecycle metadata", ErrConflict)
 		}
 		reason := collectionRunSkipReason(run, lifecycle, referenced, now)
+		if s.lifecycle.contains(run.ID) {
+			reason = "active"
+		}
 		references := make(map[string]bool)
 		if err := s.markRunCASReferences(run.ID, references); err != nil {
 			return collectionPlanBuild{}, fmt.Errorf("%w: collection cannot verify run evidence", ErrConflict)
@@ -197,9 +231,132 @@ func (s *Store) collectCollectionPlanCandidates(
 			RetentionClass: lifecycle.RetentionClass, DeleteAfter: *lifecycle.DeleteAfter,
 			LifecycleDigest: lifecycle.PolicyDigest, EvidenceDigest: collectionReferenceDigest(references),
 		})
-		build.candidateReferences[run.ID] = references
+		build.candidateReferences["run:"+run.ID] = references
 	}
 	return build, nil
+}
+
+func (s *Store) collectControlledPairCandidatesUnlocked(
+	runs []Run,
+	now time.Time,
+	build *collectionPlanBuild,
+) (map[string]bool, error) {
+	byID := make(map[string]Run, len(runs))
+	for _, run := range runs {
+		byID[run.ID] = run
+	}
+	members := make(map[string]bool)
+	entries, err := os.ReadDir(s.controlledPairRoot)
+	if err != nil {
+		return nil, fmt.Errorf("%w: collection cannot inspect controlled pairs", ErrConflict)
+	}
+	for _, entry := range entries {
+		pair, err := s.readControlledPair(entry.Name())
+		if err != nil {
+			return nil, fmt.Errorf("%w: collection cannot validate controlled pair", ErrConflict)
+		}
+		if pair.State == controlledPairStateDeleting || pair.State == controlledPairStateDeleted {
+			continue
+		}
+		ids := []string{pair.BaselineRunID, pair.CandidateRunID}
+		members[ids[0]], members[ids[1]] = true, true
+		references := make(map[string]bool)
+		for _, id := range ids {
+			if _, ok := byID[id]; !ok {
+				return nil, fmt.Errorf("%w: controlled pair member is absent from collection ledger", ErrConflict)
+			}
+			if referenceErr := s.markRunCASReferences(id, references); referenceErr != nil {
+				return nil, fmt.Errorf("%w: collection cannot verify controlled pair evidence", ErrConflict)
+			}
+		}
+		reason := ""
+		lifecycles := make([]RunLifecycle, 0, 2)
+		for _, id := range ids {
+			lifecycle, lifecycleErr := s.readRunLifecycle(byID[id])
+			if lifecycleErr != nil {
+				return nil, fmt.Errorf("%w: collection requires controlled pair lifecycle metadata", ErrConflict)
+			}
+			lifecycles = append(lifecycles, lifecycle)
+			switch {
+			case s.lifecycle.contains(id):
+				reason = "active"
+			case pair.State != controlledPairStateTerminal || !terminalStatus(byID[id].Status):
+				reason = "active"
+			case lifecycle.EvidenceHold:
+				reason = "held"
+			case lifecycle.RetentionClass == RetentionProtected:
+				reason = "protected"
+			case lifecycle.DeleteAfter == nil || lifecycle.DeleteAfter.After(now):
+				reason = "not_expired"
+			}
+		}
+		if reason == "" {
+			if referenceErr := s.ensureControlledPairNotExternallyReferencedUnlocked(pair); referenceErr != nil {
+				reason = "referenced"
+			}
+			for _, id := range ids {
+				if referenceErr := s.ensureRunNotCampaignReferencedUnlocked(id); referenceErr != nil {
+					reason = "referenced"
+				}
+			}
+		}
+		if reason != "" {
+			build.skipped[reason]++
+			for digest := range references {
+				build.remainingReferences[digest] = true
+			}
+			continue
+		}
+		baselineBytes, err := s.collectionCandidateBytes(ids[0])
+		if err != nil {
+			return nil, err
+		}
+		candidateBytes, err := s.collectionCandidateBytes(ids[1])
+		if err != nil {
+			return nil, err
+		}
+		pairBytes, err := privateDirectoryBytes(filepath.Join(s.controlledPairRoot, pair.PairID), "")
+		if err != nil {
+			return nil, err
+		}
+		tombstoneBytes, err := controlledPairTombstoneBytes(pair)
+		if err != nil {
+			return nil, err
+		}
+		pairBytes -= tombstoneBytes
+		if pairBytes < 0 {
+			pairBytes = 0
+		}
+		estimated, err := checkedLifecycleBytes(baselineBytes, candidateBytes)
+		if err == nil {
+			estimated, err = checkedLifecycleBytes(estimated, pairBytes)
+		}
+		if err != nil {
+			return nil, err
+		}
+		deleteAfter := *lifecycles[0].DeleteAfter
+		if lifecycles[1].DeleteAfter.After(deleteAfter) {
+			deleteAfter = *lifecycles[1].DeleteAfter
+		}
+		completedAt := *byID[ids[0]].CompletedAt
+		if byID[ids[1]].CompletedAt.After(completedAt) {
+			completedAt = *byID[ids[1]].CompletedAt
+		}
+		item := CollectionPlanItem{
+			PairID: pair.PairID, RunIDs: ids, RetentionClass: lifecycles[0].RetentionClass,
+			DeleteAfter: deleteAfter, EstimatedBytes: estimated,
+		}
+		build.items = append(build.items, item)
+		build.identities = append(build.identities, collectionItemIdentity{
+			PairID: pair.PairID, RunIDs: ids, Status: StatusCompleted,
+			CompletedAt: completedAt, RetentionClass: lifecycles[0].RetentionClass,
+			DeleteAfter:     deleteAfter,
+			LifecycleDigest: digestString(lifecycles[0].PolicyDigest + ":" + lifecycles[1].PolicyDigest),
+			EvidenceDigest:  collectionReferenceDigest(references), EstimatedBytes: estimated,
+		})
+		build.candidateReferences["pair:"+pair.PairID] = references
+	}
+	return members, nil
 }
 
 func collectionRunSkipReason(run Run, lifecycle RunLifecycle, referenced map[string]bool, now time.Time) string {
@@ -238,10 +395,12 @@ func (s *Store) collectionCandidateBytes(runID string) (int64, error) {
 }
 
 func (s *Store) addCollectionReclaimableEvidence(build *collectionPlanBuild) error {
-	sort.Slice(build.items, func(i, j int) bool { return build.items[i].RunID < build.items[j].RunID })
+	sort.Slice(build.items, func(i, j int) bool {
+		return collectionPlanItemKey(build.items[i]) < collectionPlanItemKey(build.items[j])
+	})
 	itemByID := make(map[string]*CollectionPlanItem, len(build.items))
 	for index := range build.items {
-		itemByID[build.items[index].RunID] = &build.items[index]
+		itemByID[collectionPlanItemKey(build.items[index])] = &build.items[index]
 	}
 	digestOwners := make(map[string][]string)
 	for runID, references := range build.candidateReferences {
@@ -263,12 +422,26 @@ func (s *Store) addCollectionReclaimableEvidence(build *collectionPlanBuild) err
 		itemByID[runIDs[0]].EstimatedBytes += info.Size()
 	}
 	for index := range build.identities {
-		build.identities[index].EstimatedBytes = itemByID[build.identities[index].RunID].EstimatedBytes
+		build.identities[index].EstimatedBytes = itemByID[collectionIdentityKey(build.identities[index])].EstimatedBytes
 	}
 	sort.Slice(build.identities, func(i, j int) bool {
-		return build.identities[i].RunID < build.identities[j].RunID
+		return collectionIdentityKey(build.identities[i]) < collectionIdentityKey(build.identities[j])
 	})
 	return nil
+}
+
+func collectionPlanItemKey(item CollectionPlanItem) string {
+	if item.PairID != "" {
+		return "pair:" + item.PairID
+	}
+	return "run:" + item.RunID
+}
+
+func collectionIdentityKey(item collectionItemIdentity) string {
+	if item.PairID != "" {
+		return "pair:" + item.PairID
+	}
+	return "run:" + item.RunID
 }
 
 func collectionReferenceDigest(references map[string]bool) string {
@@ -290,6 +463,26 @@ func (s *Store) collectionReferencedRunsUnlocked(runs []Run) (map[string]bool, e
 		if run.BaselineRunID != "" {
 			referenced[run.BaselineRunID] = true
 		}
+	}
+	pairEntries, err := os.ReadDir(s.controlledPairRoot)
+	if err != nil {
+		return nil, fmt.Errorf("%w: collection cannot verify controlled pair references", ErrConflict)
+	}
+	for _, entry := range pairEntries {
+		if !entry.IsDir() || !validClientRequestID(entry.Name()) {
+			return nil, fmt.Errorf("%w: collection cannot verify controlled pair references", ErrConflict)
+		}
+		pair, pairErr := s.readControlledPair(entry.Name())
+		if pairErr != nil {
+			return nil, fmt.Errorf("%w: collection cannot verify controlled pair references", ErrConflict)
+		}
+		if pair.State == controlledPairStateDeleting || pair.State == controlledPairStateDeleted {
+			continue
+		}
+		referenced[pair.BaselineRunID] = true
+		referenced[pair.CandidateRunID] = true
+		referenced[pair.BaselineSourceRunID] = true
+		referenced[pair.CandidateSourceRunID] = true
 	}
 	campaigns, err := s.loadStoredCampaignsUnlocked()
 	if err != nil {

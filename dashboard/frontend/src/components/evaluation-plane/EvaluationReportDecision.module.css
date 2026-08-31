@@ -3,8 +3,9 @@
   grid-template-columns: repeat(4, minmax(0, 1fr));
   margin: 0;
   overflow: hidden;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: 0;
 }
 
 .headlineStrip > div {

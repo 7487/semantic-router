@@ -322,7 +322,10 @@ func validateControlledPairedReportCohort(
 		baseline.manifest.RunID != baseline.report.Run.ID ||
 		candidate.manifest.RunID != candidate.report.Run.ID ||
 		candidate.manifest.BaselineRunID != baseline.manifest.RunID {
-		return fmt.Errorf("controlled pair manifests do not bind the campaign runs")
+		return fmt.Errorf(
+			"%w: distinct deployment targets require a server-owned controlled pair with exact manifest bindings",
+			ErrInvalid,
+		)
 	}
 	if err := validateControlledPairAddressability(baseline.manifest, candidate.manifest); err != nil {
 		return err
@@ -333,7 +336,10 @@ func validateControlledPairedReportCohort(
 	}
 	if !comparisonTreatment(baseline.report.Run.ChangeProfile).environment &&
 		baseline.manifest.Target.BackendTopologyDigest != candidate.manifest.Target.BackendTopologyDigest {
-		return fmt.Errorf("controlled pair backend topology changed outside the declared treatment")
+		return fmt.Errorf(
+			"%w: controlled pair backend topology changed outside the declared treatment",
+			ErrInvalid,
+		)
 	}
 	return nil
 }

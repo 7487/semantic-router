@@ -237,14 +237,17 @@ func writeProcessReport(spec ProcessSpec) error {
 		{
 			ID: "routing.accuracy", Name: "Routing accuracy", TrackID: "routing",
 			Unit: "fraction", Direction: "higher_is_better", SampleCount: 0,
+			AnalysisProvenance: validMetricAnalysisProvenance(0),
 		},
 		{
 			ID: "routing.robustness_pass_rate", Name: "Pinned declared-shift relation pass rate", TrackID: "routing",
 			Unit: "fraction", Direction: "higher_is_better", SampleCount: 0,
+			AnalysisProvenance: validMetricAnalysisProvenanceFor("routing.robustness_pass_rate", 0),
 		},
 		{
 			ID: "routing.robustness_worst_slice_pass_rate", Name: "Worst declared robustness-slice pass rate", TrackID: "routing",
 			Unit: "fraction", Direction: "higher_is_better", SampleCount: 0,
+			AnalysisProvenance: validMetricAnalysisProvenanceFor("routing.robustness_worst_slice_pass_rate", 0),
 		},
 	}
 	gates := testReleaseGates(fixture.run.ChangeProfile, completedAt)

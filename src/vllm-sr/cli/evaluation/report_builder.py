@@ -12,6 +12,7 @@ from cli.evaluation.metric_core import (
     _canonical_ordered_float_sum,
     aggregate_track_coverage,
 )
+from cli.evaluation.metric_compound_model_budget import r2_compound_report
 from cli.evaluation.metrics import coverage
 from cli.evaluation.reporting import (
     EvaluationArtifact,
@@ -223,4 +224,7 @@ def build_report(
         recommendations=tuple(recommendations),
         provenance=provenance,
         artifacts=artifacts,
+        method_reports=tuple(
+            report for report in (r2_compound_report(records),) if report is not None
+        ),
     )

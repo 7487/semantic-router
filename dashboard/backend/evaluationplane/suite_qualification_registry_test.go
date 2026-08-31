@@ -21,15 +21,25 @@ func TestNormalizedImportProvenanceMatchesPythonGolden(t *testing.T) {
 }
 
 func TestNormalizedAdapterRegistryPinsSourceAndWorkloadOnly(t *testing.T) {
-	if len(normalizedAdapterContracts) != 11 {
-		t.Fatalf("normalized adapter count=%d, want 11 executable adapters", len(normalizedAdapterContracts))
+	if len(normalizedAdapterContracts) != 13 {
+		t.Fatalf("normalized adapter count=%d, want the 13 research benchmarks", len(normalizedAdapterContracts))
 	}
 	for adapterID, contract := range normalizedAdapterContracts {
+		benchmark, found := researchBenchmarkByAdapter(adapterID)
+		if !found {
+			t.Fatalf("adapter %q is not in the research inventory", adapterID)
+		}
 		if !portableSuiteIDPattern.MatchString(adapterID) ||
 			!adapterSourceRevisionPattern.MatchString(contract.sourceRevision) ||
-			contract.decisionUnit == "" || contract.actionSpace == "" ||
-			!canonicalTrackOrder(contract.trackIDs) {
+			contract.decisionUnit != benchmark.DecisionUnit || contract.actionSpace != benchmark.ActionSpace {
 			t.Fatalf("adapter %q has an invalid import contract: %+v", adapterID, contract)
+		}
+		if benchmark.Status == "blocked" {
+			if len(contract.trackIDs) != 0 {
+				t.Fatalf("blocked adapter %q advertises import tracks", adapterID)
+			}
+		} else if !canonicalTrackOrder(contract.trackIDs) {
+			t.Fatalf("adapter %q has an invalid import track order", adapterID)
 		}
 		if contract.datasetRevision != "" && !adapterSourceRevisionPattern.MatchString(contract.datasetRevision) {
 			t.Fatalf("adapter %q has an invalid dataset revision", adapterID)

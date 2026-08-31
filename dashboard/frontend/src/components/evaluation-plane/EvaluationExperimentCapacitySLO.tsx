@@ -1,6 +1,6 @@
 import type { EvaluationCapacitySLOInput } from './useEvaluationExperimentForm'
 import type { EvaluationExperimentFormModel } from './useEvaluationExperimentForm'
-import { EvaluationActionButton } from './EvaluationPrimitives'
+import { EvaluationActionButton, EvaluationTag } from './EvaluationPrimitives'
 import EvaluationExperimentSectionHeading from './EvaluationExperimentSectionHeading'
 import styles from './EvaluationCapacitySLO.module.css'
 import sectionStyles from './EvaluationExperimentSection.module.css'
@@ -72,7 +72,9 @@ export default function EvaluationExperimentCapacitySLO({
           title="Capacity service objective"
           description="Freeze the service objective that G7 must prove from server-attested live load observations."
         />
-        <span className={styles.sloRequired}>Required for live capacity</span>
+        <EvaluationTag tone="info" mono>
+          Required for live capacity
+        </EvaluationTag>
       </div>
 
       <div className={styles.sloExplanation}>
@@ -124,11 +126,13 @@ export default function EvaluationExperimentCapacitySLO({
             <EvaluationActionButton
               key={preset.id}
               type="button"
+              compact
               variant="quiet"
+              title={preset.description}
+              aria-label={`${preset.label}: ${preset.description}`}
               onClick={() => applyPreset(preset)}
             >
-              <strong>{preset.label}</strong>
-              <small>{preset.description}</small>
+              {preset.label}
             </EvaluationActionButton>
           ))}
         </div>

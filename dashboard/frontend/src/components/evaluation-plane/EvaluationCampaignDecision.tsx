@@ -4,7 +4,7 @@ import type { EvaluationRun } from '../../types/evaluationPlane'
 import type { EvaluationCampaign } from '../../types/evaluationCampaign'
 import { TRACK_PRESENTATION } from '../../types/evaluationPlane'
 import ProductIcon from '../ProductIcon'
-import { EvaluationActionButton, GateVerdictBadge } from './EvaluationPrimitives'
+import { EvaluationActionButton, EvaluationTag, GateVerdictBadge } from './EvaluationPrimitives'
 import commonStyles from './EvaluationCampaign.module.css'
 import styles from './EvaluationCampaignDecisionLayout.module.css'
 import evidenceStyles from './EvaluationCampaignEvidence.module.css'
@@ -87,15 +87,18 @@ function CopyableDigest({
   return (
     <dd className={evidenceStyles.copyableDigest} title={value}>
       <span>{displayValue}</span>
-      <button
+      <EvaluationActionButton
         type="button"
+        compact
+        variant="quiet"
+        className={evidenceStyles.copyDigestButton}
         disabled={copyState === 'copying'}
         onClick={() => void copy()}
         title={actionLabel}
         aria-label={actionLabel}
       >
         <ProductIcon name={copyState === 'copied' ? 'check' : 'copy'} aria-hidden="true" />
-      </button>
+      </EvaluationActionButton>
       <span className={commonStyles.srOnly} aria-live="polite">
         {copyState === 'copied'
           ? `${label} digest copied.`
@@ -565,9 +568,7 @@ export default function EvaluationCampaignDecision({
               receipt used by this decision.
             </p>
           </div>
-          <span className={commonStyles.contractBadge}>
-            {decision.evidence.length} anchored runs
-          </span>
+          <EvaluationTag>{decision.evidence.length} anchored runs</EvaluationTag>
         </div>
         <div className={evidenceStyles.anchorGrid}>
           {decision.evidence.map((anchor) => (
@@ -577,9 +578,9 @@ export default function EvaluationCampaignDecision({
             >
               <div className={evidenceStyles.anchorHeader}>
                 <strong>{runNames.get(anchor.run_id) || anchor.run_id}</strong>
-                <span className={commonStyles.roleBadge}>
+                <EvaluationTag mono>
                   {anchor.gate_id} · {anchor.binding_role}
-                </span>
+                </EvaluationTag>
               </div>
               <dl className={evidenceStyles.digestList}>
                 <div>
@@ -641,7 +642,7 @@ export default function EvaluationCampaignDecision({
               Required, advisory, and not-applicable gates remain visible as one signed decision.
             </p>
           </div>
-          <span className={commonStyles.contractBadge}>{decision.gates.length} gates</span>
+          <EvaluationTag>{decision.gates.length} gates</EvaluationTag>
         </div>
         <div className={gateStyles.gateList}>
           {decision.gates.map((gate) => (
@@ -655,8 +656,10 @@ export default function EvaluationCampaignDecision({
               </div>
               <div className={gateStyles.gateEvidence}>
                 <div>
-                  <span className={commonStyles.sourceBadge}>{gate.source}</span>
-                  <span className={commonStyles.evidenceLevel}>{gate.evidence_level}</span>
+                  <EvaluationTag tone="info" mono>
+                    {gate.source}
+                  </EvaluationTag>
+                  <EvaluationTag mono>{gate.evidence_level}</EvaluationTag>
                 </div>
                 <span>
                   {gate.observed === undefined
@@ -689,7 +692,7 @@ export default function EvaluationCampaignDecision({
             <span className={commonStyles.eyebrow}>Next actions</span>
             <h4 id="campaign-actions-title">Recommendations</h4>
           </div>
-          <span className={commonStyles.contractBadge}>{formatCreatedAt(decision.created_at)}</span>
+          <EvaluationTag>{formatCreatedAt(decision.created_at)}</EvaluationTag>
         </div>
         {decision.recommendations.length ? (
           <ol className={gateStyles.recommendations}>

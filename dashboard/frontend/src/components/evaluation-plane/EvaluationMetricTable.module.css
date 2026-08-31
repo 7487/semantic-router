@@ -21,12 +21,7 @@
 .metricToolbar input,
 .metricToolbar select {
   width: 100%;
-  min-height: 42px;
-}
-
-.metricToolbar select option {
-  background: var(--surface-panel);
-  color: var(--text-primary);
+  min-height: var(--control-height);
 }
 
 .metricResultCount {

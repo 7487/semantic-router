@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from cli.evaluation.architecture_feedback import architecture_recommendations
+from cli.evaluation.metric_core import metric_analysis_provenance
 from cli.evaluation.reporting import EvaluationGate, EvaluationMetric
 
 
@@ -13,6 +14,9 @@ def _metric(metric_id: str, value: float, track_id: str) -> EvaluationMetric:
         unit="fraction",
         direction="higher_is_better",
         sample_count=20,
+        analysis_provenance=metric_analysis_provenance(
+            metric_id, observed_exclusions=0
+        ),
     )
 
 

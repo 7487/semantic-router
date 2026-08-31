@@ -37,9 +37,10 @@
 }
 
 .empty {
-  padding: 0.85rem 1rem;
-  border: 1px dashed var(--border-strong);
-  border-radius: var(--radius-lg);
+  padding: 0.85rem 0;
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: 0;
   color: var(--text-secondary);
   font-size: var(--text-xs);
   line-height: 1.5;

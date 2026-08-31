@@ -110,6 +110,76 @@ func (broker *workerHTTPBroker) validatedPayload(operation string, raw json.RawM
 	}
 }
 
+// brokerRequestSemanticDigest binds an attested POST request to the exact
+// case messages without depending on incidental JSON object ordering. The
+// broker has already normalized every other admitted request parameter, so the
+// compact subject below is also the durable request contract used at sealing.
+func brokerRequestSemanticDigest(operation string, payload []byte) (string, error) {
+	switch operation {
+	case workerBrokerListModels, workerBrokerAgentTaskLedger, workerBrokerFaultRecoveryLedger, workerBrokerHardPolicyLedger, workerBrokerProductionExperimentLedger:
+		if len(payload) != 0 {
+			return "", fmt.Errorf("broker GET request digest payload is invalid")
+		}
+		return digestBytes(nil), nil
+	case workerBrokerRouterEvaluate:
+		var request brokerRouterPayload
+		if err := decodeBrokerPayload(payload, &request); err != nil || request.EvaluateAllSignals == nil || !*request.EvaluateAllSignals {
+			return "", fmt.Errorf("broker Router request digest payload is invalid")
+		}
+		messagesDigest, err := canonicalMessageListDigest(request.Messages)
+		if err != nil {
+			return "", err
+		}
+		return brokerRequestDigestForMessages(operation, request.Model, messagesDigest)
+	case workerBrokerRoutedChatCompletion, workerBrokerArmChatCompletion:
+		var request brokerPublishedChatPayload
+		if err := decodeBrokerPayload(payload, &request); err != nil || request.Temperature != 0 || request.Stream || request.MaxTokens != workerBrokerMaxOutputTokens {
+			return "", fmt.Errorf("broker chat request digest payload is invalid")
+		}
+		messagesDigest, err := canonicalMessageListDigest(request.Messages)
+		if err != nil {
+			return "", err
+		}
+		return brokerRequestDigestForMessages(operation, request.Model, messagesDigest)
+	default:
+		return "", fmt.Errorf("broker request digest operation is invalid")
+	}
+}
+
+func brokerRequestDigestForMessages(operation, model, messagesDigest string) (string, error) {
+	if !digestPattern.MatchString(messagesDigest) {
+		return "", fmt.Errorf("broker request messages digest is invalid")
+	}
+	if err := validateBrokerModelIdentity(model); err != nil {
+		return "", err
+	}
+	subject := map[string]any{
+		"contract_version": executionAttestationContractVersion,
+		"operation":        operation,
+		"model":            model,
+		"messages_digest":  messagesDigest,
+	}
+	switch operation {
+	case workerBrokerRouterEvaluate:
+		subject["evaluate_all_signals"] = true
+	case workerBrokerRoutedChatCompletion, workerBrokerArmChatCompletion:
+		subject["temperature"] = float64(0)
+		subject["stream"] = false
+		subject["max_tokens"] = workerBrokerMaxOutputTokens
+	default:
+		return "", fmt.Errorf("broker request digest operation is invalid")
+	}
+	return canonicalValueDigest(subject)
+}
+
+func canonicalMessageListDigest(messages any) (string, error) {
+	encoded, err := json.Marshal(messages)
+	if err != nil {
+		return "", fmt.Errorf("encode broker request messages: %w", err)
+	}
+	return canonicalJSONDigest(encoded)
+}
+
 func decodeBrokerPayload(raw []byte, destination any) error {
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()

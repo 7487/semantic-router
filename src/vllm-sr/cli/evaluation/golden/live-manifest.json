@@ -1,5 +1,5 @@
 {
-  "manifest_digest": "sha256:3f5c746ec05379d80c415529adf97927a43c989204f1dabdc665dc8955e200c3",
+  "manifest_digest": "sha256:3dd0c4a8059235cfc9d036e6e14f3c4b9f875c6449ce4aa1538f56518c4ca5dd",
   "code_revision": "8dedee734ba3abae9bceae9309903147fda8eeab",
   "change_profile": "recipe",
   "concurrency": 4,
@@ -131,7 +131,38 @@
             "strong"
           ]
         }
-      ]
+      ],
+      "routing_recipe_plan": {
+        "contract_version": "routing-recipe-plan.v1",
+        "plan_digest": "sha256:1f3a6ccdafe32e7b2cf84b077431596c845a0c4c5b77c8da35d1bbf487c1c24c",
+        "target_snapshot_digest": "sha256:5b8d499933f180ca9877c2cfc99bb718403c3e8feaa08227e38c4e8b9907bb9e",
+        "arm_ids": [
+          "fast",
+          "strong"
+        ],
+        "fallback_arm_id": "fast",
+        "signals": [
+          {
+            "id": "complexity:complexity",
+            "value_kind": "numeric"
+          },
+          {
+            "id": "modality:modality",
+            "value_kind": "numeric"
+          }
+        ],
+        "projections": [
+          {
+            "id": "projection:route-confidence",
+            "value_kind": "probability",
+            "outcome_binding": "selected_is_oracle"
+          }
+        ],
+        "top_k": [
+          1,
+          2
+        ]
+      }
     },
     "router_api_url": "https://router.example.test",
     "schema_version": "evaluation.v1"

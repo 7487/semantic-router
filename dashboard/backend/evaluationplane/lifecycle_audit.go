@@ -1,28 +1,39 @@
 package evaluationplane
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
 
 const lifecycleAuditDirectoryName = "audit"
 
+const lifecycleAuditTempPrefix = ".tmp-lifecycle-audit-"
+
 var lifecycleAuditFilePattern = regexp.MustCompile(`^([0-9]{20})-([0-9a-f]{64})\.json$`)
 
+var lifecycleAuditTempPattern = regexp.MustCompile(`^\.tmp-lifecycle-audit-[A-Za-z0-9]+$`)
+
 type lifecycleCoordinator struct {
-	mu         sync.Mutex
-	loaded     bool
-	sequence   uint64
-	headDigest string
-	bytes      int64
-	records    map[string]lifecycleAuditRecord
+	mu                     sync.Mutex
+	activityMu             sync.Mutex
+	activeRuns             map[string]context.CancelFunc
+	controlledPairLaunchMu sync.Mutex
+	controlledPairLaunches map[string]chan struct{}
+	loaded                 bool
+	sequence               uint64
+	headDigest             string
+	bytes                  int64
+	records                map[string]lifecycleAuditRecord
 }
 
 var lifecycleCoordinators = struct {
@@ -36,7 +47,10 @@ func sharedLifecycleCoordinator(root string) *lifecycleCoordinator {
 	if existing := lifecycleCoordinators.byRoot[root]; existing != nil {
 		return existing
 	}
-	created := &lifecycleCoordinator{records: make(map[string]lifecycleAuditRecord)}
+	created := &lifecycleCoordinator{
+		records: make(map[string]lifecycleAuditRecord), activeRuns: make(map[string]context.CancelFunc),
+		controlledPairLaunches: make(map[string]chan struct{}),
+	}
 	lifecycleCoordinators.byRoot[root] = created
 	return created
 }
@@ -70,7 +84,7 @@ func (atomicLifecycleAuditWriter) WriteExclusive(path string, value any) error {
 	if int64(len(encoded)) > maxLifecycleRecordSize {
 		return fmt.Errorf("lifecycle audit record exceeds its durable envelope")
 	}
-	temporary, err := os.CreateTemp(filepath.Dir(path), ".tmp-lifecycle-audit-*")
+	temporary, err := os.CreateTemp(filepath.Dir(path), lifecycleAuditTempPrefix+"*")
 	if err != nil {
 		return fmt.Errorf("stage lifecycle audit record: %w", err)
 	}
@@ -95,6 +109,35 @@ func (atomicLifecycleAuditWriter) WriteExclusive(path string, value any) error {
 		return fmt.Errorf("publish lifecycle audit record: %w", err)
 	}
 	return syncEvaluationDirectory(filepath.Dir(path), "evaluation lifecycle audit")
+}
+
+func recoverLifecycleAuditTemps(root string) error {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return fmt.Errorf("list staged lifecycle audit records: %w", err)
+	}
+	removed := false
+	for _, entry := range entries {
+		if !strings.HasPrefix(entry.Name(), lifecycleAuditTempPrefix) {
+			continue
+		}
+		if !lifecycleAuditTempPattern.MatchString(entry.Name()) {
+			return fmt.Errorf("%w: staged lifecycle audit record name is invalid", ErrInvalid)
+		}
+		path := filepath.Join(root, entry.Name())
+		info, statErr := os.Lstat(path)
+		if statErr != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm() != 0o600 {
+			return fmt.Errorf("%w: staged lifecycle audit record is invalid", ErrInvalid)
+		}
+		if err := os.Remove(path); err != nil {
+			return fmt.Errorf("remove staged lifecycle audit record: %w", err)
+		}
+		removed = true
+	}
+	if removed {
+		return syncEvaluationDirectory(root, "lifecycle audit recovery")
+	}
+	return nil
 }
 
 func (s *Store) validateLifecycleAuditUnlocked() error {
@@ -226,7 +269,19 @@ func (s *Store) appendLifecycleAuditUnlocked(
 	if projected > s.lifecyclePolicy.Limits.MaxAuditBytes {
 		return lifecycleAuditRecord{}, fmt.Errorf("%w: lifecycle audit byte bound reached", ErrQuota)
 	}
-	if err := s.lifecycleAuditWriter.WriteExclusive(filepath.Join(s.lifecycleAuditRoot, name), record); err != nil {
+	path := filepath.Join(s.lifecycleAuditRoot, name)
+	if err := s.lifecycleAuditWriter.WriteExclusive(path, record); err != nil {
+		// Link publication can succeed before the audit-directory fsync reports
+		// failure. Reconcile that exact immutable path/content into the in-memory
+		// chain while still returning the durability error to the operation. A
+		// retry therefore advances from the committed sequence instead of writing
+		// a different timestamp at the same sequence.
+		var visible lifecycleAuditRecord
+		if readErr := readJSON(path, &visible); readErr == nil && reflect.DeepEqual(visible, record) {
+			s.lifecycle.sequence, s.lifecycle.headDigest, s.lifecycle.bytes = record.Sequence, record.Digest, projected
+			s.lifecycle.records[record.Digest] = record
+			return record, err
+		}
 		return lifecycleAuditRecord{}, err
 	}
 	s.lifecycle.sequence, s.lifecycle.headDigest, s.lifecycle.bytes = record.Sequence, record.Digest, projected

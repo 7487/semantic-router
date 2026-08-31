@@ -264,7 +264,7 @@ def normalize_r2_router(
                 NormalizedOutcome(
                     case_id=case_visible.id,
                     arm_id=arms[row["model"]],
-                    action_id=f"{arms[row['model']]}-b{budget}",
+                    action_id=arms[row["model"]],
                     budget_tokens=budget,
                     success=quality > 0,
                     quality=quality,

@@ -44,12 +44,7 @@
 .compareControls input,
 .compareControls select {
   width: 100%;
-  min-height: 42px;
-}
-
-.compareControls select option {
-  background: var(--surface-panel);
-  color: var(--text-primary);
+  min-height: var(--control-height);
 }
 
 .compareControls small {
@@ -96,11 +91,25 @@
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding: 0.65rem 1.25rem;
+  padding: 0.65rem 0;
   border-top: 1px solid var(--border-subtle);
   border-bottom: 1px solid var(--border-subtle);
   color: var(--text-muted);
   font-size: 0.72rem;
+}
+
+.routingComparisonBoundary {
+  margin: 0;
+  padding: 0.65rem 0;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+  line-height: 1.5;
+}
+
+.routingComparisonBoundary strong {
+  color: var(--text-primary);
+  font-weight: 650;
 }
 
 @media (max-width: 1050px) {

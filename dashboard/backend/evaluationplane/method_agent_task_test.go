@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-const agentTaskMixtureSnapshotGolden = "sha256:ba509c86e0639916d2fa7430e09183c051f85504cda77b342788b5ba7892ba67"
+const agentTaskMixtureSnapshotGolden = "sha256:8d229b7c78bbf7865ae1b4c3dd9f6709d6afa36cbb1118274302cf03b23021d3"
 
 func TestAgentTaskMixtureBindingMatchesPythonGolden(t *testing.T) {
 	manifest := RunManifest{Target: ManifestTarget{Mixture: &ManifestMixture{
@@ -33,6 +33,7 @@ func TestAgentTaskMixtureBindingMatchesPythonGolden(t *testing.T) {
 		SupportModels: []SupportModel{}, FallbackArmID: "agent-arm",
 		Decisions: []MixtureDecisionBinding{{Name: "default", Algorithm: "single", ArmIDs: []string{"agent-arm"}}},
 	}}}
+	mustFreezeTestRoutingRecipePlan(manifest.Target.Mixture)
 	binding, err := methodManifestMixtureBinding(manifest)
 	if err != nil {
 		t.Fatal(err)
@@ -61,6 +62,7 @@ func agentTaskTestManifest(t *testing.T) RunManifest {
 			},
 		},
 	}
+	mustFreezeTestRoutingRecipePlan(manifest.Target.Mixture)
 	if _, err := methodManifestMixtureBinding(manifest); err != nil {
 		t.Fatalf("mixture binding: %v", err)
 	}

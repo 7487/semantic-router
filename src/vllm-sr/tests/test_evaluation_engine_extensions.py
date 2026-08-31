@@ -24,6 +24,7 @@ from cli.evaluation.fixture_executor import execute_fixture
 from cli.evaluation.fixtures import fixture_inputs
 from cli.evaluation.gates import compute_gates
 from cli.evaluation.metric_core import _canonical_ordered_float_sum
+from cli.evaluation.metric_analysis_catalog import static_metric_ids_for_track
 from cli.evaluation.metrics import compute_metrics
 from cli.evaluation.orchestrator import run_evaluation, validate_manifest
 from cli.evaluation.report_builder import _track_plan_totals
@@ -373,35 +374,9 @@ def test_real_regression_remains_diagnostic_without_qualification() -> None:
     assert violation_rate.value is not None and violation_rate.value > 0
 
 
-def test_catalog_advertises_only_metrics_produced_by_the_track_reducers() -> None:
-    inputs = fixture_inputs()
-    records = execute_fixture(inputs.visible, inputs.grading, inputs.fixture, TRACK_IDS)
-    produced = {metric.id for metric in compute_metrics(records, capacity_profile=None)}
-
-    live_method_metrics = {
-        "agentic.recovery_pair_count",
-        "agentic.recovery_pass_rate",
-        "agentic.recovery_pass_rate_lower_95",
-        "agentic.recovery_seed_count",
-        "preference.online_assignment_count",
-        "preference.online_exposure_coverage",
-        "preference.online_effective_sample_size",
-        "preference.online_effective_sample_ratio",
-        "preference.online_segment_coverage",
-        "preference.online_target_snips_reward",
-        "preference.online_reference_snips_reward",
-        "preference.online_reward_lift",
-        "preference.online_reward_lift_ci_lower_95",
-        "preference.online_reward_lift_ci_upper_95",
-        "preference.production_srm_p_value",
-        "preference.production_risk_event_rate",
-        "preference.production_risk_event_rate_upper_95",
-        "preference.production_risk_budget_max_rate",
-        "safety.hard_policy_static_passed",
-        "safety.hard_policy_observation_count",
-    }
+def test_catalog_track_capabilities_are_the_canonical_analysis_catalog() -> None:
     for track in get_catalog(generated_at=False).tracks:
-        assert set(track.metrics) <= produced | live_method_metrics, track.id
+        assert track.metrics == static_metric_ids_for_track(track.id)
 
 
 def test_cost_per_success_never_uses_a_partial_track_ledger() -> None:

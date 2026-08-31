@@ -10,7 +10,7 @@ import type {
 import { EVALUATION_CAMPAIGN_CONTRACT_VERSION } from '../../types/evaluationPlane'
 import EvaluationCampaignBuilder from './EvaluationCampaignBuilder'
 import EvaluationCampaignDecision from './EvaluationCampaignDecision'
-import { EvaluationActionButton } from './EvaluationPrimitives'
+import { EvaluationActionButton, EvaluationTag } from './EvaluationPrimitives'
 import useEvaluationCampaignBuilder from './useEvaluationCampaignBuilder'
 import styles from './EvaluationCampaign.module.css'
 
@@ -94,7 +94,7 @@ export default function EvaluationCampaign({
             diagnostic and cannot substitute for this campaign.
           </p>
         </div>
-        <span className={styles.contractBadge}>{EVALUATION_CAMPAIGN_CONTRACT_VERSION}</span>
+        <EvaluationTag mono>{EVALUATION_CAMPAIGN_CONTRACT_VERSION}</EvaluationTag>
       </header>
 
       {campaignLoading ? (

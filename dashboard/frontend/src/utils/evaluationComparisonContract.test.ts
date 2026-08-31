@@ -48,6 +48,8 @@ function comparison() {
       {
         id: 'joint.normalized_regret',
         track_id: 'joint',
+        estimator_id: 'paired-bootstrap-case-clustered-delta',
+        estimator_version: 'v1',
         analysis_unit: 'case_normalized_regret',
         direction: 'lower_is_better',
         non_inferiority_margin: 0.05,

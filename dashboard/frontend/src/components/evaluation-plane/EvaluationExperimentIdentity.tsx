@@ -63,26 +63,31 @@ export default function EvaluationExperimentIdentity({
         </label>
         <fieldset className={styles.choiceGroup}>
           <legend>Mode</legend>
-          {(['replay', 'live'] as const).map((option) => (
-            <label key={option} className={styles.choiceCard}>
-              <input
-                type="radio"
-                name="evaluation-mode"
-                value={option}
-                checked={form.mode === option}
-                disabled={form.baselineLocked}
-                onChange={() => form.setMode(option)}
-              />
-              <span>
+          <div className={styles.choiceOptions}>
+            {(['replay', 'live'] as const).map((option) => (
+              <label key={option} className={styles.choiceCard}>
+                <input
+                  type="radio"
+                  name="evaluation-mode"
+                  value={option}
+                  aria-label={
+                    option === 'replay'
+                      ? 'Replay Deterministic, reproducible evidence.'
+                      : 'Live Execute against an approved runtime target.'
+                  }
+                  checked={form.mode === option}
+                  disabled={form.baselineLocked}
+                  onChange={() => form.setMode(option)}
+                />
                 <strong>{option === 'replay' ? 'Replay' : 'Live'}</strong>
-                <small>
-                  {option === 'replay'
-                    ? 'Deterministic, reproducible evidence.'
-                    : 'Execute against an approved runtime target.'}
-                </small>
-              </span>
-            </label>
-          ))}
+              </label>
+            ))}
+          </div>
+          <small className={styles.choiceHelp}>
+            {form.mode === 'replay'
+              ? 'Deterministic, reproducible evidence.'
+              : 'Execute against an approved runtime target.'}
+          </small>
         </fieldset>
         <label>
           {form.mode === 'live' ? 'Mixture to evaluate' : 'Evidence target'}

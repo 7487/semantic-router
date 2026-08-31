@@ -5,6 +5,21 @@ import (
 	"fmt"
 )
 
+func (s *Store) appendLifecycleDenialsUnlocked(
+	actor Actor,
+	action, reason, ownerDigest string,
+	runIDs ...string,
+) error {
+	for _, runID := range runIDs {
+		if _, err := s.appendLifecycleAuditUnlocked(
+			actor, action, "denied", reason, runID, ownerDigest,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (s *Store) auditExistingCreate(actor Actor, run Run) error {
 	s.lifecycle.mu.Lock()
 	defer s.lifecycle.mu.Unlock()
@@ -58,6 +73,24 @@ func (s *Store) authorizeRunActionUnlocked(actor Actor, runID, action string) er
 			return auditErr
 		}
 		return fmt.Errorf("%w: run belongs to another evaluation principal", ErrForbidden)
+	}
+	if action == "start" || action == "cancel" || action == "delete" {
+		runDir, pathErr := s.checkedRunDirPhysical(runID)
+		if pathErr != nil {
+			return pathErr
+		}
+		if _, paired, pairErr := s.controlledPairForRun(runID, runDir); pairErr != nil {
+			return pairErr
+		} else if paired {
+			if _, auditErr := s.appendLifecycleAuditUnlocked(
+				actor, action, "denied", "conflict", runID, lifecycle.OwnerPrincipalDigest,
+			); auditErr != nil {
+				return auditErr
+			}
+			return fmt.Errorf(
+				"%w: controlled pair members require the aggregate lifecycle", ErrConflict,
+			)
+		}
 	}
 	if action == "delete" {
 		if lifecycle.EvidenceHold {

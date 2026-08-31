@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from cli.evaluation.evidence import ExecutionRecord
+from cli.evaluation.metric_core import metric_analysis_provenance
 from cli.evaluation.reporting import EvaluationMetric
 from cli.evaluation.statistics import (
     attach_confidence_intervals,
@@ -34,6 +35,9 @@ def _metric(
         unit=unit,
         direction="higher_is_better",
         sample_count=sample_count,
+        analysis_provenance=metric_analysis_provenance(
+            metric_id, observed_exclusions=0
+        ),
     )
 
 
@@ -62,7 +66,7 @@ def test_fraction_metric_gets_wilson_not_zero_width_interval() -> None:
     assert interval[1] == 1.0
 
 
-def test_worst_arm_reliability_bootstraps_the_dense_case_matrix() -> None:
+def test_server_reduced_worst_arm_reliability_has_no_worker_interval() -> None:
     records = [
         _record(case, "model_pool", arm_id="stable", success=True)
         for case in range(1, 5)
@@ -80,7 +84,7 @@ def test_worst_arm_reliability_bootstraps_the_dense_case_matrix() -> None:
 
     decorated = attach_confidence_intervals([metric], records, seed=17, resamples=400)
 
-    assert decorated[0].confidence_interval == (0.0, 1.0)
+    assert decorated[0].confidence_interval is None
 
 
 def test_worst_arm_reliability_interval_rejects_a_sparse_arm_matrix() -> None:
@@ -134,6 +138,9 @@ def test_unavailable_metric_never_receives_an_interval() -> None:
         unit="concurrency",
         direction="higher_is_better",
         sample_count=0,
+        analysis_provenance=metric_analysis_provenance(
+            "capacity.slo_headroom", observed_exclusions=0
+        ),
     )
     decorated = attach_confidence_intervals([metric], [], seed=1)
     assert decorated[0].confidence_interval is None

@@ -33,6 +33,33 @@ export interface EvaluationMetric {
   delta?: number | null
   confidence_interval?: [number, number]
   sample_count?: number
+  analysis_provenance: EvaluationMetricAnalysisProvenance
+}
+
+export interface EvaluationMetricAnalysisProvenance {
+  contract_version: 'metric-analysis.v1'
+  estimator_id: string
+  estimator_version: string
+  analysis_unit: string
+  cluster_unit: string
+  weighting:
+    | 'inverse_propensity'
+    | 'uniform_arm'
+    | 'uniform_arm_pair'
+    | 'uniform_assignment'
+    | 'uniform_attempt'
+    | 'uniform_case'
+    | 'uniform_level'
+    | 'uniform_observation'
+    | 'uniform_pair'
+    | 'uniform_repetition'
+    | 'uniform_request'
+    | 'uniform_task'
+    | 'uniform_tool_call'
+    | 'unweighted'
+  missingness: 'fail_closed'
+  exclusion_policy: 'exclude_unavailable_evidence'
+  observed_exclusions: number
 }
 
 export interface EvaluationGate {
@@ -135,6 +162,132 @@ export interface EvaluationReport {
   recommendations: string[]
   provenance: EvaluationProvenance
   artifacts: EvaluationArtifact[]
+  method_reports: EvaluationMethodReport[]
+  routing_recipe_report?: EvaluationRoutingRecipeReport | null
+}
+
+export interface EvaluationRoutingRecipeLatencyReport {
+  available: boolean
+  reason?: string
+  sample_count: number
+  p50_ms?: number
+  p95_ms?: number
+}
+
+export interface EvaluationRoutingRecipeInputAvailabilityReport {
+  id: string
+  expected: number
+  present: number
+  missing: number
+  error: number
+  timeout: number
+  latency: EvaluationRoutingRecipeLatencyReport
+}
+
+export interface EvaluationRoutingRecipeMetricAvailability {
+  available: boolean
+  reason?: string
+  value?: number
+  sample_count: number
+}
+
+export interface EvaluationRoutingRecipeReliabilityBin {
+  lower: number
+  upper: number
+  count: number
+  mean_prediction?: number
+  observed_frequency?: number
+}
+
+export interface EvaluationRoutingRecipeProjectionOutcomeReport {
+  projection_id: string
+  spearman: EvaluationRoutingRecipeMetricAvailability
+  brier: EvaluationRoutingRecipeMetricAvailability
+  ece_10: EvaluationRoutingRecipeMetricAvailability
+  reliability_bins: EvaluationRoutingRecipeReliabilityBin[]
+}
+
+export interface EvaluationRoutingRecipeTopKReport {
+  k: number
+  feasible_oracle_recall: EvaluationRoutingRecipeMetricAvailability
+}
+
+export interface EvaluationRoutingRecipeReport {
+  contract_version: 'routing-recipe-eval.v1'
+  plan_digest: string
+  e1: {
+    expected_decisions: number
+    observed_decisions: number
+    signals: EvaluationRoutingRecipeInputAvailabilityReport[]
+    projections: EvaluationRoutingRecipeInputAvailabilityReport[]
+    eligibility_complete: number
+    selected_feasible: number
+  }
+  e2: {
+    projection_outcomes: EvaluationRoutingRecipeProjectionOutcomeReport[]
+    top_k: EvaluationRoutingRecipeTopKReport[]
+    oracle_regret: EvaluationRoutingRecipeMetricAvailability
+  }
+}
+
+export interface EvaluationMethodCurvePoint {
+  action: { id: string }
+  budget: number
+  mean_score: number
+  case_count: number
+}
+
+export type EvaluationMethodReadiness =
+  | 'native-qualified'
+  | 'exploratory-import'
+  | 'data-required'
+  | 'blocked'
+
+export interface EvaluationMethodSlice {
+  schema_version: 'evaluation-method.v2'
+  id: string
+}
+
+export interface EvaluationMethodAnalysisPlan {
+  schema_version: 'evaluation-method.v2'
+  id: string
+  analysis_unit: string
+  cluster_unit: string
+  slices: EvaluationMethodSlice[]
+  curve_domain: 'shared_budget' | 'not_applicable'
+  missingness: 'fail_closed'
+}
+
+export interface EvaluationMethodDescriptor {
+  schema_version: 'evaluation-method.v2'
+  id: string
+  version: 'evaluation-method.v2'
+  status: EvaluationMethodReadiness
+  execution_owner: 'server' | 'worker' | 'provider' | 'benchmark_native'
+  input_schema: string
+  export_schema: string
+  live_input_complete: boolean
+  live_grader: boolean
+  applicable_tracks: string[]
+  live_tracks: string[]
+  produced_metric_ids: string[]
+  evidence_ceiling: EvidenceLevel
+  native_parity: 'native' | 'source_qualified' | 'none'
+  required_artifact_ids: string[]
+  analysis_plan: EvaluationMethodAnalysisPlan
+}
+
+export interface EvaluationMethodReport {
+  method: EvaluationMethodDescriptor
+  analysis_plan: EvaluationMethodAnalysisPlan
+  action_refs: EvaluationMethodSlice[]
+  slice_refs: EvaluationMethodSlice[]
+  raw_shared_domain_curve: EvaluationMethodCurvePoint[]
+  audc: number
+  nauc: number
+  peak: number
+  qnc: number
+  missing_case_action_budget_cells: number
 }
 
 export interface EvaluationComparison {
@@ -154,6 +307,9 @@ export interface EvaluationComparison {
 export interface EvaluationComparisonStatistic {
   id: string
   track_id: EvaluationTrackId
+  /** Server-owned paired delta estimator; distinct from Metric point-estimate provenance. */
+  estimator_id: 'paired-bootstrap-case-clustered-delta'
+  estimator_version: 'v1'
   analysis_unit: 'case_mean' | 'case_max' | 'case_oracle_regret' | 'case_normalized_regret'
   direction: 'higher_is_better' | 'lower_is_better'
   non_inferiority_margin: number

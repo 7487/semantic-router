@@ -50,6 +50,7 @@ from cli.evaluation.metrics import compute_metrics
 from cli.evaluation.mom_replay_executor import mom_replay_fixture
 from cli.evaluation.orchestrator import run_evaluation, validate_manifest
 from cli.evaluation.reporting import EvaluationReport
+from cli.evaluation.routing_recipe_plan import build_routing_recipe_plan
 from cli.evaluation.resolution import resolve_snapshot, sample_fixture
 from cli.evaluation.runtime_factors import runtime_factors
 from cli.evaluation.store import LocalArtifactStore
@@ -198,6 +199,10 @@ def _live_mixture(
     aliases = (entrypoint_model,)
     mixture_id = mixture_target_id(recipe_name)
     selector_policy_digest = digest_value("live-selector-policy")
+    selector_digest = selector_snapshot_digest(selector_policy_digest, ())
+    adaptation_digest = digest_value("live-adaptation")
+    binding_digest = digest_value(f"live-binding:{entrypoint_model}")
+    fallback_arm_id = arms[0].id
     return ManifestMixture(
         id=mixture_id,
         entrypoint_model=entrypoint_model,
@@ -207,18 +212,30 @@ def _live_mixture(
         recipe_digest=recipe_digest,
         pool_digest=pool_digest,
         selector_policy_digest=selector_policy_digest,
-        selector_digest=selector_snapshot_digest(selector_policy_digest, ()),
-        adaptation_digest=digest_value("live-adaptation"),
-        binding_digest=digest_value(f"live-binding:{entrypoint_model}"),
+        selector_digest=selector_digest,
+        adaptation_digest=adaptation_digest,
+        binding_digest=binding_digest,
         model_arms=arms,
         support_models=(),
-        fallback_arm_id=arms[0].id,
+        fallback_arm_id=fallback_arm_id,
         decisions=(
             MixtureDecisionBinding(
                 name="default",
                 algorithm="static" if len(arms) > 1 else "single",
                 arm_ids=tuple(sorted(arm.id for arm in arms)),
             ),
+        ),
+        routing_recipe_plan=build_routing_recipe_plan(
+            recipe_digest=recipe_digest,
+            pool_digest=pool_digest,
+            selector_policy_digest=selector_policy_digest,
+            selector_digest=selector_digest,
+            adaptation_digest=adaptation_digest,
+            binding_digest=binding_digest,
+            arm_ids=tuple(arm.id for arm in arms),
+            fallback_arm_id=fallback_arm_id,
+            signals=(),
+            projections=(),
         ),
     )
 

@@ -114,6 +114,22 @@ func validCreateRunJSON() string {
     }`
 }
 
+func TestEvaluationPlaneDomainErrorIsPublicBadRequest(t *testing.T) {
+	response := httptest.NewRecorder()
+	writeEvaluationError(
+		response,
+		fmt.Errorf(
+			"%w: distinct deployment targets require a server-owned controlled pair with exact manifest bindings",
+			evaluationplane.ErrInvalid,
+		),
+	)
+	if response.Code != http.StatusBadRequest ||
+		!strings.Contains(response.Body.String(), "server-owned controlled pair") ||
+		strings.Contains(response.Body.String(), "Evaluation service failed") {
+		t.Fatalf("domain error status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
 func TestEvaluationPlaneCreateIsStrictAndServerTargetAllowlisted(t *testing.T) {
 	service := newEvaluationHandlerService(t, "")
 	handler := NewInternalEvaluationPlaneHandler(service, false)

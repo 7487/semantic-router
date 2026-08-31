@@ -110,6 +110,7 @@ type CatalogMixture struct {
 	SupportModels        []SupportModel           `json:"support_models"`
 	FallbackArmID        string                   `json:"fallback_arm_id,omitempty"`
 	Decisions            []MixtureDecisionBinding `json:"decisions"`
+	RoutingRecipePlan    RoutingRecipePlan        `json:"routing_recipe_plan"`
 }
 
 // SupportModel freezes the executable identity of a model used by a Recipe's
@@ -225,31 +226,37 @@ type RunProgress struct {
 }
 
 type Run struct {
-	SchemaVersion        string                    `json:"schema_version"`
-	ID                   string                    `json:"id"`
-	ClientRequestID      string                    `json:"client_request_id"`
-	Name                 string                    `json:"name"`
-	Description          string                    `json:"description"`
-	Status               RunStatus                 `json:"status"`
-	Mode                 Mode                      `json:"mode"`
-	EvidenceLevel        EvidenceLevel             `json:"evidence_level"`
-	TrackEvidenceLevels  map[TrackID]EvidenceLevel `json:"track_evidence_levels"`
-	TargetID             string                    `json:"target_id"`
-	Mixture              *CatalogMixture           `json:"mixture,omitempty"`
-	ChangeProfile        ChangeProfile             `json:"change_profile"`
-	SuiteIDs             []string                  `json:"suite_ids"`
-	TrackIDs             []TrackID                 `json:"track_ids"`
-	SampleLimit          int                       `json:"sample_limit"`
-	Concurrency          int                       `json:"concurrency"`
-	CapacitySLO          *CapacitySLO              `json:"capacity_slo,omitempty"`
-	CapacityLoadProtocol *CapacityLoadProtocol     `json:"capacity_load_protocol,omitempty"`
-	Seed                 int64                     `json:"seed"`
-	BaselineRunID        string                    `json:"baseline_run_id,omitempty"`
-	Progress             RunProgress               `json:"progress"`
-	CreatedAt            time.Time                 `json:"created_at"`
-	StartedAt            *time.Time                `json:"started_at,omitempty"`
-	CompletedAt          *time.Time                `json:"completed_at,omitempty"`
-	Error                string                    `json:"error,omitempty"`
+	SchemaVersion        string                       `json:"schema_version"`
+	ID                   string                       `json:"id"`
+	ClientRequestID      string                       `json:"client_request_id"`
+	Name                 string                       `json:"name"`
+	Description          string                       `json:"description"`
+	Status               RunStatus                    `json:"status"`
+	Mode                 Mode                         `json:"mode"`
+	EvidenceLevel        EvidenceLevel                `json:"evidence_level"`
+	TrackEvidenceLevels  map[TrackID]EvidenceLevel    `json:"track_evidence_levels"`
+	TargetID             string                       `json:"target_id"`
+	Mixture              *CatalogMixture              `json:"mixture,omitempty"`
+	ChangeProfile        ChangeProfile                `json:"change_profile"`
+	SuiteIDs             []string                     `json:"suite_ids"`
+	TrackIDs             []TrackID                    `json:"track_ids"`
+	SampleLimit          int                          `json:"sample_limit"`
+	Concurrency          int                          `json:"concurrency"`
+	CapacitySLO          *CapacitySLO                 `json:"capacity_slo,omitempty"`
+	CapacityLoadProtocol *CapacityLoadProtocol        `json:"capacity_load_protocol,omitempty"`
+	Seed                 int64                        `json:"seed"`
+	BaselineRunID        string                       `json:"baseline_run_id,omitempty"`
+	ControlledPair       *ControlledPairRunMembership `json:"controlled_pair,omitempty"`
+	Progress             RunProgress                  `json:"progress"`
+	CreatedAt            time.Time                    `json:"created_at"`
+	StartedAt            *time.Time                   `json:"started_at,omitempty"`
+	CompletedAt          *time.Time                   `json:"completed_at,omitempty"`
+	Error                string                       `json:"error,omitempty"`
+}
+
+type ControlledPairRunMembership struct {
+	PairID string `json:"pair_id"`
+	Role   string `json:"role"`
 }
 
 type ManifestTarget struct {
@@ -288,6 +295,7 @@ type ManifestMixture struct {
 	SupportModels        []SupportModel           `json:"support_models"`
 	FallbackArmID        string                   `json:"fallback_arm_id,omitempty"`
 	Decisions            []MixtureDecisionBinding `json:"decisions"`
+	RoutingRecipePlan    RoutingRecipePlan        `json:"routing_recipe_plan"`
 }
 
 // SecretRef names a server-owned environment variable made available only to
@@ -393,16 +401,32 @@ type Coverage struct {
 }
 
 type Metric struct {
-	ID                 string    `json:"id"`
-	Name               string    `json:"name"`
-	TrackID            TrackID   `json:"track_id,omitempty"`
-	Value              *float64  `json:"value"`
-	Unit               string    `json:"unit"`
-	Direction          string    `json:"direction,omitempty"`
-	BaselineValue      *float64  `json:"baseline_value,omitempty"`
-	Delta              *float64  `json:"delta,omitempty"`
-	ConfidenceInterval []float64 `json:"confidence_interval,omitempty"`
-	SampleCount        int       `json:"sample_count,omitempty"`
+	ID                 string                   `json:"id"`
+	Name               string                   `json:"name"`
+	TrackID            TrackID                  `json:"track_id,omitempty"`
+	Value              *float64                 `json:"value"`
+	Unit               string                   `json:"unit"`
+	Direction          string                   `json:"direction,omitempty"`
+	BaselineValue      *float64                 `json:"baseline_value,omitempty"`
+	Delta              *float64                 `json:"delta,omitempty"`
+	ConfidenceInterval []float64                `json:"confidence_interval,omitempty"`
+	SampleCount        int                      `json:"sample_count,omitempty"`
+	AnalysisProvenance MetricAnalysisProvenance `json:"analysis_provenance"`
+}
+
+// MetricAnalysisProvenance describes the estimator that produced one published
+// metric. It is mandatory evidence, not a display hint: reports without this
+// versioned plan are rejected before server attestation.
+type MetricAnalysisProvenance struct {
+	ContractVersion    string `json:"contract_version"`
+	EstimatorID        string `json:"estimator_id"`
+	EstimatorVersion   string `json:"estimator_version"`
+	AnalysisUnit       string `json:"analysis_unit"`
+	ClusterUnit        string `json:"cluster_unit"`
+	Weighting          string `json:"weighting"`
+	Missingness        string `json:"missingness"`
+	ExclusionPolicy    string `json:"exclusion_policy"`
+	ObservedExclusions *int   `json:"observed_exclusions"`
 }
 
 type GateThreshold struct {
@@ -496,17 +520,19 @@ type ReportSummary struct {
 }
 
 type Report struct {
-	SchemaVersion       string        `json:"schema_version"`
-	AttestationRevision string        `json:"attestation_revision"`
-	Run                 Run           `json:"run"`
-	Summary             ReportSummary `json:"summary"`
-	Tracks              []TrackReport `json:"tracks"`
-	Metrics             []Metric      `json:"metrics"`
-	Gates               []Gate        `json:"gates"`
-	Costs               CostLedgers   `json:"costs"`
-	Recommendations     []string      `json:"recommendations"`
-	Provenance          Provenance    `json:"provenance"`
-	Artifacts           []Artifact    `json:"artifacts"`
+	SchemaVersion       string                         `json:"schema_version"`
+	AttestationRevision string                         `json:"attestation_revision"`
+	Run                 Run                            `json:"run"`
+	Summary             ReportSummary                  `json:"summary"`
+	Tracks              []TrackReport                  `json:"tracks"`
+	Metrics             []Metric                       `json:"metrics"`
+	Gates               []Gate                         `json:"gates"`
+	Costs               CostLedgers                    `json:"costs"`
+	Recommendations     []string                       `json:"recommendations"`
+	Provenance          Provenance                     `json:"provenance"`
+	Artifacts           []Artifact                     `json:"artifacts"`
+	MethodReports       []CompoundModelBudgetReport    `json:"method_reports"`
+	RoutingRecipeReport *RoutingRecipeEvaluationReport `json:"routing_recipe_report"`
 }
 
 type Comparison struct {
@@ -530,6 +556,8 @@ type Comparison struct {
 type ComparisonStatistic struct {
 	ID                          string      `json:"id"`
 	TrackID                     TrackID     `json:"track_id"`
+	EstimatorID                 string      `json:"estimator_id"`
+	EstimatorVersion            string      `json:"estimator_version"`
 	AnalysisUnit                string      `json:"analysis_unit"`
 	Direction                   string      `json:"direction"`
 	NonInferiorityMargin        float64     `json:"non_inferiority_margin"`

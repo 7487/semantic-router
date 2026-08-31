@@ -34,10 +34,7 @@ export default function EvaluationLatestEvidence({
   onOpenReport,
 }: EvaluationLatestEvidenceProps) {
   return (
-    <section
-      className={`${styles.surface} ${styles.workspaceSurface}`}
-      aria-labelledby="latest-evidence-title"
-    >
+    <section className={styles.surface} aria-labelledby="latest-evidence-title">
       <header className={styles.surfaceHeader}>
         <div>
           <span className={styles.eyebrow}>

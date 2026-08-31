@@ -91,17 +91,31 @@ func (s *Store) lifecycleUsageUnlocked() (lifecycleUsageSnapshot, error) {
 		if sizeErr != nil {
 			return lifecycleUsageSnapshot{}, sizeErr
 		}
-		bytes += attestationBytes
+		bytes, sizeErr = checkedLifecycleBytes(bytes, attestationBytes)
+		if sizeErr != nil {
+			return lifecycleUsageSnapshot{}, sizeErr
+		}
 		owner := owners[lifecycle.OwnerPrincipalDigest]
 		owner.PrincipalDigest = lifecycle.OwnerPrincipalDigest
 		owner.RunCount++
-		owner.ActualBytes += bytes
+		owner.ActualBytes, sizeErr = checkedLifecycleBytes(owner.ActualBytes, bytes)
+		if sizeErr != nil {
+			return lifecycleUsageSnapshot{}, sizeErr
+		}
 		remainingReservation := s.lifecyclePolicy.ReservedRunBytes - bytes
 		if remainingReservation < 0 {
 			remainingReservation = 0
 		}
-		ownerReserved[lifecycle.OwnerPrincipalDigest] += remainingReservation
-		totalReserved += remainingReservation
+		ownerReserved[lifecycle.OwnerPrincipalDigest], sizeErr = checkedLifecycleBytes(
+			ownerReserved[lifecycle.OwnerPrincipalDigest], remainingReservation,
+		)
+		if sizeErr != nil {
+			return lifecycleUsageSnapshot{}, sizeErr
+		}
+		totalReserved, sizeErr = checkedLifecycleBytes(totalReserved, remainingReservation)
+		if sizeErr != nil {
+			return lifecycleUsageSnapshot{}, sizeErr
+		}
 		if lifecycle.EvidenceHold {
 			owner.HeldRuns++
 		}
@@ -120,6 +134,50 @@ func (s *Store) lifecycleUsageUnlocked() (lifecycleUsageSnapshot, error) {
 			ownerCAS[lifecycle.OwnerPrincipalDigest][digest] = true
 		}
 	}
+	pairEntries, err := os.ReadDir(s.controlledPairRoot)
+	if err != nil {
+		return lifecycleUsageSnapshot{}, fmt.Errorf("list controlled pair usage: %w", err)
+	}
+	for _, entry := range pairEntries {
+		if !entry.IsDir() || !validClientRequestID(entry.Name()) {
+			return lifecycleUsageSnapshot{}, fmt.Errorf("%w: controlled pair usage ledger is invalid", ErrConflict)
+		}
+		pair, pairErr := s.readControlledPair(entry.Name())
+		if pairErr != nil {
+			return lifecycleUsageSnapshot{}, pairErr
+		}
+		pairBytes, sizeErr := privateDirectoryBytes(filepath.Join(s.controlledPairRoot, entry.Name()), "")
+		if sizeErr != nil {
+			return lifecycleUsageSnapshot{}, sizeErr
+		}
+		owner := owners[pair.OwnerPrincipalDigest]
+		owner.PrincipalDigest = pair.OwnerPrincipalDigest
+		owner.ActualBytes, sizeErr = checkedLifecycleBytes(owner.ActualBytes, pairBytes)
+		if sizeErr != nil {
+			return lifecycleUsageSnapshot{}, sizeErr
+		}
+		if pair.State != controlledPairStateDeleted {
+			envelopeBytes, envelopeErr := controlledPairIntentReservationBytes(pair)
+			if envelopeErr != nil {
+				return lifecycleUsageSnapshot{}, envelopeErr
+			}
+			remainingReservation := envelopeBytes - pairBytes
+			if remainingReservation < 0 {
+				remainingReservation = 0
+			}
+			ownerReserved[pair.OwnerPrincipalDigest], sizeErr = checkedLifecycleBytes(
+				ownerReserved[pair.OwnerPrincipalDigest], remainingReservation,
+			)
+			if sizeErr != nil {
+				return lifecycleUsageSnapshot{}, sizeErr
+			}
+			totalReserved, sizeErr = checkedLifecycleBytes(totalReserved, remainingReservation)
+			if sizeErr != nil {
+				return lifecycleUsageSnapshot{}, sizeErr
+			}
+		}
+		owners[pair.OwnerPrincipalDigest] = owner
+	}
 	casRoot := filepath.Join(s.root, "objects", "sha256")
 	for ownerDigest, references := range ownerCAS {
 		owner := owners[ownerDigest]
@@ -134,14 +192,22 @@ func (s *Store) lifecycleUsageUnlocked() (lifecycleUsageSnapshot, error) {
 			if statErr != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm() != 0o600 {
 				return lifecycleUsageSnapshot{}, fmt.Errorf("%w: lifecycle usage cannot verify CAS evidence", ErrConflict)
 			}
-			owner.ActualBytes += info.Size()
+			var addErr error
+			owner.ActualBytes, addErr = checkedLifecycleBytes(owner.ActualBytes, info.Size())
+			if addErr != nil {
+				return lifecycleUsageSnapshot{}, addErr
+			}
 		}
 		owners[ownerDigest] = owner
 	}
 	ownerList := make([]OwnerLifecycleUsage, 0, len(owners))
 	for digest, owner := range owners {
 		owner.ReservedBytes = ownerReserved[digest]
-		owner.ChargeableBytes = owner.ActualBytes + owner.ReservedBytes
+		var addErr error
+		owner.ChargeableBytes, addErr = checkedLifecycleBytes(owner.ActualBytes, owner.ReservedBytes)
+		if addErr != nil {
+			return lifecycleUsageSnapshot{}, addErr
+		}
 		owner.MaxBytes, owner.MaxRuns = s.lifecyclePolicy.Limits.MaxOwnerBytes, s.lifecyclePolicy.Limits.MaxOwnerRuns
 		owners[digest] = owner
 		ownerList = append(ownerList, owner)
@@ -151,16 +217,28 @@ func (s *Store) lifecycleUsageUnlocked() (lifecycleUsageSnapshot, error) {
 	if err != nil {
 		return lifecycleUsageSnapshot{}, err
 	}
+	chargeable, err := checkedLifecycleBytes(managed, totalReserved)
+	if err != nil {
+		return lifecycleUsageSnapshot{}, err
+	}
 	return lifecycleUsageSnapshot{
 		report: LifecycleUsageReport{
 			SchemaVersion: lifecyclePolicySchemaVersion, PolicyRevision: lifecyclePolicyRevision,
-			ManagedPhysicalBytes: managed, ReservedBytes: totalReserved, ChargeableBytes: managed + totalReserved,
+			ManagedPhysicalBytes: managed, ReservedBytes: totalReserved, ChargeableBytes: chargeable,
 			MaxStoreBytes: s.lifecyclePolicy.Limits.MaxStoreBytes,
 			AuditBytes:    s.lifecycle.bytes, MaxAuditBytes: s.lifecyclePolicy.Limits.MaxAuditBytes,
 			RunCount: len(runs), Owners: ownerList,
 		},
 		owners: owners,
 	}, nil
+}
+
+func checkedLifecycleBytes(left, right int64) (int64, error) {
+	const maxInt64 = int64(^uint64(0) >> 1)
+	if left < 0 || right < 0 || left > maxInt64-right {
+		return 0, fmt.Errorf("%w: evaluation lifecycle byte count overflows", ErrQuota)
+	}
+	return left + right, nil
 }
 
 func privateDirectoryBytes(root, excludedRoot string) (int64, error) {
@@ -202,26 +280,47 @@ func privateDirectoryBytes(root, excludedRoot string) (int64, error) {
 	return total, nil
 }
 
-func (s *Store) requireCreateQuotaUnlocked(actor Actor, stagedBytes int64) (string, error) {
+func (s *Store) requireCreateQuotaUnlocked(actor Actor, runCount int, aggregateBytes int64) (string, error) {
+	if runCount < 1 || aggregateBytes < 0 {
+		return "quota_owner_runs", fmt.Errorf("%w: create quota requires a positive run count", ErrInvalid)
+	}
 	snapshot, err := s.lifecycleUsageUnlocked()
 	if err != nil {
 		return "quota_store_bytes", err
 	}
 	owner := snapshot.owners[actor.principalDigest]
-	if owner.RunCount+1 > s.lifecyclePolicy.Limits.MaxOwnerRuns {
+	if runCount > s.lifecyclePolicy.Limits.MaxOwnerRuns ||
+		owner.RunCount > s.lifecyclePolicy.Limits.MaxOwnerRuns-runCount {
 		return "quota_owner_runs", fmt.Errorf("%w: owner run count is at capacity", ErrQuota)
 	}
-	ownerGrowth := stagedBytes
-	if ownerGrowth < s.lifecyclePolicy.ReservedRunBytes {
-		ownerGrowth = s.lifecyclePolicy.ReservedRunBytes
+	ownerGrowth, ok := checkedPositiveInt64Product(s.lifecyclePolicy.ReservedRunBytes, runCount)
+	if !ok {
+		return "quota_owner_bytes", fmt.Errorf("%w: owner byte reservation overflows", ErrQuota)
 	}
-	if owner.ChargeableBytes > s.lifecyclePolicy.Limits.MaxOwnerBytes-ownerGrowth {
+	ownerGrowth, err = checkedLifecycleBytes(ownerGrowth, aggregateBytes)
+	if err != nil {
+		return "quota_owner_bytes", err
+	}
+	if ownerGrowth > s.lifecyclePolicy.Limits.MaxOwnerBytes ||
+		owner.ChargeableBytes > s.lifecyclePolicy.Limits.MaxOwnerBytes-ownerGrowth {
 		return "quota_owner_bytes", fmt.Errorf("%w: owner byte capacity is full", ErrQuota)
 	}
-	if snapshot.report.ChargeableBytes > s.lifecyclePolicy.Limits.MaxStoreBytes-ownerGrowth {
+	if ownerGrowth > s.lifecyclePolicy.Limits.MaxStoreBytes ||
+		snapshot.report.ChargeableBytes > s.lifecyclePolicy.Limits.MaxStoreBytes-ownerGrowth {
 		return "quota_store_bytes", fmt.Errorf("%w: evaluation store byte capacity is full", ErrQuota)
 	}
 	return "", nil
+}
+
+func checkedPositiveInt64Product(value int64, count int) (int64, bool) {
+	if value < 0 || count < 1 {
+		return 0, false
+	}
+	const maxInt64 = int64(^uint64(0) >> 1)
+	if value != 0 && int64(count) > maxInt64/value {
+		return 0, false
+	}
+	return value * int64(count), true
 }
 
 func (s *Store) requireEvidenceQuotaUnlocked(runID string, runBytes, logicalCASBytes, physicalCASBytes int64) error {
@@ -279,7 +378,7 @@ func (s *Store) executionAttestationBytes(runID string) (int64, error) {
 		info.Size() > maxExecutionAttestationBytes+1 {
 		return 0, fmt.Errorf("%w: lifecycle usage cannot verify execution attestation", ErrConflict)
 	}
-	if _, err := s.readExecutionAttestation(runID); err != nil {
+	if _, err := s.readExecutionAttestationForDurableManifest(runID); err != nil {
 		return 0, fmt.Errorf("%w: lifecycle usage cannot validate execution attestation", ErrConflict)
 	}
 	return info.Size(), nil

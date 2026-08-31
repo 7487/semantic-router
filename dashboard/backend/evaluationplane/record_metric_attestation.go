@@ -3,6 +3,7 @@ package evaluationplane
 import (
 	"fmt"
 	"math"
+	"strings"
 )
 
 const maxReducedFloatULPs = 8
@@ -25,6 +26,7 @@ type recordMetricAttestation struct {
 	PreferenceEffectiveRatio reducedMetricEvidence
 	PreferenceIPSAgreement   reducedMetricEvidence
 	CapacitySuccessRate      reducedMetricEvidence
+	ModelPool                []modelPoolMetricEvidence
 	SafetyTypedRowsByCase    map[string]int
 	CapacityRowsByCase       map[string]int
 	CapacityLevelsByCase     map[string]map[int64]struct{}
@@ -422,6 +424,42 @@ func validateServerReducedMetrics(report Report, attestation recordMetricAttesta
 		}
 		if !reducedIntervalsEqual(actual.ConfidenceInterval, expected.ConfidenceInterval) {
 			return fmt.Errorf("%w: server-reduced metric %s confidence_interval does not match records", ErrInvalid, contract.ID)
+		}
+	}
+	return validateServerReducedModelPoolMetrics(report, attestation.ModelPool)
+}
+
+func validateServerReducedModelPoolMetrics(report Report, expected []modelPoolMetricEvidence) error {
+	if expected == nil {
+		return nil
+	}
+	actual := make(map[string]Metric, len(expected))
+	for _, metric := range report.Metrics {
+		if metric.TrackID != "model_pool" && !strings.HasPrefix(metric.ID, "model_pool.") {
+			continue
+		}
+		if metric.TrackID != "model_pool" || !IsCanonicalModelPoolMetricID(metric.ID) {
+			return fmt.Errorf("%w: model-pool metric %s is not canonical", ErrInvalid, metric.ID)
+		}
+		actual[metric.ID] = metric
+	}
+	if len(actual) != len(expected) {
+		return fmt.Errorf("%w: model-pool metric set is missing or contains extra metrics", ErrInvalid)
+	}
+	for _, want := range expected {
+		got, present := actual[want.ID]
+		if !present || got.SampleCount != want.SampleCount || (got.Value == nil) != (want.Value == nil) || got.ConfidenceInterval != nil {
+			return fmt.Errorf("%w: model-pool metric %s does not match server evidence", ErrInvalid, want.ID)
+		}
+		if got.Value != nil && !reducedFloatsEqual(*got.Value, *want.Value) {
+			return fmt.Errorf("%w: model-pool metric %s value does not match server evidence", ErrInvalid, want.ID)
+		}
+		exclusions := 0
+		for _, count := range want.MissingReasonCounts {
+			exclusions += count
+		}
+		if got.AnalysisProvenance.ObservedExclusions == nil || *got.AnalysisProvenance.ObservedExclusions != exclusions {
+			return fmt.Errorf("%w: model-pool metric %s provenance exclusions do not match server evidence", ErrInvalid, want.ID)
 		}
 	}
 	return nil

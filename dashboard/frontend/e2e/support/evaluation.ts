@@ -25,11 +25,13 @@ import type {
   EvaluationGate,
   EvaluationMetric,
   EvaluationReport,
+  EvaluationRoutingRecipeReport,
 } from '../../src/types/evaluationReport'
 import type {
   CreateEvaluationControlledPairPayload,
   EvaluationControlledPairState,
 } from '../../src/types/evaluationControlledPair'
+import { buildEvaluationRoutingRecipePlan } from '../../src/test/evaluationRoutingRecipeFixture'
 import {
   EVALUATION_ATTESTATION_REVISION,
   EVALUATION_TRACK_IDS,
@@ -44,6 +46,7 @@ import {
   defaultEvaluationCapacityLoadProtocol,
   equalEvaluationCapacityLoadProtocol,
 } from '../../src/utils/evaluationCapacitySLOContract'
+import { metricAnalysisSpecification } from '../../src/utils/evaluationReportContract'
 import { evaluationCampaignExpectedAnchors } from '../../src/utils/evaluationCampaignBindingContract'
 import { evaluationFidelityEvidence, evaluationPairedLiveEvidence } from './evaluationCampaign'
 
@@ -81,7 +84,7 @@ export const EVALUATION_MOM_ID =
 export const EVALUATION_BASELINE_MOM_TARGET_ID = `baseline--${EVALUATION_MOM_ID}`
 export const EVALUATION_MOM_TARGET_ID = `candidate--${EVALUATION_MOM_ID}`
 
-export const EVALUATION_MOM: EvaluationMixture = {
+const EVALUATION_MOM_BASE = {
   id: EVALUATION_MOM_ID,
   entrypoint_model: 'test-mom',
   aliases: ['test-mom'],
@@ -118,6 +121,20 @@ export const EVALUATION_MOM: EvaluationMixture = {
   support_models: [],
   fallback_arm_id: 'arm-fast',
   decisions: [{ name: 'route', algorithm: 'static', arm_ids: ['arm-fast', 'arm-strong'] }],
+}
+export const EVALUATION_MOM: EvaluationMixture = {
+  ...EVALUATION_MOM_BASE,
+  routing_recipe_plan: buildEvaluationRoutingRecipePlan(
+    EVALUATION_MOM_BASE,
+    [{ id: 'domain:reasoning', value_kind: 'numeric' }],
+    [
+      {
+        id: 'projection:oracle-probability',
+        value_kind: 'probability',
+        outcome_binding: 'selected_is_oracle',
+      },
+    ],
+  ),
 }
 
 const trackContracts: Record<
@@ -924,13 +941,75 @@ function diagnosticMetric(trackID: EvaluationTrackId): EvaluationMetric {
       direction: 'lower_is_better',
     },
   }
+  const metric = metrics[trackID]
+  const analysis = metricAnalysisSpecification(metric.id)
   return {
-    ...metrics[trackID],
+    ...metric,
     baseline_value: null,
     delta: null,
     confidence_interval:
       metrics[trackID].unit === 'fraction' ? ([0.51, 1] as [number, number]) : undefined,
     sample_count: 4,
+    analysis_provenance: {
+      contract_version: 'metric-analysis.v1',
+      estimator_id: analysis.estimator_id,
+      estimator_version: 'v1',
+      analysis_unit: analysis.analysis_unit,
+      cluster_unit: analysis.cluster_unit,
+      weighting: analysis.weighting,
+      missingness: 'fail_closed',
+      exclusion_policy: 'exclude_unavailable_evidence',
+      observed_exclusions: 0,
+    },
+  }
+}
+
+function routingRecipeReport(run: EvaluationRun): EvaluationRoutingRecipeReport | null {
+  const plan = run.mixture?.routing_recipe_plan
+  if (run.mode !== 'live' || !run.track_ids.includes('routing') || !plan) return null
+  const inputAvailability = (id: string) => ({
+    id,
+    expected: 4,
+    present: 3,
+    missing: 0,
+    error: 0,
+    timeout: 1,
+    latency: { available: false, reason: 'insufficient_latency_samples', sample_count: 1 },
+  })
+  const reliability = Array.from({ length: 10 }, (_, index) => ({
+    lower: index / 10,
+    upper: (index + 1) / 10,
+    count: index < 4 ? 1 : 0,
+    ...(index < 4 ? { mean_prediction: index / 10 + 0.05, observed_frequency: index % 2 } : {}),
+  }))
+  return {
+    contract_version: 'routing-recipe-eval.v1',
+    plan_digest: plan.plan_digest,
+    e1: {
+      expected_decisions: 4,
+      observed_decisions: 4,
+      signals: plan.signals.map((input) => inputAvailability(input.id)),
+      projections: plan.projections.map((input) => inputAvailability(input.id)),
+      eligibility_complete: 3,
+      selected_feasible: 3,
+    },
+    e2: {
+      projection_outcomes: plan.projections.map((projection) => ({
+        projection_id: projection.id,
+        spearman: { available: false, reason: 'insufficient_outcome_pairs', sample_count: 1 },
+        brier: { available: true, value: 0.11, sample_count: 4 },
+        ece_10: { available: true, value: 0.08, sample_count: 4 },
+        reliability_bins: reliability,
+      })),
+      top_k: plan.top_k.map((k) => ({
+        k,
+        feasible_oracle_recall:
+          k === 1
+            ? { available: false, reason: 'oracle_outcome_missing', sample_count: 0 }
+            : { available: true, value: 1, sample_count: 4 },
+      })),
+      oracle_regret: { available: false, reason: 'oracle_outcome_missing', sample_count: 0 },
+    },
   }
 }
 
@@ -1010,6 +1089,10 @@ export function evaluationReport(run = defaultEvaluationRuns[0]): EvaluationRepo
       seed: 42,
       redaction_policy: 'public-safe-v1',
     },
+    // Method reports are intentionally an empty, non-null collection when
+    // this E0 fixture has no eligible raw-coordinate method reduction.
+    method_reports: [],
+    routing_recipe_report: routingRecipeReport(run),
     artifacts: [
       {
         id: 'metrics-json',
@@ -1095,6 +1178,8 @@ export const evaluationComparison: EvaluationComparison = {
     {
       id: 'joint.normalized_regret',
       track_id: 'joint',
+      estimator_id: 'paired-bootstrap-case-clustered-delta',
+      estimator_version: 'v1',
       analysis_unit: 'case_normalized_regret',
       direction: 'lower_is_better',
       non_inferiority_margin: 0.05,
@@ -1263,6 +1348,7 @@ interface MockEvaluationPlaneOptions {
   failControlledPairGetAt?: number
   abortControlledPairCreateResponseAfterAccept?: boolean
   eventStreamCloseOnce?: boolean
+  eventStreamEventCount?: number
   completeRunOnEventStream?: string
   reportFailureIDs?: string[]
   reportFailureStatus?: number
@@ -1973,11 +2059,29 @@ export async function mockEvaluationPlane(
           timestamp: '2026-08-29T00:05:00Z',
           message: 'Executing routing track from SSE',
         }
+    const eventCount = completesRun
+      ? 1
+      : Math.max(1, Math.min(50, options.eventStreamEventCount || 1))
+    const eventBody = Array.from({ length: eventCount }, (_, index) => {
+      const streamedEvent = {
+        ...event,
+        id: String(index + 2),
+        ...(index === eventCount - 1
+          ? {}
+          : {
+              timestamp: new Date(Date.parse(event.timestamp) - (eventCount - index) * 1_000)
+                .toISOString()
+                .replace('.000Z', 'Z'),
+              message: `Durable evaluation progress ${index + 1}`,
+            }),
+      }
+      return `id: ${streamedEvent.id}\nevent: ${streamedEvent.type}\ndata: ${JSON.stringify(streamedEvent)}\n\n`
+    }).join('')
     await route.fulfill({
       status: 200,
       contentType: 'text/event-stream',
       headers: { 'Cache-Control': 'no-cache' },
-      body: `id: 2\nevent: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`,
+      body: eventBody,
     })
   })
   await page.route('**/api/evaluation/v1/runs/*/report', async (route) => {

@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"path/filepath"
 	"reflect"
 	"regexp"
 	"strings"
@@ -72,19 +73,46 @@ type Service struct {
 	workerTimeout              time.Duration
 	mu                         sync.Mutex
 	active                     map[string]context.CancelFunc
+	controlledPairSourceRead   func(string) (controlledPairSource, error)
 	workerEvents               map[string]int
 	subscribers                map[string]map[chan Event]struct{}
 	subscriberCount            int
 	workers                    sync.WaitGroup
+	prelaunches                sync.WaitGroup
+	prelaunchCount             int
+	prelaunchContext           context.Context
+	prelaunchCancel            context.CancelFunc
 	closeOnce                  sync.Once
 	shutdown                   chan struct{}
 	lifecycleErr               error
 	diagnosticLogger           *log.Logger
+	activity                   *lifecycleCoordinator
+	ownership                  *evaluationStoreOwnership
 	closed                     bool
 }
 
 func NewService(options Options) (*Service, error) {
-	store, err := newStoreWithLifecycleLimits(options.DataDir, options.LifecycleLimits)
+	if options.DataDir == "" {
+		return nil, fmt.Errorf("%w: evaluation data directory is required", ErrInvalid)
+	}
+	root, err := filepath.Abs(options.DataDir)
+	if err != nil {
+		return nil, fmt.Errorf("resolve evaluation data directory: %w", err)
+	}
+	if directoryErr := ensureDurablePrivateDirectoryTree(root); directoryErr != nil {
+		return nil, fmt.Errorf("create evaluation store root: %w", directoryErr)
+	}
+	ownership, err := acquireEvaluationStoreOwnership(root)
+	if err != nil {
+		return nil, err
+	}
+	ownershipTransferred := false
+	defer func() {
+		if !ownershipTransferred {
+			_ = ownership.release()
+		}
+	}()
+	store, err := newStoreWithLifecycleLimits(root, options.LifecycleLimits)
 	if err != nil {
 		return nil, err
 	}
@@ -150,6 +178,7 @@ func NewService(options Options) (*Service, error) {
 	if diagnosticSink == nil {
 		diagnosticSink = os.Stderr
 	}
+	prelaunchContext, prelaunchCancel := context.WithCancel(context.Background())
 	service := &Service{
 		store:                      store,
 		suiteStorePath:             store.SuiteRoot(),
@@ -172,12 +201,17 @@ func NewService(options Options) (*Service, error) {
 		active:                     make(map[string]context.CancelFunc),
 		workerEvents:               make(map[string]int),
 		subscribers:                make(map[string]map[chan Event]struct{}),
+		prelaunchContext:           prelaunchContext,
+		prelaunchCancel:            prelaunchCancel,
 		shutdown:                   make(chan struct{}),
 		diagnosticLogger:           log.New(diagnosticSink, "", log.LstdFlags|log.LUTC),
+		activity:                   store.lifecycle,
+		ownership:                  ownership,
 	}
 	if err := service.RecoverInterruptedRuns(); err != nil {
 		return nil, err
 	}
+	ownershipTransferred = true
 	return service, nil
 }
 
@@ -463,6 +497,11 @@ func (s *Service) startRunInternal(_ context.Context, id string) (Run, error) {
 		}
 		return Run{}, err
 	}
+	if !s.activity.claim([]string{id}, []context.CancelFunc{cancel}) {
+		cancel()
+		releaseSlot()
+		return Run{}, fmt.Errorf("%w: evaluation worker already has a live service owner", ErrConflict)
+	}
 	s.active[id] = cancel
 	s.workerEvents[id] = 0
 	s.workers.Add(1)
@@ -545,6 +584,7 @@ func (s *Service) Close() error {
 		s.mu.Lock()
 		s.closed = true
 		close(s.shutdown)
+		s.prelaunchCancel()
 		cancellations := make([]context.CancelFunc, 0, len(s.active))
 		for _, cancel := range s.active {
 			cancellations = append(cancellations, cancel)
@@ -554,6 +594,7 @@ func (s *Service) Close() error {
 		for _, cancel := range cancellations {
 			cancel()
 		}
+		s.prelaunches.Wait()
 		s.workers.Wait()
 
 		s.mu.Lock()
@@ -564,6 +605,12 @@ func (s *Service) Close() error {
 			delete(s.subscribers, runID)
 		}
 		s.subscriberCount = 0
+		if s.ownership != nil {
+			if err := s.ownership.release(); err != nil {
+				s.recordLifecycleErrorLocked(fmt.Errorf("release evaluation store ownership: %w", err))
+			}
+			s.ownership = nil
+		}
 		s.mu.Unlock()
 	})
 	s.mu.Lock()
@@ -597,9 +644,7 @@ func (s *Service) cancelRunInternal(id string) (Run, error) {
 			return Run{}, eventErr
 		}
 		if run.Status == StatusCancelled {
-			if cancel, ok := s.active[id]; ok {
-				cancel()
-			}
+			s.activity.requestCancel(id)
 		}
 		s.broadcastEventLocked(terminalEvent)
 		return run, nil
@@ -620,9 +665,7 @@ func (s *Service) cancelRunInternal(id string) (Run, error) {
 		return Run{}, err
 	}
 	if durable.Status == StatusCancelled {
-		if cancel, ok := s.active[id]; ok {
-			cancel()
-		}
+		s.activity.requestCancel(id)
 	}
 	s.broadcastEventLocked(terminalEvent)
 	return durable, nil
@@ -648,7 +691,7 @@ func (s *Service) deleteRunInternal(actor Actor, id string) error {
 	if err != nil {
 		return err
 	}
-	if _, active := s.active[id]; active {
+	if s.activity.contains(id) {
 		return fmt.Errorf("%w: evaluation worker is still exiting", ErrConflict)
 	}
 	if run.Status == StatusRunning || run.Status == StatusSealing {
@@ -657,12 +700,16 @@ func (s *Service) deleteRunInternal(actor Actor, id string) error {
 	if err := s.store.deleteRunAuthorizedUnlocked(actor, id); err != nil {
 		return err
 	}
+	s.cleanupDeletedRunSubscribersLocked(id)
+	return nil
+}
+
+func (s *Service) cleanupDeletedRunSubscribersLocked(id string) {
 	for subscriber := range s.subscribers[id] {
 		close(subscriber)
 		s.subscriberCount--
 	}
 	delete(s.subscribers, id)
-	return nil
 }
 
 func (s *Service) registrySnapshot() (*Registry, ModelArmSnapshot, error) {

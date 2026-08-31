@@ -22,6 +22,7 @@ const CONFIDENCE_LEVEL = 0.95
 const MINIMUM_ANALYSIS_UNITS = 20
 const G3_ABSOLUTE_BOUND = 0.25
 const G3_REDUCTION = 'server-reduction:comparative-g3.v1'
+const PAIRED_DELTA_ESTIMATOR_ID = 'paired-bootstrap-case-clustered-delta'
 const GATE_IDS = Array.from({ length: 10 }, (_, index) => `G${index}`)
 const STATISTIC_CONTRACTS: Record<
   string,
@@ -136,6 +137,8 @@ function decodeStatistic(value: unknown): EvaluationComparisonStatistic {
     !hasOnlyEvaluationFields(value, [
       'id',
       'track_id',
+      'estimator_id',
+      'estimator_version',
       'analysis_unit',
       'direction',
       'non_inferiority_margin',
@@ -150,6 +153,8 @@ function decodeStatistic(value: unknown): EvaluationComparisonStatistic {
     ]) ||
     !isNonEmptyText(value.id) ||
     !isKnownValue(value.track_id, EVALUATION_TRACK_ID_SET) ||
+    value.estimator_id !== PAIRED_DELTA_ESTIMATOR_ID ||
+    value.estimator_version !== 'v1' ||
     !['case_mean', 'case_max', 'case_oracle_regret', 'case_normalized_regret'].includes(
       String(value.analysis_unit),
     ) ||

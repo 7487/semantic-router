@@ -93,6 +93,60 @@ func (s *Store) readExecutionAttestation(runID string) (executionAttestation, er
 	return attestation, nil
 }
 
+// readExecutionAttestationForManifest is the durable consumption seam. The
+// raw reader above verifies the self-contained file and receipt digests; every
+// product read must additionally rebind Router decisions to the immutable run
+// manifest so replacing a self-consistent snapshot cannot change its plan.
+func (s *Store) readExecutionAttestationForManifest(
+	runID string,
+	manifest RunManifest,
+) (executionAttestation, error) {
+	attestation, err := s.readExecutionAttestation(runID)
+	if err != nil {
+		return executionAttestation{}, err
+	}
+	if err := validateExecutionAttestationAgainstManifest(attestation, manifest); err != nil {
+		return executionAttestation{}, err
+	}
+	return attestation, nil
+}
+
+func (s *Store) readExecutionAttestationForDurableManifest(runID string) (executionAttestation, error) {
+	path, err := s.ManifestPath(runID)
+	if err != nil {
+		return executionAttestation{}, err
+	}
+	manifest, _, err := readRunManifestStrict(path)
+	if err != nil || manifest.RunID != runID {
+		return executionAttestation{}, fmt.Errorf("%w: execution attestation manifest is invalid", ErrInvalid)
+	}
+	return s.readExecutionAttestationForManifest(runID, manifest)
+}
+
+func validateExecutionAttestationAgainstManifest(
+	attestation executionAttestation,
+	manifest RunManifest,
+) error {
+	if attestation.RunID != manifest.RunID || attestation.ManifestDigest != manifest.ManifestDigest ||
+		attestation.TargetID != manifest.Target.ID || attestation.Mode != manifest.Mode ||
+		attestation.PolicySnapshotDigest != manifest.PolicySnapshotDigest ||
+		attestation.BackendTopologyDigest != manifest.Target.BackendTopologyDigest {
+		return fmt.Errorf("%w: execution attestation does not bind the immutable manifest", ErrInvalid)
+	}
+	for index, entry := range attestation.Entries {
+		if entry.Operation == workerBrokerListModels {
+			continue
+		}
+		if err := validateBrokerRoutingRecipeDecision(manifest.Target.Mixture, entry); err != nil {
+			return fmt.Errorf("%w: execution attestation entry %d: %w", ErrInvalid, index+1, err)
+		}
+		if err := validateBrokerMixtureBinding(manifest.Target.Mixture, entry); err != nil {
+			return fmt.Errorf("%w: execution attestation entry %d: %w", ErrInvalid, index+1, err)
+		}
+	}
+	return nil
+}
+
 func validateExecutionAttestationIdentity(runID string, attestation executionAttestation) error {
 	if attestation.SchemaVersion != SchemaVersion ||
 		attestation.ContractVersion != executionAttestationContractVersion ||
@@ -149,7 +203,8 @@ func validateStoredExecutionAttestationEntry(entry executionAttestationEntry, ex
 func validateStoredExecutionAttestationFields(entry executionAttestationEntry, expectedID uint64) error {
 	if entry.RequestID != expectedID || !digestPattern.MatchString(entry.RequestDigest) ||
 		!digestPattern.MatchString(entry.ResponseDigest) || !digestPattern.MatchString(entry.BrokerReceipt) ||
-		!entry.UpstreamAttempted || entry.LatencyMicroseconds < 0 || entry.Headers == nil {
+		entry.LatencyMicroseconds < 0 || entry.Headers == nil ||
+		(!entry.UpstreamAttempted && !unattemptedRoutingDecisionUnavailable(entry)) {
 		return fmt.Errorf("%w: evaluation execution attestation entry is invalid", ErrInvalid)
 	}
 	if entry.StatusCode != nil {
@@ -192,7 +247,17 @@ func validateStoredExecutionAttestationFields(entry executionAttestationEntry, e
 	if !isMethodLedgerOperation(entry.Operation) && entry.LedgerSealedAt != nil {
 		return fmt.Errorf("%w: non-ledger execution attestation claims a ledger seal", ErrInvalid)
 	}
+	if entry.RoutingRecipeDecision != nil {
+		if err := validateRoutingRecipeDecisionSnapshotShape(*entry.RoutingRecipeDecision); err != nil {
+			return fmt.Errorf("%w: stored routing recipe decision: %w", ErrInvalid, err)
+		}
+	}
 	return nil
+}
+
+func unattemptedRoutingDecisionUnavailable(entry executionAttestationEntry) bool {
+	return entry.Operation == workerBrokerRouterEvaluate && !entry.Success && entry.StatusCode == nil &&
+		entry.RoutingRecipeDecision != nil && entry.RoutingRecipeDecision.SelectionStatus == "unavailable"
 }
 
 func validateStoredExecutionAttestationOperation(entry executionAttestationEntry) error {
@@ -201,14 +266,14 @@ func validateStoredExecutionAttestationOperation(entry executionAttestationEntry
 		if entry.TrackID != "" || entry.CaseID != "" || entry.AttemptID != "" || !entry.Success ||
 			entry.RequestedModel != nil || entry.ArmID != nil || entry.SelectedModel != nil ||
 			entry.ResponseContentDigest != nil || entry.Quality != nil ||
-			entry.InputTokens != nil || entry.OutputTokens != nil {
+			entry.InputTokens != nil || entry.OutputTokens != nil || entry.RoutingRecipeDecision != nil {
 			return fmt.Errorf("%w: model discovery attestation is invalid", ErrInvalid)
 		}
 	case workerBrokerRouterEvaluate:
 		if entry.TrackID != "routing" || !evidenceIDPattern.MatchString(entry.CaseID) ||
 			!evidenceIDPattern.MatchString(entry.AttemptID) || entry.RequestedModel == nil ||
-			entry.ResponseContentDigest != nil || (entry.Success &&
-			(entry.SelectedModel == nil || entry.ArmID == nil || entry.Recipe == nil || entry.Algorithm == nil)) {
+			entry.FetchedAt == nil || entry.RoutingRecipeDecision == nil || entry.ResponseContentDigest != nil ||
+			entry.Recipe == nil {
 			return fmt.Errorf("%w: routing broker evidence identity is invalid", ErrInvalid)
 		}
 	case workerBrokerRoutedChatCompletion:
@@ -218,13 +283,15 @@ func validateStoredExecutionAttestationOperation(entry executionAttestationEntry
 			(entry.SelectedModel == nil || entry.ArmID == nil || entry.Recipe == nil || entry.Algorithm == nil ||
 				entry.SelectionStatus == nil || entry.SelectionMethod == nil ||
 				entry.ResponseContentDigest == nil || entry.InputTokens == nil || entry.OutputTokens == nil)) ||
-			(!entry.Success && (entry.SelectionStatus != nil || entry.SelectionMethod != nil || entry.Algorithm != nil)) {
+			(!entry.Success && (entry.SelectionStatus != nil || entry.SelectionMethod != nil || entry.Algorithm != nil)) ||
+			entry.RoutingRecipeDecision != nil {
 			return fmt.Errorf("%w: routed chat broker evidence identity is invalid", ErrInvalid)
 		}
 	case workerBrokerArmChatCompletion:
 		if entry.TrackID != "model_pool" || !evidenceIDPattern.MatchString(entry.CaseID) ||
 			!evidenceIDPattern.MatchString(entry.AttemptID) || entry.RequestedModel == nil || entry.ArmID == nil ||
-			(entry.Success && (entry.ResponseContentDigest == nil || entry.InputTokens == nil || entry.OutputTokens == nil)) {
+			(entry.Success && (entry.ResponseContentDigest == nil || entry.InputTokens == nil || entry.OutputTokens == nil)) ||
+			entry.RoutingRecipeDecision != nil {
 			return fmt.Errorf("%w: arm chat broker evidence identity is invalid", ErrInvalid)
 		}
 	case workerBrokerAgentTaskLedger:
@@ -267,7 +334,7 @@ func validateMethodLedgerFreshnessValue(entry executionAttestationEntry) error {
 func hasModelExecutionObservation(entry executionAttestationEntry) bool {
 	return entry.RequestedModel != nil || entry.ArmID != nil || entry.SelectedModel != nil ||
 		entry.ResponseContentDigest != nil || entry.InputTokens != nil || entry.OutputTokens != nil ||
-		entry.Quality != nil
+		entry.Quality != nil || entry.RoutingRecipeDecision != nil
 }
 
 func (s *Store) removeExecutionAttestationIfPresent(runID string) (bool, error) {
@@ -291,12 +358,10 @@ func (s *Store) removeExecutionAttestationIfPresent(runID string) (bool, error) 
 	return true, nil
 }
 
-// recoverExecutionAttestations completes the second half of run deletion and
-// discards a live transcript that was published before its report anchor. Only
-// exact UUID-named private regular files are ever considered for removal.
-func (s *Store) recoverExecutionAttestations() error {
-	runEvidencePublicationMu.Lock()
-	defer runEvidencePublicationMu.Unlock()
+// recoverExecutionAttestationsUnlocked completes the second half of run
+// deletion and discards a live transcript that was published before its report
+// anchor. Only exact UUID-named private regular files are considered.
+func (s *Store) recoverExecutionAttestationsUnlocked() error {
 	if err := requirePrivateDirectory(s.attestationRoot); err != nil {
 		return fmt.Errorf("validate evaluation execution attestation directory: %w", err)
 	}
@@ -324,7 +389,7 @@ func (s *Store) recoverExecutionAttestations() error {
 		if runInfo, runErr := os.Lstat(filepath.Join(s.runsRoot, runID)); runErr == nil &&
 			runInfo.IsDir() && runInfo.Mode()&os.ModeSymlink == 0 && runInfo.Mode().Perm() == 0o700 {
 			anchor, anchorErr := s.readReportAnchor(runID)
-			attestation, attestationErr := s.readExecutionAttestation(runID)
+			attestation, attestationErr := s.readExecutionAttestationForDurableManifest(runID)
 			keep = anchorErr == nil && attestationErr == nil &&
 				anchor.ExecutionAttestationDigest != "" &&
 				anchor.ExecutionAttestationDigest == attestation.Digest

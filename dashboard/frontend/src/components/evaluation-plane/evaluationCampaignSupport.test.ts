@@ -16,6 +16,7 @@ import {
   pairedCampaignCohortMismatches,
   validateEvaluationCampaignDraft,
 } from './evaluationCampaignSupport'
+import { buildEvaluationRoutingRecipePlan } from '../../test/evaluationRoutingRecipeFixture'
 
 const ids = {
   campaign: '20000000-0000-4000-8000-000000000001',
@@ -30,7 +31,7 @@ const ids = {
   controlledCandidate: '20000000-0000-4000-8000-000000000010',
 }
 
-const mixture = {
+const mixtureBase = {
   id: 'mom',
   entrypoint_model: 'vllm-sr/auto',
   aliases: ['vllm-sr/auto'],
@@ -45,6 +46,10 @@ const mixture = {
   model_arms: [],
   support_models: [],
   decisions: [],
+}
+const mixture = {
+  ...mixtureBase,
+  routing_recipe_plan: buildEvaluationRoutingRecipePlan(mixtureBase),
 }
 
 const baselineTargetID = 'baseline--mom'

@@ -43,6 +43,7 @@ def _agentic(records: list[ExecutionRecord]) -> list[EvaluationMetric]:
             "fraction",
             "higher_is_better",
             success_count,
+            planned_analysis_units=len(records),
         ),
         _metric(
             "agentic.task_score",
@@ -52,6 +53,7 @@ def _agentic(records: list[ExecutionRecord]) -> list[EvaluationMetric]:
             "score",
             "higher_is_better",
             quality_count,
+            planned_analysis_units=len(records),
         ),
         _metric(
             "agentic.invalid_tool_rate",
@@ -61,6 +63,7 @@ def _agentic(records: list[ExecutionRecord]) -> list[EvaluationMetric]:
             "fraction",
             "lower_is_better",
             tool_calls,
+            planned_analysis_units=tool_calls,
         ),
         _metric(
             "agentic.mean_trajectory_steps",
@@ -70,6 +73,7 @@ def _agentic(records: list[ExecutionRecord]) -> list[EvaluationMetric]:
             "steps",
             "target",
             len(steps),
+            planned_analysis_units=len(records),
         ),
         _metric(
             "agentic.privacy_exposures_per_trajectory",
@@ -79,6 +83,7 @@ def _agentic(records: list[ExecutionRecord]) -> list[EvaluationMetric]:
             "exposures/trajectory",
             "lower_is_better",
             len(privacy),
+            planned_analysis_units=len(records),
         ),
         _metric(
             "agentic.runtime_cost_per_success",
@@ -92,6 +97,7 @@ def _agentic(records: list[ExecutionRecord]) -> list[EvaluationMetric]:
             "USD/success",
             "lower_is_better",
             successful,
+            planned_analysis_units=len(records),
         ),
     ]
 
@@ -115,6 +121,7 @@ def _multimodal(records: list[ExecutionRecord]) -> list[EvaluationMetric]:
             "fraction",
             "higher_is_better",
             support_count,
+            planned_analysis_units=len(records),
         ),
         _metric(
             "multimodal.quality",
@@ -124,6 +131,7 @@ def _multimodal(records: list[ExecutionRecord]) -> list[EvaluationMetric]:
             "score",
             "higher_is_better",
             quality_count,
+            planned_analysis_units=len(records),
         ),
         _metric(
             "multimodal.privacy_violations",
@@ -133,6 +141,7 @@ def _multimodal(records: list[ExecutionRecord]) -> list[EvaluationMetric]:
             "count",
             "lower_is_better",
             len(privacy_values),
+            planned_analysis_units=len(records),
         ),
     ]
     by_modality: dict[str, list[ExecutionRecord]] = defaultdict(list)
@@ -156,6 +165,7 @@ def _multimodal(records: list[ExecutionRecord]) -> list[EvaluationMetric]:
                     "fraction",
                     "higher_is_better",
                     modality_support_count,
+                    planned_analysis_units=len(rows),
                 ),
                 _metric(
                     f"multimodal.{modality}.quality",
@@ -165,6 +175,7 @@ def _multimodal(records: list[ExecutionRecord]) -> list[EvaluationMetric]:
                     "score",
                     "higher_is_better",
                     modality_quality_count,
+                    planned_analysis_units=len(rows),
                 ),
             )
         )
@@ -208,6 +219,7 @@ def _preference(records: list[ExecutionRecord]) -> list[EvaluationMetric]:
             "fraction",
             "higher_is_better",
             match_count,
+            planned_analysis_units=len(records),
         ),
         _metric(
             "preference.propensity_coverage",
@@ -217,6 +229,7 @@ def _preference(records: list[ExecutionRecord]) -> list[EvaluationMetric]:
             "fraction",
             "higher_is_better",
             len(records),
+            planned_analysis_units=len(records),
         ),
         _metric(
             "preference.effective_sample_size",
@@ -226,6 +239,7 @@ def _preference(records: list[ExecutionRecord]) -> list[EvaluationMetric]:
             "effective samples",
             "higher_is_better",
             len(propensity_rows),
+            planned_analysis_units=len(records),
         ),
         _metric(
             "preference.effective_sample_ratio",
@@ -239,6 +253,7 @@ def _preference(records: list[ExecutionRecord]) -> list[EvaluationMetric]:
             "fraction",
             "higher_is_better",
             len(propensity_rows),
+            planned_analysis_units=len(records),
         ),
         _metric(
             "preference.self_normalized_ips_agreement",
@@ -248,6 +263,7 @@ def _preference(records: list[ExecutionRecord]) -> list[EvaluationMetric]:
             "fraction",
             "higher_is_better",
             len(propensity_rows),
+            planned_analysis_units=len(records),
         ),
     ]
 
@@ -288,6 +304,7 @@ def _safety(records: list[ExecutionRecord]) -> list[EvaluationMetric]:
             "violations/case",
             "lower_is_better",
             len(records),
+            planned_analysis_units=len(records),
         ),
         _metric(
             "safety.violation_case_rate",
@@ -297,6 +314,7 @@ def _safety(records: list[ExecutionRecord]) -> list[EvaluationMetric]:
             "fraction",
             "lower_is_better",
             len(records),
+            planned_analysis_units=len(records),
         ),
         _metric(
             "safety.violation_upper_95",
@@ -306,6 +324,7 @@ def _safety(records: list[ExecutionRecord]) -> list[EvaluationMetric]:
             "fraction",
             "lower_is_better",
             len(records),
+            planned_analysis_units=len(records),
         ),
         _metric(
             "safety.block_accuracy",
@@ -315,6 +334,7 @@ def _safety(records: list[ExecutionRecord]) -> list[EvaluationMetric]:
             "fraction",
             "higher_is_better",
             len(block_rows),
+            planned_analysis_units=len(records),
         ),
         _metric(
             "safety.false_negative_rate",
@@ -324,6 +344,7 @@ def _safety(records: list[ExecutionRecord]) -> list[EvaluationMetric]:
             "fraction",
             "lower_is_better",
             len(positive_rows),
+            planned_analysis_units=len(block_rows),
         ),
         _metric(
             "safety.false_positive_rate",
@@ -333,5 +354,6 @@ def _safety(records: list[ExecutionRecord]) -> list[EvaluationMetric]:
             "fraction",
             "lower_is_better",
             len(negative_rows),
+            planned_analysis_units=len(block_rows),
         ),
     ]

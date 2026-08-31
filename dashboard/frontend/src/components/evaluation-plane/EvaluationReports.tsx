@@ -90,7 +90,7 @@ export default function EvaluationReports({
         ) : null}
       </section>
       {loading ? (
-        <div className={styles.panel}>
+        <div className={reportStyles.reportLoading}>
           <ProductLoadingState label="Loading evaluation report" compact />
         </div>
       ) : null}

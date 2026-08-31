@@ -101,6 +101,9 @@ func (s *Store) scanRunDirectories(visit func(string, Run, error)) error {
 				continue
 			}
 			run, runErr := s.GetRun(entry.Name())
+			if errors.Is(runErr, errControlledPairNotCommitted) {
+				continue
+			}
 			visit(entry.Name(), run, runErr)
 		}
 		if errors.Is(readErr, io.EOF) {

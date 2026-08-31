@@ -53,6 +53,12 @@ type RegistryOptions struct {
 }
 
 func NewRegistry(routerAPIURL, envoyURL string, registryOptions ...RegistryOptions) (*Registry, error) {
+	if err := ValidateMetricAnalysisCatalog(); err != nil {
+		return nil, fmt.Errorf("metric analysis catalog: %w", err)
+	}
+	if err := ValidateResearchBenchmarkInventory(); err != nil {
+		return nil, fmt.Errorf("research benchmark inventory: %w", err)
+	}
 	options, err := resolveRegistryOptions(registryOptions)
 	if err != nil {
 		return nil, err
@@ -161,9 +167,10 @@ func catalogMixtureFromManifest(mixture *ManifestMixture) *CatalogMixture {
 		RecipeDigest: mixture.RecipeDigest, PoolDigest: mixture.PoolDigest,
 		SelectorPolicyDigest: mixture.SelectorPolicyDigest, SelectorDigest: mixture.SelectorDigest,
 		AdaptationDigest: mixture.AdaptationDigest, BindingDigest: mixture.BindingDigest, ModelArms: copyModelArms(mixture.ModelArms),
-		SupportModels: copySupportModels(mixture.SupportModels),
-		FallbackArmID: mixture.FallbackArmID,
-		Decisions:     copyMixtureDecisions(mixture.Decisions),
+		SupportModels:     copySupportModels(mixture.SupportModels),
+		FallbackArmID:     mixture.FallbackArmID,
+		Decisions:         copyMixtureDecisions(mixture.Decisions),
+		RoutingRecipePlan: copyRoutingRecipePlan(mixture.RoutingRecipePlan),
 	}
 }
 
@@ -179,9 +186,10 @@ func manifestMixtureFromCatalog(mixture *CatalogMixture) *ManifestMixture {
 		RecipeDigest: mixture.RecipeDigest, PoolDigest: mixture.PoolDigest,
 		SelectorPolicyDigest: mixture.SelectorPolicyDigest, SelectorDigest: mixture.SelectorDigest,
 		AdaptationDigest: mixture.AdaptationDigest, BindingDigest: mixture.BindingDigest, ModelArms: copyModelArms(mixture.ModelArms),
-		SupportModels: copySupportModels(mixture.SupportModels),
-		FallbackArmID: mixture.FallbackArmID,
-		Decisions:     copyMixtureDecisions(mixture.Decisions),
+		SupportModels:     copySupportModels(mixture.SupportModels),
+		FallbackArmID:     mixture.FallbackArmID,
+		Decisions:         copyMixtureDecisions(mixture.Decisions),
+		RoutingRecipePlan: copyRoutingRecipePlan(mixture.RoutingRecipePlan),
 	}
 }
 
@@ -194,6 +202,7 @@ func copyCatalogMixture(mixture *CatalogMixture) *CatalogMixture {
 	copy.ModelArms = copyModelArms(mixture.ModelArms)
 	copy.SupportModels = copySupportModels(mixture.SupportModels)
 	copy.Decisions = copyMixtureDecisions(mixture.Decisions)
+	copy.RoutingRecipePlan = copyRoutingRecipePlan(mixture.RoutingRecipePlan)
 	return &copy
 }
 
@@ -206,7 +215,16 @@ func copyManifestMixture(mixture *ManifestMixture) *ManifestMixture {
 	copy.ModelArms = copyModelArms(mixture.ModelArms)
 	copy.SupportModels = copySupportModels(mixture.SupportModels)
 	copy.Decisions = copyMixtureDecisions(mixture.Decisions)
+	copy.RoutingRecipePlan = copyRoutingRecipePlan(mixture.RoutingRecipePlan)
 	return &copy
+}
+
+func copyRoutingRecipePlan(plan RoutingRecipePlan) RoutingRecipePlan {
+	plan.ArmIDs = append([]string{}, plan.ArmIDs...)
+	plan.Signals = append([]RoutingRecipeInputSpec{}, plan.Signals...)
+	plan.Projections = append([]RoutingRecipeProjectionSpec{}, plan.Projections...)
+	plan.TopK = append([]int{}, plan.TopK...)
+	return plan
 }
 
 func copySupportModels(models []SupportModel) []SupportModel {
@@ -318,7 +336,7 @@ func builtinCampaignSlots(dispositions [8]string) []CatalogCampaignSlot {
 		{GateID: "G2", Name: "Hard policy", Description: "Server-qualified hard-policy enforcement on the candidate subject.", Disposition: dispositions[0], BindingKind: CampaignBindingRun, TrackID: "safety", Mode: ModeLive, MinimumEvidenceLevel: "E3", AcceptedExecutorIDs: []string{liveRuntimeExecutorID}},
 		{GateID: "G3", Name: "Controlled paired-live value", Description: "Controlled AB/BA paired-live outcomes under the frozen promotion policy.", Disposition: dispositions[1], BindingKind: CampaignBindingControlledPair, TrackID: "joint", Mode: ModeLive, MinimumEvidenceLevel: "E4", AcceptedExecutorIDs: []string{liveRuntimeExecutorID}},
 		{GateID: "G4", Name: "Declared-shift robustness", Description: "Server-qualified declared-shift robustness on the candidate subject.", Disposition: dispositions[2], BindingKind: CampaignBindingRun, TrackID: "routing", Mode: ModeLive, MinimumEvidenceLevel: "E4", AcceptedExecutorIDs: []string{normalizedSuiteLiveExecutorID}},
-		{GateID: "G5", Name: "Live fidelity", Description: "Reference-to-fresh-live agreement on an exact candidate and case cohort.", Disposition: dispositions[3], BindingKind: CampaignBindingFidelityPair, TrackID: "joint", Mode: ModeLive, MinimumEvidenceLevel: "E5", AcceptedExecutorIDs: []string{normalizedSuiteLiveExecutorID, liveRuntimeExecutorID}},
+		{GateID: "G5", Name: "Live fidelity", Description: "Reference-to-fresh-live agreement on the exact live-mom-core candidate and joint case cohort.", Disposition: dispositions[3], BindingKind: CampaignBindingFidelityPair, TrackID: "joint", Mode: ModeLive, MinimumEvidenceLevel: "E5", AcceptedExecutorIDs: []string{liveRuntimeExecutorID}},
 		{GateID: "G6", Name: "Live fault-recovery continuity", Description: "Server-qualified fault-recovery continuity on the candidate subject.", Disposition: dispositions[4], BindingKind: CampaignBindingRun, TrackID: "agentic", Mode: ModeLive, MinimumEvidenceLevel: "E5", AcceptedExecutorIDs: []string{liveRuntimeExecutorID}},
 		{GateID: "G7", Name: "Cost / latency / capacity", Description: "Server-qualified capacity envelope on the candidate subject.", Disposition: dispositions[5], BindingKind: CampaignBindingRun, TrackID: "capacity", Mode: ModeLive, MinimumEvidenceLevel: "E5", AcceptedExecutorIDs: []string{liveRuntimeExecutorID}},
 		{GateID: "G8", Name: "Shadow / canary", Description: "Server-qualified production assignment, exposure, risk, stop, and rollback controls.", Disposition: dispositions[6], BindingKind: CampaignBindingRun, TrackID: "preference", Mode: ModeLive, MinimumEvidenceLevel: "E5", AcceptedExecutorIDs: []string{liveRuntimeExecutorID}},
@@ -341,14 +359,22 @@ func validChangeProfile(id ChangeProfile) bool {
 
 func builtinTracks() []CatalogTrack {
 	return []CatalogTrack{
-		{ID: "routing", Name: "Routing", Description: "Recipe decisions, coverage, abstention, fallback, and oracle regret.", Modes: []Mode{ModeReplay, ModeLive}, Metrics: []string{"routing.coverage", "routing.accuracy", "routing.abstention_rate", "routing.fallback_rate", "routing.success_rate", "routing.selection_entropy_bits", "routing.selected_arm_count", "routing.latency_p50_ms", "routing.latency_p95_ms"}, EvidenceLevels: []EvidenceLevel{"E0", "E3", "E4"}},
-		{ID: "model_pool", Name: "Model pool", Description: "Arm quality, complementarity, unique wins, and pool oracle quality.", Modes: []Mode{ModeReplay, ModeLive}, Metrics: []string{"model_pool.arm_count", "model_pool.best_single_quality", "model_pool.oracle_quality", "model_pool.oracle_gain", "model_pool.unique_wins", "model_pool.unique_win_rate", "model_pool.selection_entropy_bits", "model_pool.selection_arm_coverage", "model_pool.quality_dominated_arm_count", "model_pool.pareto_evaluable_arm_count", "model_pool.pareto_dominated_arm_count", "model_pool.mean_pairwise_failure_jaccard", "model_pool.worst_arm_reliability", "model_pool.all_arm_failure_rate"}, EvidenceLevels: []EvidenceLevel{"E0", "E4"}},
-		{ID: "joint", Name: "Routing + pool", Description: "Realized system utility, oracle regret, latency, reliability, and cost.", Modes: []Mode{ModeReplay, ModeLive}, Metrics: []string{"joint.realized_quality", "joint.oracle_regret", "joint.normalized_regret", "joint.reliability", "joint.oracle_capture_ratio", "joint.runtime_cost_per_success", "joint.latency_p95_ms"}, EvidenceLevels: []EvidenceLevel{"E0", "E5"}},
-		{ID: "agentic", Name: "Agentic", Description: "Task quality, trajectory and explicit tool-policy integrity, privacy, complete cost, and separately qualified recovery continuity.", Modes: []Mode{ModeReplay, ModeLive}, Metrics: []string{"agentic.success_rate", "agentic.task_score", "agentic.invalid_tool_rate", "agentic.mean_trajectory_steps", "agentic.privacy_exposures_per_trajectory", "agentic.runtime_cost_per_success", "agentic.task_attempt_count", "agentic.task_distinct_count", "agentic.task_attempt_success_rate", "agentic.task_attempt_success_rate_lower_95", "agentic.task_reliability", "agentic.task_reliability_lower_95", "agentic.task_mean_score", "agentic.task_mean_steps", "agentic.task_invalid_tool_rate", "agentic.task_tool_required_attempt_count", "agentic.task_pure_reasoning_attempt_count", "agentic.task_required_tool_receipt_coverage", "agentic.task_privacy_exposures_per_attempt", "agentic.task_total_cost_usd", "agentic.task_cost_per_success_usd", "agentic.recovery_pass_rate", "agentic.recovery_pass_rate_lower_95", "agentic.recovery_pair_count", "agentic.recovery_seed_count"}, EvidenceLevels: []EvidenceLevel{"E0", "E5"}},
-		{ID: "multimodal", Name: "Multimodal", Description: "Capability-aware routing, grounding quality, and privacy signals.", Modes: []Mode{ModeReplay, ModeLive}, Metrics: []string{"multimodal.support_rate", "multimodal.quality", "multimodal.privacy_violations"}, EvidenceLevels: []EvidenceLevel{"E0", "E4", "E5"}},
-		{ID: "preference", Name: "Preference", Description: "Offline preference agreement and propensity-qualified online evidence.", Modes: []Mode{ModeReplay, ModeLive}, Metrics: []string{"preference.agreement", "preference.propensity_coverage", "preference.effective_sample_size", "preference.effective_sample_ratio", "preference.self_normalized_ips_agreement", "preference.online_assignment_count", "preference.online_exposure_coverage", "preference.online_effective_sample_size", "preference.online_effective_sample_ratio", "preference.online_segment_coverage", "preference.online_target_snips_reward", "preference.online_reference_snips_reward", "preference.online_reward_lift", "preference.online_reward_lift_ci_lower_95", "preference.online_reward_lift_ci_upper_95", "preference.production_srm_p_value", "preference.production_risk_event_rate", "preference.production_risk_event_rate_upper_95", "preference.production_risk_budget_max_rate"}, EvidenceLevels: []EvidenceLevel{"E0", "E4", "E5"}},
-		{ID: "safety", Name: "Safety", Description: "Policy adherence, blocking correctness, privacy, and unsafe regressions.", Modes: []Mode{ModeReplay, ModeLive}, Metrics: []string{"safety.violation_rate", "safety.violation_case_rate", "safety.violation_upper_95", "safety.block_accuracy", "safety.false_negative_rate", "safety.false_positive_rate", "safety.hard_policy_static_passed", "safety.hard_policy_observation_count"}, EvidenceLevels: []EvidenceLevel{"E0", "E3", "E4"}},
-		{ID: "capacity", Name: "Capacity", Description: "Repeated closed-loop throughput, tail latency, statistical error bounds, stability, SLO headroom, and measurement cost.", Modes: []Mode{ModeReplay, ModeLive}, Metrics: []string{"capacity.throughput_rps", "capacity.latency_p95_ms", "capacity.latency_p99_ms", "capacity.success_rate", "capacity.error_rate", "capacity.error_rate_upper_bound", "capacity.throughput_stability_cv_max", "capacity.latency_p95_stability_cv_max", "capacity.measurement_request_count", "capacity.warmup_error_count", "capacity.saturation_concurrency", "capacity.saturation_concurrency_lower_bound", "capacity.saturation_observed", "capacity.slo_headroom", "capacity.cost_per_successful_request", "capacity.success_concurrency_upper_bound"}, EvidenceLevels: []EvidenceLevel{"E0", "E5"}},
+		builtinTrack("routing", "Routing", "Recipe decisions, coverage, abstention, fallback, and oracle regret.", []EvidenceLevel{"E0", "E3", "E4"}),
+		builtinTrack("model_pool", "Model pool", "Arm quality, complementarity, unique wins, and pool oracle quality.", []EvidenceLevel{"E0", "E4"}),
+		builtinTrack("joint", "Routing + pool", "Realized system utility, oracle regret, latency, reliability, and cost.", []EvidenceLevel{"E0", "E5"}),
+		builtinTrack("agentic", "Agentic", "Task quality, trajectory and explicit tool-policy integrity, privacy, complete cost, and separately qualified recovery continuity.", []EvidenceLevel{"E0", "E5"}),
+		builtinTrack("multimodal", "Multimodal", "Capability-aware routing, grounding quality, and privacy signals.", []EvidenceLevel{"E0", "E4", "E5"}),
+		builtinTrack("preference", "Preference", "Offline preference agreement and propensity-qualified online evidence.", []EvidenceLevel{"E0", "E4", "E5"}),
+		builtinTrack("safety", "Safety", "Policy adherence, blocking correctness, privacy, and unsafe regressions.", []EvidenceLevel{"E0", "E3", "E4"}),
+		builtinTrack("capacity", "Capacity", "Repeated closed-loop throughput, tail latency, statistical error bounds, stability, SLO headroom, and measurement cost.", []EvidenceLevel{"E0", "E5"}),
+	}
+}
+
+func builtinTrack(id TrackID, name, description string, evidenceLevels []EvidenceLevel) CatalogTrack {
+	return CatalogTrack{
+		ID: id, Name: name, Description: description,
+		Modes: []Mode{ModeReplay, ModeLive}, Metrics: StaticMetricAnalysisIDsForTrack(id),
+		EvidenceLevels: append([]EvidenceLevel(nil), evidenceLevels...),
 	}
 }
 
@@ -410,7 +436,7 @@ func builtinSuitesFor(options RegistryOptions) []CatalogSuite {
 
 func validNormalizedSuiteExecutors(suite CatalogSuite, executors map[string]executorContract) bool {
 	expectedModes := []Mode{ModeReplay}
-	if normalizedSuiteSupportsLive(suite.TrackIDs) {
+	if len(normalizedSuiteLiveMethodTracks(suite)) > 0 {
 		expectedModes = append(expectedModes, ModeLive)
 	}
 	if len(suite.Modes) != len(expectedModes) || len(suite.Executors) != len(expectedModes) {
@@ -420,7 +446,12 @@ func validNormalizedSuiteExecutors(suite CatalogSuite, executors map[string]exec
 		if suite.Modes[index] != mode {
 			return false
 		}
-		executor, registered := executors[suite.Executors[mode]]
+		executorID := suite.Executors[mode]
+		if mode == ModeReplay && executorID != normalizedSuiteExecutorID ||
+			mode == ModeLive && executorID != normalizedSuiteLiveExecutorID {
+			return false
+		}
+		executor, registered := executors[executorID]
 		if !registered || executor.Mode != mode || !executor.NormalizedSuite ||
 			(mode == ModeReplay) != executor.RecordedNormalizedSource {
 			return false

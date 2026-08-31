@@ -6,6 +6,7 @@ import {
   decodeEvaluationControlledPairExecution,
 } from './evaluationControlledPairContract'
 import { isCanonicalEvaluationRunID } from './evaluationRunContract'
+import { buildEvaluationRoutingRecipePlan } from '../test/evaluationRoutingRecipeFixture'
 
 const BASELINE_SOURCE = '11111111-1111-4111-8111-111111111111'
 const CANDIDATE_SOURCE = '22222222-2222-4222-8222-222222222222'
@@ -16,6 +17,30 @@ function liveRun(
   role: 'baseline' | 'candidate',
   baselineRunID?: string,
 ): EvaluationRun {
+  const mixtureBase = {
+    id: 'mom-live',
+    entrypoint_model: 'quality-router',
+    aliases: ['quality-router'],
+    recipe_name: 'quality',
+    recipe_description: 'Quality routing',
+    recipe_digest: `sha256:${'1'.repeat(64)}`,
+    pool_digest: `sha256:${'2'.repeat(64)}`,
+    selector_policy_digest: `sha256:${'3'.repeat(64)}`,
+    selector_digest: `sha256:${'4'.repeat(64)}`,
+    adaptation_digest: `sha256:${'5'.repeat(64)}`,
+    binding_digest: `sha256:${'6'.repeat(64)}`,
+    model_arms: [
+      {
+        id: 'arm-a',
+        model: 'model-a',
+        provider_model_id_digest: `sha256:${'7'.repeat(64)}`,
+        input_cost_per_million_tokens_usd: 1,
+        output_cost_per_million_tokens_usd: 2,
+      },
+    ],
+    support_models: [],
+    decisions: [{ name: 'route', algorithm: 'semantic', arm_ids: ['arm-a'] }],
+  }
   return {
     schema_version: 'evaluation.v1',
     id,
@@ -28,28 +53,8 @@ function liveRun(
     track_evidence_levels: { routing: 'E2' },
     target_id: 'mom-live',
     mixture: {
-      id: 'mom-live',
-      entrypoint_model: 'quality-router',
-      aliases: ['quality-router'],
-      recipe_name: 'quality',
-      recipe_description: 'Quality routing',
-      recipe_digest: `sha256:${'1'.repeat(64)}`,
-      pool_digest: `sha256:${'2'.repeat(64)}`,
-      selector_policy_digest: `sha256:${'3'.repeat(64)}`,
-      selector_digest: `sha256:${'4'.repeat(64)}`,
-      adaptation_digest: `sha256:${'5'.repeat(64)}`,
-      binding_digest: `sha256:${'6'.repeat(64)}`,
-      model_arms: [
-        {
-          id: 'arm-a',
-          model: 'model-a',
-          provider_model_id_digest: `sha256:${'7'.repeat(64)}`,
-          input_cost_per_million_tokens_usd: 1,
-          output_cost_per_million_tokens_usd: 2,
-        },
-      ],
-      support_models: [],
-      decisions: [{ name: 'route', algorithm: 'semantic', arm_ids: ['arm-a'] }],
+      ...mixtureBase,
+      routing_recipe_plan: buildEvaluationRoutingRecipePlan(mixtureBase),
     },
     change_profile: 'recipe',
     suite_ids: ['live-mom-core'],

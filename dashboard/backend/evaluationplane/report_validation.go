@@ -161,6 +161,9 @@ func validateReportFrozenFields(run Run, manifest RunManifest, report Report) er
 		!reflect.DeepEqual(report.Provenance.BenchmarkRevisions, manifest.SuiteRevisions) {
 		return fmt.Errorf("%w: report benchmark or gate contract revisions do not match the durable manifest", ErrInvalid)
 	}
+	if err := validateRoutingRecipeReportFrozenFields(run, manifest, report); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -171,12 +174,9 @@ func (s *Service) validateReportBundle(
 	checksums map[string]string,
 	executionContract resolvedExecutionContract,
 	executionAttestation *executionAttestation,
+	records recordAttestation,
 ) (sealedEvidenceLevels, error) {
 	runDir, err := s.store.checkedRunDir(runID)
-	if err != nil {
-		return sealedEvidenceLevels{}, err
-	}
-	records, err := validateRecordsAndFailureSummary(runDir, manifest, executionContract.Executor)
 	if err != nil {
 		return sealedEvidenceLevels{}, err
 	}
@@ -209,6 +209,9 @@ func (s *Service) validateReportBundle(
 	if err := validateReportMetricsAndGates(runDir, report, records, qualification, sealedLevels, capacitySLO); err != nil {
 		return sealedEvidenceLevels{}, err
 	}
+	if err := validateSealedRoutingRecipeReport(report.RoutingRecipeReport, manifest, records, executionAttestation); err != nil {
+		return sealedEvidenceLevels{}, err
+	}
 	if err := validateReportProvenance(runDir, manifest, report, checksums, executionContract); err != nil {
 		return sealedEvidenceLevels{}, err
 	}
@@ -224,6 +227,9 @@ func validateReportMetricsAndGates(
 	capacitySLO *capacitySLOAttestation,
 ) error {
 	qualification = qualification.withSealedEvidenceLevels(sealedLevels)
+	if err := validateSealedMethodReports(report.MethodReports, records.Methods); err != nil {
+		return fmt.Errorf("%w: %w", ErrInvalid, err)
+	}
 	if err := validateReportMetricAndGateFiles(runDir, report); err != nil {
 		return err
 	}
@@ -360,6 +366,13 @@ func validateTrackReportMirrors(report Report) error {
 
 func validateWorkerSingleRunMetricOwnership(metrics []Metric) error {
 	for _, metric := range metrics {
+		if IsRoutingRecipeMetricID(metric.ID) {
+			return fmt.Errorf(
+				"%w: routing recipe metric %s is server-owned and must be read from routing_recipe_report",
+				ErrInvalid,
+				metric.ID,
+			)
+		}
 		if metric.BaselineValue != nil || metric.Delta != nil {
 			return fmt.Errorf("%w: single-run metric %s cannot publish worker-owned baseline_value or delta", ErrInvalid, metric.ID)
 		}
@@ -479,6 +492,51 @@ func validateReportMetrics(metrics []Metric, selectedTrackIDs []TrackID) error {
 				return fmt.Errorf("evaluation metric %q delta does not match value minus baseline_value", metric.ID)
 			}
 		}
+		if err := validateMetricAnalysisProvenance(metric.ID, metric.AnalysisProvenance); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+type metricAnalysisSpec struct {
+	estimatorID, estimatorVersion, analysisUnit, clusterUnit string
+	weighting, missingness, exclusionPolicy                  string
+}
+
+func registeredMetricAnalysisSpec(metricID string) (metricAnalysisSpec, error) {
+	match, err := ResolveMetricAnalysisCatalog(metricID)
+	if err != nil {
+		return metricAnalysisSpec{}, err
+	}
+	specification := match.Specification
+	return metricAnalysisSpec{
+		estimatorID:      specification.EstimatorID,
+		estimatorVersion: specification.EstimatorVersion,
+		analysisUnit:     specification.AnalysisUnit,
+		clusterUnit:      specification.ClusterUnit,
+		weighting:        specification.Weighting,
+		missingness:      specification.Missingness,
+		exclusionPolicy:  specification.ExclusionPolicy,
+	}, nil
+}
+
+func validateMetricAnalysisProvenance(metricID string, provenance MetricAnalysisProvenance) error {
+	expected, err := registeredMetricAnalysisSpec(metricID)
+	if err != nil {
+		return fmt.Errorf("evaluation metric %q analysis_provenance metric id is not registered: %w", metricID, err)
+	}
+	if provenance.ContractVersion != MetricAnalysisContractVersion {
+		return fmt.Errorf("evaluation metric %q analysis_provenance contract_version is invalid", metricID)
+	}
+	if provenance.EstimatorVersion != expected.estimatorVersion || provenance.EstimatorID != expected.estimatorID ||
+		provenance.AnalysisUnit != expected.analysisUnit || provenance.ClusterUnit != expected.clusterUnit ||
+		provenance.Weighting != expected.weighting || provenance.Missingness != expected.missingness ||
+		provenance.ExclusionPolicy != expected.exclusionPolicy {
+		return fmt.Errorf("evaluation metric %q analysis_provenance does not match its registered estimator", metricID)
+	}
+	if provenance.ObservedExclusions == nil || *provenance.ObservedExclusions < 0 {
+		return fmt.Errorf("evaluation metric %q analysis_provenance observed_exclusions is required and non-negative", metricID)
 	}
 	return nil
 }

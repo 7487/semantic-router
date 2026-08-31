@@ -8,9 +8,9 @@
   gap: 0.2rem;
   min-width: 13rem;
   padding: 0.55rem 0.65rem;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  background: rgba(255, 255, 255, 0.018);
+  border-left: 1px solid var(--border-subtle);
+  border-radius: 0;
+  background: transparent;
 }
 
 .pairedDigest dt,
@@ -28,14 +28,16 @@
 
 .pairedMeta {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(12, minmax(0, 1fr));
   margin-bottom: 0.7rem;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  background: rgba(255, 255, 255, 0.012);
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: 0;
+  background: transparent;
 }
 
 .pairedMeta > div {
+  grid-column: span 4;
   min-width: 0;
   padding: 0.65rem 0.75rem;
   border-left: 1px solid var(--border-subtle);
@@ -47,6 +49,7 @@
 }
 
 .pairedMeta > div:nth-child(n + 4) {
+  grid-column: span 3;
   border-top: 1px solid var(--border-subtle);
 }
 
@@ -81,8 +84,9 @@
 .pairedTableFrame {
   overflow-x: auto;
   overscroll-behavior-inline: contain;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: 0;
   scrollbar-gutter: stable;
 }
 
@@ -216,6 +220,12 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .pairedMeta > div,
+  .pairedMeta > div:nth-child(n + 4) {
+    grid-column: auto;
+    border-left: 1px solid var(--border-subtle);
+  }
+
   .pairedMeta > div:nth-child(odd) {
     border-top: 1px solid var(--border-subtle);
     border-left: 0;
@@ -228,6 +238,10 @@
   .pairedMeta > div:first-child,
   .pairedMeta > div:nth-child(2) {
     border-top: 0;
+  }
+
+  .pairedMeta > div:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
   }
 }
 
@@ -244,6 +258,7 @@
   }
 
   .pairedMeta > div {
+    grid-column: auto;
     border-top: 1px solid var(--border-subtle);
     border-left: 0;
   }

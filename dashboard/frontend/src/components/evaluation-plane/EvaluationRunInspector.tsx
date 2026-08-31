@@ -171,7 +171,11 @@ export default function EvaluationRunInspector({
               {run.error}
             </div>
           ) : null}
-          <div className={styles.inspectorActions} aria-label={`Actions for ${run.name}`}>
+          <div
+            className={styles.inspectorActions}
+            data-testid="evaluation-run-actions"
+            aria-label={`Actions for ${run.name}`}
+          >
             {!controlledPair && run.status === 'pending' && canRun ? (
               <EvaluationActionButton
                 type="button"

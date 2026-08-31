@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 
 import type { EvaluationCatalog, EvaluationTrackId } from '../../types/evaluationPlane'
 import { EVALUATION_TRACK_IDS, TRACK_PRESENTATION } from '../../types/evaluationPlane'
+import { EvaluationTag } from './EvaluationPrimitives'
 import styles from './EvaluationMethodReadiness.module.css'
 import planeStyles from './EvaluationPlane.module.css'
 import tableStyles from './EvaluationTable.module.css'
@@ -63,10 +64,7 @@ export default function EvaluationMethodReadiness({ catalog }: { catalog: Evalua
   )
 
   return (
-    <section
-      className={`${planeStyles.surface} ${planeStyles.workspaceSurface}`}
-      aria-labelledby="evaluation-methods-title"
-    >
+    <section className={planeStyles.surface} aria-labelledby="evaluation-methods-title">
       <header className={planeStyles.surfaceHeader}>
         <div>
           <span className={planeStyles.eyebrow}>Evaluation method inventory</span>
@@ -166,9 +164,9 @@ export default function EvaluationMethodReadiness({ catalog }: { catalog: Evalua
                     : 'Exploratory only'}
                 </td>
                 <td>
-                  <span className={styles.methodStatus} data-state={method.status}>
+                  <EvaluationTag tone={method.status === 'configured' ? 'info' : 'warning'}>
                     {METHOD_STATUS_LABELS[method.status]}
-                  </span>
+                  </EvaluationTag>
                   {method.reason ? (
                     <small className={styles.methodReason}>{method.reason}</small>
                   ) : null}

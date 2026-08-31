@@ -40,6 +40,7 @@ from cli.evaluation.manifest_identity import (
 )
 from cli.evaluation.method_ledger_identity import method_mixture_binding
 from cli.evaluation.metric_agent_task import agent_task_metrics, reduce_agent_tasks
+from cli.evaluation.routing_recipe_plan import build_routing_recipe_plan
 from cli.evaluation.target_capabilities import DEFAULT_TARGET_REGISTRY
 from pydantic import ValidationError
 from test_evaluation_engine import _live_manifest
@@ -55,7 +56,7 @@ _CONFIG = _digest("agent-task-config")
 _TOPOLOGY = _digest("agent-task-topology")
 _BROKER_RECEIPT = _digest("agent-task-broker")
 _MIXTURE_SNAPSHOT_GOLDEN = (
-    "sha256:ba509c86e0639916d2fa7430e09183c051f85504cda77b342788b5ba7892ba67"
+    "sha256:8d229b7c78bbf7865ae1b4c3dd9f6709d6afa36cbb1118274302cf03b23021d3"
 )
 
 
@@ -91,18 +92,23 @@ def _mixture() -> ManifestMixture:
     arms = (arm,)
     recipe_name = "agent-task-recipe"
     selector_policy_digest = _digest("agent-selector-policy")
+    recipe_digest = _digest("agent-recipe")
+    pool_digest = model_pool_snapshot_digest(arms)
+    selector_digest = selector_snapshot_digest(selector_policy_digest, ())
+    adaptation_digest = _digest("agent-adaptation")
+    binding_digest = _digest("agent-binding")
     return ManifestMixture(
         id=mixture_target_id(recipe_name),
         entrypoint_model="agent-entrypoint",
         aliases=("agent-entrypoint",),
         recipe_name=recipe_name,
         recipe_description="Frozen provider-observed agent-task subject",
-        recipe_digest=_digest("agent-recipe"),
-        pool_digest=model_pool_snapshot_digest(arms),
+        recipe_digest=recipe_digest,
+        pool_digest=pool_digest,
         selector_policy_digest=selector_policy_digest,
-        selector_digest=selector_snapshot_digest(selector_policy_digest, ()),
-        adaptation_digest=_digest("agent-adaptation"),
-        binding_digest=_digest("agent-binding"),
+        selector_digest=selector_digest,
+        adaptation_digest=adaptation_digest,
+        binding_digest=binding_digest,
         model_arms=arms,
         support_models=(),
         fallback_arm_id=arm.id,
@@ -110,6 +116,18 @@ def _mixture() -> ManifestMixture:
             MixtureDecisionBinding(
                 name="default", algorithm="single", arm_ids=(arm.id,)
             ),
+        ),
+        routing_recipe_plan=build_routing_recipe_plan(
+            recipe_digest=recipe_digest,
+            pool_digest=pool_digest,
+            selector_policy_digest=selector_policy_digest,
+            selector_digest=selector_digest,
+            adaptation_digest=adaptation_digest,
+            binding_digest=binding_digest,
+            arm_ids=(arm.id,),
+            fallback_arm_id=arm.id,
+            signals=(),
+            projections=(),
         ),
     )
 

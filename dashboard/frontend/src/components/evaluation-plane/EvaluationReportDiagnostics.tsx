@@ -1,16 +1,19 @@
 import type {
   EvaluationCapacityProfile,
   EvaluationFailureSummary,
+  EvaluationMetric,
 } from '../../types/evaluationReport'
 import { TRACK_PRESENTATION } from '../../types/evaluationPlane'
 import type { EvaluationDiagnosticArtifactIssue } from '../../utils/evaluationDiagnosticArtifacts'
 import { formatMetric } from './evaluationPresentation'
+import { EvaluationTag } from './EvaluationPrimitives'
 import heroStyles from './EvaluationReportHero.module.css'
 import reportStyles from './EvaluationReportLayout.module.css'
 import styles from './EvaluationReportDiagnostics.module.css'
 import tableStyles from './EvaluationReportTable.module.css'
 
 interface EvaluationReportDiagnosticsProps {
+  metrics: EvaluationMetric[]
   failureSummary: EvaluationFailureSummary | null
   capacityProfile: EvaluationCapacityProfile | null
   failureSummaryIssue: EvaluationDiagnosticArtifactIssue | null
@@ -49,6 +52,7 @@ function DiagnosticArtifactIssue({
 }
 
 export default function EvaluationReportDiagnostics({
+  metrics,
   failureSummary,
   capacityProfile,
   failureSummaryIssue,
@@ -56,6 +60,25 @@ export default function EvaluationReportDiagnostics({
   loading,
 }: EvaluationReportDiagnosticsProps) {
   const attestationCopy = 'Server-attested diagnostic artifacts.'
+  const analysisPlans = [
+    ...new Map(
+      metrics.map((metric) => {
+        const plan = metric.analysis_provenance
+        const key = [
+          plan.contract_version,
+          plan.estimator_id,
+          plan.estimator_version,
+          plan.analysis_unit,
+          plan.cluster_unit,
+          plan.weighting,
+          plan.missingness,
+          plan.exclusion_policy,
+          plan.observed_exclusions,
+        ].join('\u0000')
+        return [key, plan] as const
+      }),
+    ).values(),
+  ]
 
   if (loading) {
     return (
@@ -65,7 +88,13 @@ export default function EvaluationReportDiagnostics({
       </div>
     )
   }
-  if (!failureSummary && !capacityProfile && !failureSummaryIssue && !capacityProfileIssue) {
+  if (
+    !failureSummary &&
+    !capacityProfile &&
+    !failureSummaryIssue &&
+    !capacityProfileIssue &&
+    !analysisPlans.length
+  ) {
     return (
       <div className={styles.diagnosticsStack}>
         <p className={reportStyles.scopeCopy}>{attestationCopy}</p>
@@ -80,6 +109,40 @@ export default function EvaluationReportDiagnostics({
   return (
     <div className={styles.diagnosticsStack}>
       <p className={reportStyles.scopeCopy}>{attestationCopy}</p>
+      {analysisPlans.length ? (
+        <details className={styles.analysisProvenance}>
+          <summary>
+            Metric analysis provenance · {metrics.length} published metrics
+            {analysisPlans.length === 1 ? '' : ` · ${analysisPlans.length} plans`}
+          </summary>
+          {analysisPlans.map((plan) => (
+            <dl key={`${plan.estimator_id}:${plan.estimator_version}`}>
+              <div>
+                <dt>Estimator</dt>
+                <dd>
+                  {plan.estimator_id} · {plan.estimator_version}
+                </dd>
+              </div>
+              <div>
+                <dt>Unit / cluster</dt>
+                <dd>
+                  {plan.analysis_unit} / {plan.cluster_unit}
+                </dd>
+              </div>
+              <div>
+                <dt>Weighting</dt>
+                <dd>{plan.weighting}</dd>
+              </div>
+              <div>
+                <dt>Missingness / exclusions</dt>
+                <dd>
+                  {plan.missingness} · {plan.exclusion_policy} · {plan.observed_exclusions} observed
+                </dd>
+              </div>
+            </dl>
+          ))}
+        </details>
+      ) : null}
       {failureSummary || failureSummaryIssue ? (
         <section className={styles.diagnosticArtifact} aria-labelledby="diagnostic-outcome-title">
           <div className={reportStyles.subsectionHeader}>
@@ -155,15 +218,11 @@ export default function EvaluationReportDiagnostics({
               </p>
             </div>
             {capacityProfile ? (
-              <span
-                className={
-                  capacityProfile.assessment.verdict === 'pass'
-                    ? styles.scopeReady
-                    : styles.scopeDiagnostic
-                }
+              <EvaluationTag
+                tone={capacityProfile.assessment.verdict === 'pass' ? 'positive' : 'warning'}
               >
                 SLO envelope {capacityProfile.assessment.verdict}
-              </span>
+              </EvaluationTag>
             ) : null}
           </div>
           {capacityProfileIssue ? (
@@ -299,13 +358,9 @@ export default function EvaluationReportDiagnostics({
                       <tr key={level.concurrency}>
                         <th scope="row">{level.concurrency}</th>
                         <td>
-                          <span
-                            className={
-                              level.qualified ? styles.capacityQualified : styles.capacityOutside
-                            }
-                          >
+                          <EvaluationTag tone={level.qualified ? 'positive' : 'warning'}>
                             {level.qualified ? 'Qualified' : 'Outside'}
-                          </span>
+                          </EvaluationTag>
                         </td>
                         <td>
                           {level.warmup_requests} requests · {level.warmup_errors} errors ·{' '}

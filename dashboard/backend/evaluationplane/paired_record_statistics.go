@@ -210,6 +210,7 @@ func computePairedStatistics(baseline, candidate []executionRecordEvidence, seed
 		baselineMean, candidateMean := meanFloat64(baselineValues), meanFloat64(candidateValues)
 		statistic := ComparisonStatistic{
 			ID: definition.metricID, TrackID: definition.trackID,
+			EstimatorID: "paired-bootstrap-case-clustered-delta", EstimatorVersion: "v1",
 			AnalysisUnit: string(definition.analysisUnit), Direction: string(definition.direction),
 			NonInferiorityMargin: definition.nonInferiorityMargin,
 			BaselineValue:        baselineMean, CandidateValue: candidateMean,

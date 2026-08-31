@@ -2,9 +2,44 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
-import type { EvaluationReport } from '../../types/evaluationReport'
+import type {
+  EvaluationMetricAnalysisProvenance,
+  EvaluationReport,
+} from '../../types/evaluationReport'
 import { EVALUATION_ATTESTATION_REVISION } from '../../types/evaluationPlane'
+import { metricAnalysisSpecification } from '../../utils/evaluationReportContract'
+import { buildEvaluationRoutingRecipePlan } from '../../test/evaluationRoutingRecipeFixture'
 import EvaluationReportView from './EvaluationReportView'
+
+function analysisProvenance(metricID: string): EvaluationMetricAnalysisProvenance {
+  return {
+    contract_version: 'metric-analysis.v1',
+    ...metricAnalysisSpecification(metricID),
+    estimator_version: 'v1',
+    missingness: 'fail_closed',
+    exclusion_policy: 'exclude_unavailable_evidence',
+    observed_exclusions: 0,
+  }
+}
+
+function withRoutingPlan<T extends Parameters<typeof buildEvaluationRoutingRecipePlan>[0]>(
+  mixture: T,
+) {
+  return {
+    ...mixture,
+    routing_recipe_plan: buildEvaluationRoutingRecipePlan(
+      mixture,
+      [{ id: 'domain:reasoning', value_kind: 'numeric' }],
+      [
+        {
+          id: 'projection:oracle-probability',
+          value_kind: 'probability',
+          outcome_binding: 'selected_is_oracle',
+        },
+      ],
+    ),
+  }
+}
 
 const report: EvaluationReport = {
   schema_version: 'evaluation.v1',
@@ -60,8 +95,10 @@ const report: EvaluationReport = {
       value: 0,
       unit: 'violations/case',
       sample_count: 4,
+      analysis_provenance: analysisProvenance('safety.violation_rate'),
     },
   ],
+  method_reports: [],
   gates: [],
   costs: {
     runtime: { amount: 0.01, currency: 'USD' },
@@ -79,6 +116,67 @@ const report: EvaluationReport = {
 }
 
 describe('EvaluationReportView evidence language', () => {
+  it('renders sealed R2 curves with the exact method readiness boundary', () => {
+    const methodReport: EvaluationReport = {
+      ...report,
+      method_reports: [
+        {
+          method: {
+            schema_version: 'evaluation-method.v2',
+            id: 'r2.compound-model-budget.v2',
+            version: 'evaluation-method.v2',
+            status: 'exploratory-import',
+            execution_owner: 'server',
+            input_schema: 'r2-compound-input',
+            export_schema: 'r2-compound-report',
+            live_input_complete: false,
+            live_grader: false,
+            applicable_tracks: ['model_pool'],
+            live_tracks: [],
+            produced_metric_ids: ['r2.compound_model_budget.audc'],
+            evidence_ceiling: 'E5',
+            native_parity: 'source_qualified',
+            required_artifact_ids: ['curves'],
+            analysis_plan: {
+              schema_version: 'evaluation-method.v2',
+              id: 'r2-compound-case-action-budget',
+              analysis_unit: 'case_action_budget',
+              cluster_unit: 'case',
+              slices: [{ schema_version: 'evaluation-method.v2', id: 'all' }],
+              curve_domain: 'shared_budget',
+              missingness: 'fail_closed',
+            },
+          },
+          analysis_plan: {
+            schema_version: 'evaluation-method.v2',
+            id: 'r2-compound-case-action-budget',
+            analysis_unit: 'case_action_budget',
+            cluster_unit: 'case',
+            slices: [{ schema_version: 'evaluation-method.v2', id: 'all' }],
+            curve_domain: 'shared_budget',
+            missingness: 'fail_closed',
+          },
+          action_refs: [{ schema_version: 'evaluation-method.v2', id: 'small' }],
+          slice_refs: [{ schema_version: 'evaluation-method.v2', id: 'all' }],
+          raw_shared_domain_curve: [
+            { action: { id: 'small' }, budget: 100, mean_score: 0.5, case_count: 2 },
+          ],
+          audc: 50,
+          nauc: 0.5,
+          peak: 0.5,
+          qnc: 0.5,
+          missing_case_action_budget_cells: 0,
+        },
+      ],
+    }
+    const markup = renderToStaticMarkup(
+      createElement(EvaluationReportView, { report: methodReport }),
+    )
+    expect(markup).toContain('Server-recomputed analysis')
+    expect(markup).toContain('Exploratory import only')
+    expect(markup).toContain('r2.compound-model-budget.v2')
+  })
+
   it('explains one frozen Mixture across recipe, pool-arm, and joint outcomes', () => {
     const mixtureReport: EvaluationReport = {
       ...report,
@@ -87,7 +185,7 @@ describe('EvaluationReportView evidence language', () => {
         mode: 'live',
         target_id: 'mom-balanced',
         track_ids: ['routing', 'model_pool', 'joint'],
-        mixture: {
+        mixture: withRoutingPlan({
           id: 'mom-balanced',
           entrypoint_model: 'vllm-sr/auto',
           aliases: ['vllm-sr/auto'],
@@ -118,7 +216,7 @@ describe('EvaluationReportView evidence language', () => {
           support_models: [],
           fallback_arm_id: 'fast',
           decisions: [{ name: 'reasoning', algorithm: 'confidence', arm_ids: ['fast', 'strong'] }],
-        },
+        }),
       },
       metrics: [
         {
@@ -127,6 +225,7 @@ describe('EvaluationReportView evidence language', () => {
           track_id: 'routing',
           value: 0.75,
           unit: 'fraction',
+          analysis_provenance: analysisProvenance('routing.accuracy'),
         },
         {
           id: 'model_pool.oracle_quality',
@@ -134,6 +233,7 @@ describe('EvaluationReportView evidence language', () => {
           track_id: 'model_pool',
           value: 1,
           unit: 'fraction',
+          analysis_provenance: analysisProvenance('model_pool.oracle_quality'),
         },
         {
           id: 'model_pool.arm.fast.quality',
@@ -141,6 +241,7 @@ describe('EvaluationReportView evidence language', () => {
           track_id: 'model_pool',
           value: 0.5,
           unit: 'fraction',
+          analysis_provenance: analysisProvenance('model_pool.arm.fast.quality'),
         },
         {
           id: 'model_pool.arm.strong.quality',
@@ -148,6 +249,7 @@ describe('EvaluationReportView evidence language', () => {
           track_id: 'model_pool',
           value: 1,
           unit: 'fraction',
+          analysis_provenance: analysisProvenance('model_pool.arm.strong.quality'),
         },
         {
           id: 'joint.realized_quality',
@@ -155,6 +257,7 @@ describe('EvaluationReportView evidence language', () => {
           track_id: 'joint',
           value: 0.75,
           unit: 'fraction',
+          analysis_provenance: analysisProvenance('joint.realized_quality'),
         },
         {
           id: 'joint.oracle_regret',
@@ -162,6 +265,7 @@ describe('EvaluationReportView evidence language', () => {
           track_id: 'joint',
           value: 0.25,
           unit: 'fraction',
+          analysis_provenance: analysisProvenance('joint.oracle_regret'),
         },
         {
           id: 'joint.normalized_regret',
@@ -169,8 +273,65 @@ describe('EvaluationReportView evidence language', () => {
           track_id: 'joint',
           value: 0.25,
           unit: 'fraction',
+          analysis_provenance: analysisProvenance('joint.normalized_regret'),
         },
       ],
+    }
+    const plan = mixtureReport.run.mixture?.routing_recipe_plan
+    if (!plan) throw new Error('test Mixture must bind a routing recipe plan')
+    const unavailable = {
+      available: false,
+      reason: 'insufficient_complete_pool_outcomes',
+      sample_count: 1,
+    }
+    mixtureReport.routing_recipe_report = {
+      contract_version: 'routing-recipe-eval.v1',
+      plan_digest: plan.plan_digest,
+      e1: {
+        expected_decisions: 4,
+        observed_decisions: 4,
+        signals: [
+          {
+            id: 'domain:reasoning',
+            expected: 4,
+            present: 3,
+            missing: 1,
+            error: 0,
+            timeout: 0,
+            latency: { available: true, sample_count: 3, p50_ms: 2, p95_ms: 4 },
+          },
+        ],
+        projections: [
+          {
+            id: 'projection:oracle-probability',
+            expected: 4,
+            present: 3,
+            missing: 0,
+            error: 0,
+            timeout: 1,
+            latency: {
+              available: false,
+              reason: 'insufficient_latency_samples',
+              sample_count: 1,
+            },
+          },
+        ],
+        eligibility_complete: 3,
+        selected_feasible: 3,
+      },
+      e2: {
+        projection_outcomes: [
+          {
+            projection_id: 'projection:oracle-probability',
+            spearman: unavailable,
+            brier: unavailable,
+            ece_10: unavailable,
+            reliability_bins: [],
+          },
+        ],
+        top_k: plan.top_k.map((k) => ({ k, feasible_oracle_recall: unavailable })),
+        oracle_regret: unavailable,
+      },
     }
     const markup = renderToStaticMarkup(
       createElement(EvaluationReportView, { report: mixtureReport }),
@@ -186,6 +347,16 @@ describe('EvaluationReportView evidence language', () => {
     expect(markup).toContain('Fallback')
     expect(markup).toContain('Normalized regret')
     expect(markup).toContain('Read left to right')
+    expect(markup).toContain('Server-owned decision evidence')
+    expect(markup).toContain('Decision coverage')
+    expect(markup).toContain('Eligibility complete')
+    expect(markup).toContain('Selected feasible')
+    expect(markup).toContain('Projection outcome calibration')
+    expect(markup).toContain('insufficient complete pool outcomes')
+    expect(markup).toContain('Oracle regret')
+    expect(markup.indexOf('Diagnostic evidence only')).toBeLessThan(
+      markup.indexOf('Server-owned decision evidence'),
+    )
   })
 
   it('renders current attested E0 evidence without manufacturing promotion readiness', () => {

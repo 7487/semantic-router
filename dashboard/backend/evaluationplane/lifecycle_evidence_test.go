@@ -14,7 +14,11 @@ func TestEvidencePublicationTransactionAcceptsLiveAttestation(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		done <- store.withEvidencePublication(func() error {
-			return store.writeLifecycleBoundExecutionAttestationDuringPublication(attestation)
+			return store.writeLifecycleBoundExecutionAttestationDuringPublication(attestation, RunManifest{
+				RunID: attestation.RunID, ManifestDigest: attestation.ManifestDigest, Mode: attestation.Mode,
+				PolicySnapshotDigest: attestation.PolicySnapshotDigest,
+				Target:               ManifestTarget{ID: attestation.TargetID, BackendTopologyDigest: attestation.BackendTopologyDigest},
+			})
 		})
 	}()
 

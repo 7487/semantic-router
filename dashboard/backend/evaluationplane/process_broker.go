@@ -349,6 +349,9 @@ func (broker *workerHTTPBroker) execute(ctx context.Context, request workerBroke
 	upstreamAttempted = true
 	httpResponse, err := broker.client.Do(httpRequest)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(requestContext.Err(), context.DeadlineExceeded) {
+			return failedWorkerBrokerResponse(response, "request_timeout")
+		}
 		return failedWorkerBrokerResponse(response, "request_error")
 	}
 	defer func() {
@@ -455,10 +458,17 @@ func (broker *workerHTTPBroker) attestResponse(
 	latencyMicroseconds int64,
 	pairing *controlledPairObservation,
 ) executionAttestationEntry {
+	requestDigest, requestDigestErr := brokerRequestSemanticDigest(request.Operation, requestPayload)
+	if requestDigestErr != nil {
+		// Invalid requests are still journaled fail-closed. They cannot pass the
+		// case-bound record validator, but retaining a bounded digest preserves
+		// the broker transcript for diagnosis.
+		requestDigest = digestBytes(requestPayload)
+	}
 	entry := executionAttestationEntry{
 		RequestID: request.ID, Operation: request.Operation, TrackID: request.TrackID,
 		CaseID: request.CaseID, AttemptID: request.AttemptID,
-		RequestDigest: digestBytes(requestPayload), ResponseDigest: digestBytes(responsePayload),
+		RequestDigest: requestDigest, ResponseDigest: digestBytes(responsePayload),
 		UpstreamAttempted: upstreamAttempted, Success: response.Success,
 		StatusCode: copyInt(response.StatusCode), LatencyMicroseconds: latencyMicroseconds,
 		Headers: copyStringMap(response.Headers), responsePayload: response.Payload,
@@ -505,6 +515,9 @@ func (broker *workerHTTPBroker) attestResponse(
 		entry.Recipe = &recipe
 	}
 	entry.ArmID = broker.resolveAttestedArmID(entry)
+	entry.RoutingRecipeDecision = routingRecipeDecisionFromBrokerResponse(
+		broker.manifest, request, response, entry,
+	)
 	if content := brokerResponseContent(response.Payload); content != nil {
 		digest := digestString(normalizedAnswer(*content))
 		entry.ResponseContentDigest = &digest

@@ -189,6 +189,7 @@ func registerTopologyRoutes(mux *http.ServeMux, cfg *config.Config, credentialPr
 }
 
 func registerEvaluationRoutes(mux *http.ServeMux, cfg *config.Config, credentialProviders ...*recipe.Store) *evaluationplane.Service {
+	registerEvaluationNamespaceBoundary(mux)
 	cfg.EvaluationAvailable = false
 	if !cfg.EvaluationEnabled {
 		cfg.EvaluationUnavailableReason = "Evaluation is disabled for this deployment."
@@ -225,12 +226,27 @@ func registerEvaluationRoutes(mux *http.ServeMux, cfg *config.Config, credential
 	mux.HandleFunc("/api/evaluation/v1/runs/", handler.RunRoute)
 	mux.HandleFunc("/api/evaluation/v1/compare", handler.Compare)
 	mux.HandleFunc("/api/evaluation/v1/controlled-pairs", handler.ControlledPairs)
+	mux.HandleFunc("/api/evaluation/v1/controlled-pairs/", handler.ControlledPairLifecycle)
 	mux.HandleFunc("/api/evaluation/v1/lifecycle/usage", handler.LifecycleUsage)
 	mux.HandleFunc("/api/evaluation/v1/lifecycle/collection", handler.LifecycleCollection)
 	mux.HandleFunc("/api/evaluation/v1/campaigns", handler.Campaigns)
 	mux.HandleFunc("/api/evaluation/v1/campaigns/", handler.CampaignRoute)
 	log.Printf("Evaluation Plane API endpoints registered: /api/evaluation/v1/*")
 	return service
+}
+
+// registerEvaluationNamespaceBoundary keeps unknown Evaluation endpoints inside
+// the Evaluation API namespace. Without this boundary, the dashboard's generic
+// /api/ router can forward a miss to an unrelated embedded service.
+func registerEvaluationNamespaceBoundary(mux *http.ServeMux) {
+	notFound := func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Cache-Control", "private, no-store")
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"error":{"message":"Evaluation endpoint not found."}}`))
+	}
+	mux.HandleFunc("/api/evaluation", notFound)
+	mux.HandleFunc("/api/evaluation/", notFound)
 }
 
 func registerMLPipelineRoutes(mux *http.ServeMux, cfg *config.Config, wf *workflowstore.Store) {

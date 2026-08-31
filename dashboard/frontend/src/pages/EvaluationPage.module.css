@@ -1,3 +1,11 @@
+.evaluationScope {
+  display: contents;
+  /* Evaluation uses dense technical copy; keep its muted and accent text AA without altering
+     unrelated Dashboard surfaces. */
+  --text-muted: #85858e;
+  --evaluation-accent-text: #ff555b;
+}
+
 .readonlyBanner,
 .staleBanner,
 .ledgerBanner,
@@ -6,19 +14,19 @@
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  min-height: 46px;
-  padding: 0.75rem 1rem;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  background: var(--surface-panel);
+  min-height: var(--control-height);
+  padding: 0.7rem 0 0.7rem 0.85rem;
+  border: 0;
+  border-left: 2px solid var(--border-strong);
+  border-radius: 0;
+  background: transparent;
   color: var(--text-secondary);
   font-size: var(--text-sm);
 }
 
 .ledgerBanner {
   align-items: flex-start;
-  border-color: color-mix(in srgb, var(--color-danger) 44%, transparent);
-  background: color-mix(in srgb, var(--color-danger) 10%, var(--surface-panel));
+  border-color: color-mix(in srgb, var(--color-danger) 58%, transparent);
   color: #ffc2c4;
 }
 
@@ -73,14 +81,12 @@
 }
 
 .staleBanner {
-  border-color: color-mix(in srgb, var(--color-warning) 36%, transparent);
-  background: color-mix(in srgb, var(--color-warning) 8%, var(--surface-panel));
+  border-color: color-mix(in srgb, var(--color-warning) 54%, transparent);
   color: #f9d38b;
 }
 
 .errorBanner {
-  border-color: color-mix(in srgb, var(--color-danger) 38%, transparent);
-  background: color-mix(in srgb, var(--color-danger) 9%, var(--surface-panel));
+  border-color: color-mix(in srgb, var(--color-danger) 58%, transparent);
   color: #ffb0b3;
 }
 
@@ -95,13 +101,23 @@
   box-sizing: border-box;
   min-width: 0;
   border: 1px solid var(--border-strong);
-  border-radius: var(--radius-md);
+  border-radius: var(--control-radius);
   background: var(--surface-shell);
   color: var(--text-primary);
   transition:
     border-color var(--transition-fast),
     background var(--transition-fast),
     box-shadow var(--transition-fast);
+}
+
+.panelRegion :is(input:not([type='radio']):not([type='checkbox']), select) {
+  height: var(--control-height);
+  min-height: var(--control-height);
+}
+
+.panelRegion select option {
+  background: var(--surface-panel);
+  color: var(--text-primary);
 }
 
 .panelRegion
@@ -122,21 +138,22 @@
 
 .compareWorkspace {
   display: grid;
-  gap: 1.5rem;
+  gap: 1.25rem;
   min-width: 0;
 }
 
 .loading,
 .loadError {
   display: grid;
-  min-height: 320px;
+  min-height: 220px;
   place-items: center;
   align-content: center;
   gap: 0.75rem;
   padding: 2rem;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  background: var(--surface-panel);
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: 0;
+  background: transparent;
   text-align: center;
 }
 

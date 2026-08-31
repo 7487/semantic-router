@@ -143,6 +143,7 @@ func TestControlledPairSourceRevalidatesBothManifestIdentities(t *testing.T) {
 	attestation.TargetID = manifest.Target.ID
 	attestation.PolicySnapshotDigest = manifest.PolicySnapshotDigest
 	attestation.BackendTopologyDigest = manifest.Target.BackendTopologyDigest
+	routingRecipeReport := controlledPairRoutingRecipeReport(t, manifest, &attestation)
 	refreshExecutionAttestationDigests(t, &attestation)
 	if writeAttestationErr := service.store.writeExecutionAttestation(attestation); writeAttestationErr != nil {
 		t.Fatalf("write real execution attestation: %v", writeAttestationErr)
@@ -150,7 +151,8 @@ func TestControlledPairSourceRevalidatesBothManifestIdentities(t *testing.T) {
 	report := reportForRun(run, nil)
 	report.Provenance.BenchmarkRevisions = copyCampaignRevisionMap(manifest.SuiteRevisions)
 	report.Provenance.RedactionPolicy = manifest.RedactionPolicy
-	writeAnchoredTestReport(t, service, run.ID, report)
+	report.RoutingRecipeReport = routingRecipeReport
+	writeAnchoredControlledPairReport(t, service, run.ID, report)
 	anchor, err := service.store.readReportAnchor(run.ID)
 	if err != nil {
 		t.Fatal(err)

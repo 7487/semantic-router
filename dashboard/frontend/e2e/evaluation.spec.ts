@@ -170,6 +170,29 @@ async function expectDialogBottomReachable(page: Page, dialog: Locator) {
       return Boolean(box && box.y >= -1 && box.y + box.height <= viewportHeight + 1)
     })
     .toBe(true)
+  const controls = await dialog.locator('button:visible').evaluateAll((elements) =>
+    elements.map((element) => ({
+      height: Math.round(element.getBoundingClientRect().height),
+      borderRadius: getComputedStyle(element).borderRadius,
+      whiteSpace: getComputedStyle(element).whiteSpace,
+    })),
+  )
+  for (const control of controls) {
+    expect(control.height).toBe(40)
+    expect(control.borderRadius).toBe('6px')
+    expect(control.whiteSpace).toBe('nowrap')
+  }
+  const confirmation = dialog.locator('input:visible')
+  if ((await confirmation.count()) > 0) {
+    await expect
+      .poll(() =>
+        confirmation.first().evaluate((element) => ({
+          height: Math.round(element.getBoundingClientRect().height),
+          borderRadius: getComputedStyle(element).borderRadius,
+        })),
+      )
+      .toEqual({ height: 40, borderRadius: '6px' })
+  }
   await dialog.evaluate((element) => {
     element.scrollTop = element.scrollHeight
   })
@@ -207,9 +230,16 @@ async function expectKeyboardScrollable(region: Locator, axis: 'vertical' | 'hor
       region.evaluate((element, property) => element[property as 'scrollTop'], scrollProperty),
     )
     .toBeGreaterThan(0)
-  await region.evaluate((element, property) => {
+  await region.evaluate(async (element, property) => {
+    if (element instanceof HTMLElement) element.blur()
+    await new Promise((resolve) => window.setTimeout(resolve, 250))
     element[property as 'scrollTop'] = 0
   }, scrollProperty)
+  await expect
+    .poll(() =>
+      region.evaluate((element, property) => element[property as 'scrollTop'], scrollProperty),
+    )
+    .toBe(0)
 }
 
 async function expectScrollRegionsKeyboardReachable(page: Page) {
@@ -223,6 +253,276 @@ async function expectScrollRegionsKeyboardReachable(page: Page) {
     if (overflow.horizontal) await expectKeyboardScrollable(region, 'horizontal')
     if (overflow.vertical) await expectKeyboardScrollable(region, 'vertical')
   }
+}
+
+async function expectEvaluationContrastContract(page: Page) {
+  const ratios = await page.getByTestId('evaluation-scope').evaluate((element) => {
+    const style = getComputedStyle(element)
+    const parseHex = (value: string) => {
+      const match = value.trim().match(/^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i)
+      if (!match) throw new Error(`Evaluation contrast token must be an opaque hex color: ${value}`)
+      return match.slice(1).map((channel) => Number.parseInt(channel, 16) / 255)
+    }
+    const luminance = (value: string) =>
+      parseHex(value)
+        .map((channel) =>
+          channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4,
+        )
+        .reduce((total, channel, index) => total + channel * [0.2126, 0.7152, 0.0722][index], 0)
+    const contrast = (foreground: string, background: string) => {
+      const values = [luminance(foreground), luminance(background)].sort(
+        (left, right) => right - left,
+      )
+      return (values[0] + 0.05) / (values[1] + 0.05)
+    }
+    const foregrounds = {
+      muted: style.getPropertyValue('--text-muted'),
+      secondary: style.getPropertyValue('--text-secondary'),
+      accent: style.getPropertyValue('--evaluation-accent-text'),
+    }
+    const backgrounds = {
+      canvas: style.getPropertyValue('--surface-canvas'),
+      shell: style.getPropertyValue('--surface-shell'),
+      panel: style.getPropertyValue('--surface-panel'),
+      raised: style.getPropertyValue('--surface-raised'),
+    }
+    return Object.entries(foregrounds).flatMap(([foregroundName, foreground]) =>
+      Object.entries(backgrounds).map(([backgroundName, background]) => ({
+        pair: `${foregroundName}/${backgroundName}`,
+        ratio: contrast(foreground, background),
+      })),
+    )
+  })
+  for (const result of ratios) {
+    expect(result.ratio, `${result.pair} contrast`).toBeGreaterThanOrEqual(4.5)
+  }
+
+  const unavailableReasons = await page
+    .locator('[data-evaluation-unavailable-reason="true"]:visible')
+    .evaluateAll((elements) =>
+      elements.map((element) => {
+        let cumulativeOpacity = 1
+        let current: Element | null = element
+        while (current) {
+          cumulativeOpacity *= Number.parseFloat(getComputedStyle(current).opacity)
+          if (current.hasAttribute('data-testid')) break
+          current = current.parentElement
+        }
+        return {
+          cumulativeOpacity,
+          color: getComputedStyle(element).color,
+          expectedColor: getComputedStyle(element).getPropertyValue('--text-secondary').trim(),
+        }
+      }),
+    )
+  for (const reason of unavailableReasons) {
+    expect(reason.cumulativeOpacity).toBe(1)
+    expect(reason.color).toBe('rgb(178, 178, 184)')
+    expect(reason.expectedColor).toBe('#b2b2b8')
+  }
+}
+
+async function expectEvaluationControlSystem(page: Page) {
+  const panel = page.getByRole('tabpanel')
+  const selects = panel.locator('select:visible')
+  const selectGeometry = await selects.evaluateAll((elements) =>
+    elements.map((element) => {
+      const style = getComputedStyle(element)
+      return {
+        backgroundColor: style.backgroundColor,
+        borderRadius: style.borderRadius,
+        height: Math.round(element.getBoundingClientRect().height),
+      }
+    }),
+  )
+  for (const geometry of selectGeometry) {
+    expect(geometry.height).toBe(40)
+  }
+  if (selectGeometry.length > 1) {
+    expect(new Set(selectGeometry.map((geometry) => geometry.backgroundColor)).size).toBe(1)
+    expect(new Set(selectGeometry.map((geometry) => geometry.borderRadius)).size).toBe(1)
+  }
+
+  const fieldGeometry = await panel
+    .locator(
+      'input:visible:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="hidden"])',
+    )
+    .evaluateAll((elements) =>
+      elements.map((element) => ({
+        label:
+          element.getAttribute('aria-label') ||
+          element.getAttribute('name') ||
+          element.getAttribute('placeholder') ||
+          element.tagName.toLowerCase(),
+        height: Math.round(element.getBoundingClientRect().height),
+        borderRadius: getComputedStyle(element).borderRadius,
+      })),
+    )
+  for (const geometry of fieldGeometry) {
+    expect(geometry.height, `${geometry.label} field height`).toBe(40)
+    expect(geometry.borderRadius, `${geometry.label} field radius`).toBe('6px')
+  }
+
+  const actions = panel.locator('[data-evaluation-action="true"]:visible')
+  const actionGeometry = await actions.evaluateAll((elements) =>
+    elements.map((element) => ({
+      density: element.getAttribute('data-density'),
+      height: Math.round(element.getBoundingClientRect().height),
+      borderRadius: getComputedStyle(element).borderRadius,
+      whiteSpace: getComputedStyle(element).whiteSpace,
+    })),
+  )
+  for (const geometry of actionGeometry) {
+    expect(geometry.height).toBe(geometry.density === 'compact' ? 34 : 40)
+    expect(geometry.borderRadius).toBe('6px')
+    expect(geometry.whiteSpace).toBe('nowrap')
+  }
+
+  const tagGeometry = await panel
+    .locator('[data-evaluation-tag="true"]:visible')
+    .evaluateAll((elements) =>
+      elements.map((element) => ({
+        height: Math.round(element.getBoundingClientRect().height),
+        borderRadius: getComputedStyle(element).borderRadius,
+        whiteSpace: getComputedStyle(element).whiteSpace,
+      })),
+    )
+  for (const geometry of tagGeometry) {
+    expect(geometry.height).toBe(22)
+    expect(geometry.borderRadius).toBe('999px')
+    expect(geometry.whiteSpace).toBe('nowrap')
+  }
+
+  const navigationGeometry = await page
+    .locator('[data-evaluation-navigation-tab="true"]:visible')
+    .evaluateAll((elements) =>
+      elements.map((element) => ({
+        height: Math.round(element.getBoundingClientRect().height),
+        borderRadius: getComputedStyle(element).borderRadius,
+      })),
+    )
+  expect(navigationGeometry.length).toBeGreaterThan(0)
+  for (const geometry of navigationGeometry) {
+    expect(geometry.height).toBeGreaterThanOrEqual(40)
+    expect(geometry.height).toBeLessThanOrEqual(44)
+    expect(geometry.borderRadius).toBe('0px')
+  }
+  expect(new Set(navigationGeometry.map((geometry) => geometry.height)).size).toBe(1)
+
+  const overflowGeometry = await page
+    .locator('[data-evaluation-navigation-overflow="true"]:visible')
+    .evaluateAll((elements) =>
+      elements.map((element) => ({
+        width: Math.round(element.getBoundingClientRect().width),
+        height: Math.round(element.getBoundingClientRect().height),
+        borderRadius: getComputedStyle(element).borderRadius,
+      })),
+    )
+  for (const geometry of overflowGeometry) {
+    expect(geometry.width).toBe(40)
+    expect(geometry.height).toBeGreaterThanOrEqual(40)
+    expect(geometry.borderRadius).toBe('0px')
+  }
+
+  const ledgerGeometry = await panel
+    .locator('[data-evaluation-ledger-row="true"]:visible')
+    .evaluateAll((elements) =>
+      elements.map((element) => ({
+        height: Math.round(element.getBoundingClientRect().height),
+        borderRadius: getComputedStyle(element).borderRadius,
+        parentRuleWidth: getComputedStyle(element.parentElement as HTMLElement).borderBottomWidth,
+      })),
+    )
+  for (const geometry of ledgerGeometry) {
+    expect(geometry.height).toBeGreaterThanOrEqual(82)
+    expect(geometry.borderRadius).toBe('0px')
+    expect(geometry.parentRuleWidth).toBe('1px')
+  }
+  if (ledgerGeometry.length > 1) {
+    expect(new Set(ledgerGeometry.map((geometry) => geometry.height)).size).toBe(1)
+  }
+
+  const ledgerRows = panel.locator('[data-evaluation-ledger-row="true"]:visible')
+  if ((await ledgerRows.count()) > 0) {
+    const row = ledgerRows.first()
+    const before = await row.boundingBox()
+    await row.focus()
+    const focused = await row.evaluate((element) => {
+      const style = getComputedStyle(element)
+      const rect = element.getBoundingClientRect()
+      const scrollport = element.closest('ol')?.getBoundingClientRect()
+      const width = Number.parseFloat(style.outlineWidth)
+      const offset = Number.parseFloat(style.outlineOffset)
+      const expansion = Math.max(0, width + offset)
+      return {
+        focusVisible: element.matches(':focus-visible'),
+        outlineStyle: style.outlineStyle,
+        outlineWidth: width,
+        outlineOffset: style.outlineOffset,
+        paintContained:
+          !scrollport ||
+          (rect.left - expansion >= scrollport.left - 1 &&
+            rect.right + expansion <= scrollport.right + 1),
+      }
+    })
+    const after = await row.boundingBox()
+    expect(focused.focusVisible).toBe(true)
+    expect(focused.outlineStyle).not.toBe('none')
+    expect(focused.outlineWidth).toBeGreaterThanOrEqual(1)
+    expect(focused.outlineOffset).toBe('-2px')
+    expect(focused.paintContained).toBe(true)
+    expect(after?.width).toBe(before?.width)
+    expect(after?.height).toBe(before?.height)
+  }
+
+  const actionGroups = panel.getByTestId('evaluation-run-actions')
+  for (let index = 0; index < (await actionGroups.count()); index += 1) {
+    const buttons = actionGroups.nth(index).locator('button:visible')
+    const geometry = await buttons.evaluateAll((elements) =>
+      elements.map((element) => {
+        const rect = element.getBoundingClientRect()
+        return {
+          left: rect.left,
+          right: rect.right,
+          top: rect.top,
+          bottom: rect.bottom,
+          marginLeft: getComputedStyle(element).marginLeft,
+        }
+      }),
+    )
+    for (const button of geometry) expect(button.marginLeft).toBe('0px')
+    for (let buttonIndex = 1; buttonIndex < geometry.length; buttonIndex += 1) {
+      const previous = geometry[buttonIndex - 1]
+      const current = geometry[buttonIndex]
+      const sameRow = Math.abs(previous.top - current.top) <= 1
+      const gap = sameRow ? current.left - previous.right : current.top - previous.bottom
+      expect(gap, 'run inspector actions remain one visual group').toBeGreaterThanOrEqual(0)
+      expect(gap, 'run inspector actions remain one visual group').toBeLessThanOrEqual(12)
+    }
+  }
+
+  const disclosures = panel.locator(
+    '[data-evaluation-report-disclosure="true"]:visible > summary:visible',
+  )
+  if ((await disclosures.count()) > 0) {
+    const summary = disclosures.first()
+    await summary.focus()
+    const focus = await summary.evaluate((element) => {
+      const style = getComputedStyle(element)
+      return {
+        focusVisible: element.matches(':focus-visible'),
+        outlineStyle: style.outlineStyle,
+        outlineWidth: Number.parseFloat(style.outlineWidth),
+        outlineOffset: style.outlineOffset,
+      }
+    })
+    expect(focus.focusVisible).toBe(true)
+    expect(focus.outlineStyle).not.toBe('none')
+    expect(focus.outlineWidth).toBeGreaterThanOrEqual(1)
+    expect(focus.outlineOffset).toBe('-3px')
+  }
+
+  await expectEvaluationContrastContract(page)
 }
 
 async function expectCompactVerticalFlow(container: Locator) {
@@ -330,6 +630,7 @@ async function expectResponsiveEvaluationSurface(
     )
     .toBeLessThanOrEqual(1)
   await expectNoHorizontalOverflow(page)
+  await expectEvaluationControlSystem(page)
   await captureEvaluationSurface(page, `${surface.capture}-${viewportName}`)
   if (viewportName === 'desktop') {
     await captureEvaluationFullPage(page, `${surface.capture}-${viewportName}-full`)
@@ -1112,6 +1413,99 @@ test.describe('Evaluation Plane', () => {
     await captureEvaluationSurface(page, 'report-gates-desktop')
   })
 
+  test('renders the live server-owned Routing Recipe report across desktop and compact mobile', async ({
+    page,
+  }) => {
+    const liveReportRun = evaluationRun(
+      evaluationRunID(91),
+      'Live routing recipe evidence',
+      'completed',
+      '2026-08-31T01:00:00Z',
+      'recipe',
+      {
+        mode: 'live',
+        target_id: EVALUATION_MOM_TARGET_ID,
+        mixture: EVALUATION_MOM,
+        suite_ids: ['live-mom-core'],
+        track_ids: ['routing'],
+        evidence_level: 'E3',
+        track_evidence_levels: { routing: 'E3' },
+        completed_at: '2026-08-31T01:10:00Z',
+      },
+    )
+    await mockEvaluationPlane(page, [liveReportRun, ...defaultEvaluationRuns])
+    for (const viewport of [
+      { name: 'desktop', width: 1440, height: 900 },
+      { name: 'mobile-compact', width: 320, height: 568 },
+    ] as const) {
+      await page.setViewportSize({ width: viewport.width, height: viewport.height })
+      await page.goto(`/evaluation?view=reports&report=${liveReportRun.id}`)
+
+      const routingRecipe = page.locator('section[aria-labelledby="routing-recipe-report-title"]')
+      await expect(routingRecipe.getByRole('heading', { name: 'Routing Recipe' })).toBeVisible()
+      await expect(routingRecipe.getByText('Decision coverage', { exact: true })).toBeVisible()
+      await expect(routingRecipe.getByText('Eligibility complete', { exact: true })).toBeVisible()
+      await expect(routingRecipe.getByText('Selected feasible', { exact: true })).toBeVisible()
+      await expect(routingRecipe.getByRole('table', { name: 'Signal availability' })).toBeVisible()
+      await expect(
+        routingRecipe.getByRole('table', { name: 'Projection outcome calibration' }),
+      ).toBeVisible()
+      await expect(routingRecipe.getByText('Oracle regret', { exact: true })).toBeVisible()
+      await expect(
+        routingRecipe
+          .getByText('Unavailable · insufficient latency samples', { exact: true })
+          .first(),
+      ).toBeVisible()
+      await expect(
+        routingRecipe.getByText('Unavailable · insufficient outcome pairs', { exact: true }),
+      ).toBeVisible()
+      await expect(
+        routingRecipe.getByText('Unavailable · oracle outcome missing', { exact: true }),
+      ).toHaveCount(2)
+      const decision = page.locator('section[aria-labelledby="report-decision-title"]')
+      await expect(decision).toBeVisible()
+      await expect
+        .poll(async () => {
+          const decisionBox = await decision.boundingBox()
+          const routingBox = await routingRecipe.boundingBox()
+          return Boolean(decisionBox && routingBox && decisionBox.y < routingBox.y)
+        })
+        .toBe(true)
+      if (viewport.width === 320) {
+        await expectKeyboardScrollable(
+          routingRecipe.getByRole('region', { name: 'Signal availability' }),
+          'horizontal',
+        )
+        await expectKeyboardScrollable(
+          routingRecipe.getByRole('region', { name: 'Projection outcome calibration' }),
+          'horizontal',
+        )
+      }
+      await expectNoHorizontalOverflow(page)
+      await expectEvaluationControlSystem(page)
+      await expectScrollRegionsKeyboardReachable(page)
+      await captureEvaluationElement(routingRecipe, `routing-recipe-deep-dive-${viewport.name}`)
+      await expectPageBottomReachable(page)
+      await expectEvaluationBottomGutter(page)
+      await captureEvaluationSurface(page, `routing-recipe-report-${viewport.name}`)
+      await captureEvaluationFullPage(page, `routing-recipe-report-${viewport.name}-full`)
+    }
+  })
+
+  test('keeps a long execution timeline named, focusable, and keyboard scrollable', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await mockEvaluationPlane(page, defaultEvaluationRuns, { eventStreamEventCount: 24 })
+    await page.goto(`/evaluation?view=runs&run=${EVALUATION_RUN_IDS.live}`)
+
+    const timeline = page.getByRole('region', { name: 'Execution timeline' })
+    await expect(timeline).toBeVisible()
+    await expect(timeline.locator('li')).toHaveCount(24)
+    await expectKeyboardScrollable(timeline, 'vertical')
+    await captureEvaluationElement(timeline, 'runs-long-timeline-keyboard-region')
+  })
+
   test('pages dense metric reports and resets the page when filters change', async ({ page }) => {
     await mockEvaluationPlane(page, defaultEvaluationRuns, { reportMetricCount: 45 })
     await page.goto(`/evaluation?view=reports&report=${EVALUATION_RUN_IDS.candidate}`)
@@ -1339,6 +1733,7 @@ test.describe('Evaluation Plane', () => {
     await evidenceDisclosure.locator('summary').press('Enter')
     await expect(evidenceDisclosure).toHaveAttribute('open', '')
     await expect(page.getByLabel('Controlled pair baseline source')).toBeVisible()
+    await expectEvaluationControlSystem(page)
     await evidenceDisclosure.locator('summary').press('Enter')
     await expect(evidenceDisclosure).not.toHaveAttribute('open', '')
     await evidenceDisclosure.locator('summary').press('Enter')
@@ -1432,6 +1827,7 @@ test.describe('Evaluation Plane', () => {
     await page
       .getByLabel('Decision context')
       .fill('Promote the exact replay treatment after paired target and confirmation evidence.')
+    await expectEvaluationControlSystem(page)
     await captureEvaluationSurface(page, 'campaign-builder-desktop')
     await page.getByRole('button', { name: 'Create promotion decision' }).click()
 
@@ -1460,6 +1856,7 @@ test.describe('Evaluation Plane', () => {
     await expect(page.getByRole('heading', { name: 'Recipe v4 guarded promotion' })).toBeVisible()
     await expect(page.getByText('All required promotion campaign gates passed.')).toBeVisible()
     await expect(page.getByText('Decision digest', { exact: true })).toBeVisible()
+    await expectEvaluationControlSystem(page)
     await page.getByRole('button', { name: 'Copy decision digest' }).click()
     await expect(page.getByRole('button', { name: 'Copied decision digest' })).toBeVisible()
     await captureEvaluationSurface(page, 'campaign-decision-desktop')

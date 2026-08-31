@@ -26,9 +26,13 @@ func mixtureSnapshotsFromConfig(
 		}
 		aliases := append([]string(nil), aliasesByRecipe[recipeName]...)
 		entrypoint := preferredRecipeEntrypoint(cfg, recipeName, aliases)
-		mixtures = append(mixtures, mixtureSnapshotForRecipe(
+		mixture, err := mixtureSnapshotForRecipe(
 			cfg, canonical, recipe, entrypoint, aliases, armResolver,
-		))
+		)
+		if err != nil {
+			return nil, err
+		}
+		mixtures = append(mixtures, mixture)
 	}
 	if len(mixtures) == 0 {
 		return nil, nil
@@ -95,7 +99,7 @@ func mixtureSnapshotForRecipe(
 	entrypoint string,
 	aliases []string,
 	armResolver modelArmResolver,
-) MixtureTargetSnapshot {
+) (MixtureTargetSnapshot, error) {
 	scopedRouting := routerconfig.CanonicalConfigFromRouterConfig(cfg.ConfigForRecipe(recipe)).Routing
 	inventory := collectMixtureModelInventory(canonical, recipe)
 	poolArms, armIDByModel, armsReady := resolveMixtureArms(inventory.poolModels, armResolver)
@@ -123,11 +127,20 @@ func mixtureSnapshotForRecipe(
 		ModelArms: copyModelArms(poolArms), SupportModels: supportModels,
 		FallbackArmID: fallbackArmID, Decisions: decisions,
 	}
+	routingPlan, err := routingRecipePlanFromSnapshot(scopedRouting, mixture)
+	if err != nil {
+		return MixtureTargetSnapshot{}, fmt.Errorf(
+			"build evaluation mixture %q routing recipe plan: %w",
+			recipe.Name,
+			err,
+		)
+	}
+	mixture.RoutingRecipePlan = routingPlan
 	topologyDigest := backendTopologyDigestForModels(canonical, baseModelsForBindings(inventory.poolModels))
 	if !digestPattern.MatchString(topologyDigest) {
 		ready = false
 	}
-	return MixtureTargetSnapshot{Mixture: mixture, BackendTopologyDigest: topologyDigest, Ready: ready}
+	return MixtureTargetSnapshot{Mixture: mixture, BackendTopologyDigest: topologyDigest, Ready: ready}, nil
 }
 
 func resolveMixtureArms(

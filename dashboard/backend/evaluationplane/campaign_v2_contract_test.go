@@ -127,8 +127,7 @@ func TestCampaignV2CatalogIsTheSlotSourceOfTruth(t *testing.T) {
 	}
 	g5, _ := campaignSlotContract("recipe", "G5")
 	if g5.Mode != ModeLive || g5.MinimumEvidenceLevel != "E5" ||
-		len(g5.AcceptedExecutorIDs) != 2 || g5.AcceptedExecutorIDs[0] != normalizedSuiteLiveExecutorID ||
-		g5.AcceptedExecutorIDs[1] != liveRuntimeExecutorID {
+		len(g5.AcceptedExecutorIDs) != 1 || g5.AcceptedExecutorIDs[0] != liveRuntimeExecutorID {
 		t.Fatalf("G5 campaign contract=%+v", g5)
 	}
 	agentG3, _ := campaignSlotContract("agent_multimodal", "G3")

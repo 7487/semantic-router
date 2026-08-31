@@ -20,7 +20,13 @@ func (s *Store) withEvidencePublication(transaction func() error) error {
 // writeLifecycleBoundExecutionAttestationDuringPublication is the non-locking
 // attestation writer. The caller owns the lifecycle and evidence-publication
 // locks through withEvidencePublication.
-func (s *Store) writeLifecycleBoundExecutionAttestationDuringPublication(attestation executionAttestation) error {
+func (s *Store) writeLifecycleBoundExecutionAttestationDuringPublication(
+	attestation executionAttestation,
+	manifest RunManifest,
+) error {
+	if err := validateExecutionAttestationAgainstManifest(attestation, manifest); err != nil {
+		return err
+	}
 	encoded, err := json.Marshal(attestation)
 	if err != nil || int64(len(encoded)) > maxExecutionAttestationBytes {
 		return fmt.Errorf("encode evaluation execution attestation")

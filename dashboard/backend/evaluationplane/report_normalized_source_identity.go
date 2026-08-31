@@ -342,8 +342,11 @@ func scanInstalledSuiteRole(
 		return fmt.Errorf("%w: normalized suite source identity artifact is invalid", ErrInvalid)
 	}
 	domain := "grading"
-	if role == "visible_cases" {
+	switch role {
+	case "visible_cases":
 		domain = "visible"
+	case "media_manifest":
+		domain = "metadata"
 	}
 	path := filepath.Join(suiteRoot, "objects", domain, "sha256", strings.TrimPrefix(ref.Digest, "sha256:"))
 	return scanEvidenceJSONLines(path, maxWorkerArtifactBytes, maxCaseLineBytes, maxRecordsPerRun, visit)

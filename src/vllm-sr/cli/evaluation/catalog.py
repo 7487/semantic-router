@@ -275,15 +275,15 @@ _CAMPAIGN_SLOT_TEMPLATES: tuple[dict[str, object], ...] = (
     {
         "gate_id": "G5",
         "name": "Live fidelity",
-        "description": "Reference-to-fresh-live agreement on an exact candidate and case cohort.",
+        "description": (
+            "Reference-to-fresh-live agreement on the exact live-mom-core "
+            "candidate and joint case cohort."
+        ),
         "binding_kind": "fidelity_pair",
         "track_id": "joint",
         "mode": "live",
         "minimum_evidence_level": "E5",
-        "accepted_executor_ids": (
-            NORMALIZED_LIVE_EXECUTOR_ID,
-            LIVE_RUNTIME_EXECUTOR_ID,
-        ),
+        "accepted_executor_ids": (LIVE_RUNTIME_EXECUTOR_ID,),
     },
     {
         "gate_id": "G6",

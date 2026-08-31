@@ -1,6 +1,8 @@
 .gateList {
   display: grid;
-  gap: 0.55rem;
+  gap: 0;
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .gateRow {
@@ -8,18 +10,21 @@
   grid-template-columns: minmax(250px, 0.8fr) minmax(280px, 1fr) auto;
   align-items: start;
   gap: 1rem;
-  padding: 0.85rem;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  background: rgba(255, 255, 255, 0.018);
+  padding: 0.85rem 0.75rem;
+  border-bottom: 1px solid var(--border-subtle);
+  background: transparent;
+}
+
+.gateRow:last-child {
+  border-bottom: 0;
 }
 
 .gateRow[data-tone='negative'] {
-  border-left: 2px solid var(--color-danger);
+  box-shadow: inset 2px 0 0 var(--color-danger);
 }
 
 .gateRow[data-tone='warning'] {
-  border-left: 2px solid var(--color-warning);
+  box-shadow: inset 2px 0 0 var(--color-warning);
 }
 
 .gateIdentity > div {
@@ -59,14 +64,6 @@
   font-size: 0.72rem;
 }
 
-.gateEvidence > span {
-  width: fit-content;
-  padding: 0.18rem 0.4rem;
-  border: 1px solid var(--border-subtle);
-  border-radius: 999px;
-  text-transform: capitalize;
-}
-
 .gateReferences {
   display: flex;
   flex-wrap: wrap;
@@ -81,8 +78,8 @@
   max-width: 260px;
   padding: 0.15rem 0.3rem;
   overflow: hidden;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: 0;
   color: var(--text-muted);
   font-size: 0.68rem;
   text-overflow: ellipsis;

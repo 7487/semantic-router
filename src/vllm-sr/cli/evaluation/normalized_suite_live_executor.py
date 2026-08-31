@@ -6,13 +6,19 @@ from dataclasses import dataclass
 
 from cli.evaluation.contracts import EvaluationTargetArm, RunManifest, VisibleCaseSet
 from cli.evaluation.evidence import ExecutionRecord, RoutingDiagnostic
-from cli.evaluation.execution_contract import EvaluationInputs
+from cli.evaluation.execution_contract import (
+    NORMALIZED_LIVE_EXECUTOR_ID,
+    EvaluationInputs,
+)
 from cli.evaluation.live_executor import (
     LIVE_RUNTIME_TRACKS,
     execute_live_raw,
     grade_live_execution,
 )
 from cli.evaluation.normalized_suite_inputs import load_selected_cases
+from cli.evaluation.normalized_suite_live_admission import (
+    normalized_suite_live_tracks,
+)
 from cli.evaluation.normalized_suite_live_robustness import (
     attach_live_declared_shift_evidence,
 )
@@ -82,12 +88,36 @@ def execute_normalized_suite_live(
 
     if manifest.mode != "live":
         raise SuiteStoreError("normalized target execution requires live mode")
+    if executor_id != NORMALIZED_LIVE_EXECUTOR_ID:
+        raise SuiteStoreError("normalized target execution requires its exact executor")
     unsupported = sorted(set(manifest.track_ids) - LIVE_RUNTIME_TRACKS)
     if unsupported:
         raise SuiteStoreError(
             f"normalized target executor does not implement track {unsupported[0]!r}"
         )
     manifests = tuple(sorted(manifests, key=lambda item: item.id))
+    admitted_by_suite = {
+        suite.id: normalized_suite_live_tracks(store, suite) for suite in manifests
+    }
+    for suite in manifests:
+        inadmissible = sorted(
+            set(manifest.track_ids).intersection(suite.track_ids)
+            - admitted_by_suite[suite.id]
+        )
+        if inadmissible:
+            raise SuiteStoreError(
+                f"suite {suite.id} has no first-party normalized live method for "
+                + ", ".join(inadmissible)
+            )
+    admitted_tracks = frozenset(
+        track for tracks in admitted_by_suite.values() for track in tracks
+    )
+    uncovered = sorted(set(manifest.track_ids) - admitted_tracks)
+    if uncovered:
+        raise SuiteStoreError(
+            "normalized target executor has no admitted source for "
+            + ", ".join(uncovered)
+        )
     selected, _ = load_selected_cases(
         store,
         manifests,

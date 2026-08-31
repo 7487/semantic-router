@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -155,6 +156,58 @@ func validateMixtureContract(mixture *ManifestMixture) error {
 			}
 			seenDecisionArms[armID] = true
 			previousArmID = armID
+		}
+	}
+	if err := validateMixtureRoutingRecipePlan(mixture, armIDs); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateMixtureRoutingRecipePlan(mixture *ManifestMixture, armIDs map[string]bool) error {
+	plan := mixture.RoutingRecipePlan
+	if err := ValidateRoutingRecipePlan(plan); err != nil {
+		return fmt.Errorf("mixture routing recipe plan is invalid: %w", err)
+	}
+	wantTargetDigest, err := routingRecipeTargetSnapshotDigest(*mixture)
+	if err != nil || plan.TargetSnapshotDigest != wantTargetDigest {
+		return fmt.Errorf("mixture routing recipe plan does not bind its immutable component digests")
+	}
+	wantArmIDs := make([]string, 0, len(armIDs))
+	for armID := range armIDs {
+		wantArmIDs = append(wantArmIDs, armID)
+	}
+	sort.Strings(wantArmIDs)
+	gotArmIDs := append([]string(nil), plan.ArmIDs...)
+	sort.Strings(gotArmIDs)
+	if len(gotArmIDs) != len(wantArmIDs) {
+		return fmt.Errorf("mixture routing recipe plan does not bind its frozen model pool")
+	}
+	for index := range wantArmIDs {
+		if gotArmIDs[index] != wantArmIDs[index] {
+			return fmt.Errorf("mixture routing recipe plan does not bind its frozen model pool")
+		}
+	}
+	if plan.FallbackArmID != mixture.FallbackArmID {
+		return fmt.Errorf("mixture routing recipe plan does not bind its frozen fallback arm")
+	}
+	wantTopK := routingRecipeTopK(len(wantArmIDs))
+	if len(plan.TopK) != len(wantTopK) {
+		return fmt.Errorf("mixture routing recipe plan does not use the frozen pool top-k schedule")
+	}
+	for index := range wantTopK {
+		if plan.TopK[index] != wantTopK[index] {
+			return fmt.Errorf("mixture routing recipe plan does not use the frozen pool top-k schedule")
+		}
+	}
+	for _, signal := range plan.Signals {
+		if signal.ValueKind != "numeric" {
+			return fmt.Errorf("mixture routing recipe signals must be numeric")
+		}
+	}
+	for _, projection := range plan.Projections {
+		if projection.ValueKind != "probability" || projection.OutcomeBinding != "selected_is_oracle" {
+			return fmt.Errorf("mixture routing recipe projections must bind oracle-selection probability")
 		}
 	}
 	return nil

@@ -45,6 +45,10 @@ func validateStoredRun(bundleID string, run Run) error {
 	if run.BaselineRunID != "" && !validClientRequestID(run.BaselineRunID) {
 		return fmt.Errorf("status baseline identity is invalid")
 	}
+	if run.ControlledPair != nil && (!validClientRequestID(run.ControlledPair.PairID) ||
+		(run.ControlledPair.Role != controlledPairRoleBaseline && run.ControlledPair.Role != controlledPairRoleCandidate)) {
+		return fmt.Errorf("status controlled pair membership is invalid")
+	}
 	if err := validateCapacityRunContract(
 		run.Mode,
 		run.TrackIDs,

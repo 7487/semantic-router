@@ -138,6 +138,81 @@ def _support_model_snapshot_value(model: object) -> OrderedDict[str, object]:
     return value
 
 
+def _routing_recipe_input_value(spec: object) -> OrderedDict[str, object]:
+    return OrderedDict(
+        (
+            ("id", _field(spec, "id")),
+            ("value_kind", _field(spec, "value_kind")),
+        )
+    )
+
+
+def _routing_recipe_projection_value(spec: object) -> OrderedDict[str, object]:
+    return OrderedDict(
+        (
+            ("id", _field(spec, "id")),
+            ("value_kind", _field(spec, "value_kind")),
+            ("outcome_binding", _field(spec, "outcome_binding")),
+        )
+    )
+
+
+def _routing_recipe_plan_value(
+    plan: object, *, canonical: bool
+) -> OrderedDict[str, object]:
+    arm_ids = list(_field(plan, "arm_ids"))
+    signals = list(_field(plan, "signals"))
+    projections = list(_field(plan, "projections"))
+    top_k = list(_field(plan, "top_k"))
+    if canonical:
+        arm_ids.sort()
+        signals.sort(key=lambda spec: _field(spec, "id"))
+        projections.sort(key=lambda spec: _field(spec, "id"))
+        top_k.sort()
+    value: OrderedDict[str, object] = OrderedDict(
+        (
+            ("contract_version", _field(plan, "contract_version")),
+            ("plan_digest", _field(plan, "plan_digest")),
+            ("target_snapshot_digest", _field(plan, "target_snapshot_digest")),
+            ("arm_ids", arm_ids),
+        )
+    )
+    fallback_arm_id = _optional_field(plan, "fallback_arm_id")
+    if fallback_arm_id:
+        value["fallback_arm_id"] = fallback_arm_id
+    value["signals"] = [_routing_recipe_input_value(spec) for spec in signals]
+    value["projections"] = [
+        _routing_recipe_projection_value(spec) for spec in projections
+    ]
+    value["top_k"] = top_k
+    return value
+
+
+def _routing_recipe_plan_digest_value(plan: object) -> OrderedDict[str, object]:
+    arm_ids = sorted(_field(plan, "arm_ids"))
+    signals = sorted(_field(plan, "signals"), key=lambda spec: _field(spec, "id"))
+    projections = sorted(
+        _field(plan, "projections"), key=lambda spec: _field(spec, "id")
+    )
+    return OrderedDict(
+        (
+            ("ContractVersion", _field(plan, "contract_version")),
+            ("TargetSnapshotDigest", _field(plan, "target_snapshot_digest")),
+            ("ArmIDs", list(arm_ids)),
+            ("FallbackArmID", _optional_field(plan, "fallback_arm_id") or ""),
+            (
+                "Signals",
+                [_routing_recipe_input_value(spec) for spec in signals],
+            ),
+            (
+                "Projections",
+                [_routing_recipe_projection_value(spec) for spec in projections],
+            ),
+            ("TopK", sorted(_field(plan, "top_k"))),
+        )
+    )
+
+
 def _mixture_value(mixture: object) -> dict[str, object]:
     decisions = [
         {
@@ -166,6 +241,9 @@ def _mixture_value(mixture: object) -> dict[str, object]:
             for model in (_optional_field(mixture, "support_models") or ())
         ],
         "decisions": decisions,
+        "routing_recipe_plan": _routing_recipe_plan_value(
+            _field(mixture, "routing_recipe_plan"), canonical=True
+        ),
     }
     fallback_arm_id = _optional_field(mixture, "fallback_arm_id")
     if fallback_arm_id is not None:
@@ -222,6 +300,9 @@ def _mixture_snapshot_value(mixture: object) -> OrderedDict[str, object]:
         )
         for decision in (_optional_field(mixture, "decisions") or ())
     ]
+    value["routing_recipe_plan"] = _routing_recipe_plan_value(
+        _field(mixture, "routing_recipe_plan"), canonical=False
+    )
     return value
 
 
@@ -464,6 +545,27 @@ def selector_snapshot_digest(policy_digest: str, models: object) -> str:
             ),
         )
     )
+    return "sha256:" + sha256(_go_json(value).encode("utf-8")).hexdigest()
+
+
+def routing_recipe_target_snapshot_digest(mixture: object) -> str:
+    """Bind the six immutable Mixture components without hashing the plan itself."""
+
+    value = {
+        "adaptation_digest": _field(mixture, "adaptation_digest"),
+        "binding_digest": _field(mixture, "binding_digest"),
+        "pool_digest": _field(mixture, "pool_digest"),
+        "recipe_digest": _field(mixture, "recipe_digest"),
+        "selector_digest": _field(mixture, "selector_digest"),
+        "selector_policy_digest": _field(mixture, "selector_policy_digest"),
+    }
+    return "sha256:" + sha256(_go_json(value).encode("utf-8")).hexdigest()
+
+
+def routing_recipe_plan_digest(plan: object) -> str:
+    """Return the exact Go identity of a canonical routing Recipe plan body."""
+
+    value = _routing_recipe_plan_digest_value(plan)
     return "sha256:" + sha256(_go_json(value).encode("utf-8")).hexdigest()
 
 

@@ -54,6 +54,10 @@ func (h *EvaluationPlaneHandler) ControlledPairs(w http.ResponseWriter, r *http.
 		methodNotAllowed(w, http.MethodPost)
 		return
 	}
+	if r.URL.Path != evaluationAPIBase+"/controlled-pairs" || r.URL.RawQuery != "" {
+		writeEvaluationError(w, fmt.Errorf("%w: controlled pair create path does not accept query parameters", evaluationplane.ErrInvalid))
+		return
+	}
 	if h.denyReadonly(w) {
 		return
 	}

@@ -11,7 +11,7 @@ from collections import defaultdict
 from typing import cast
 
 from cli.evaluation.canonical import digest_value
-from cli.evaluation.contracts import EvaluationTargetArm
+from cli.evaluation.contracts import CaseVisible, EvaluationTargetArm
 from cli.evaluation.evidence import ExecutionRecord
 from cli.evaluation.method_evidence import RobustnessMethodEvidence
 from cli.evaluation.normalized_suite_inputs import SelectedCase
@@ -20,6 +20,7 @@ from cli.evaluation.suite_contract import (
     NormalizedPerturbation,
 )
 from cli.evaluation.suite_store import NormalizedSuiteStore
+from cli.evaluation.suite_store_error import SuiteStoreError
 
 DECLARED_SHIFT_LIVE_METHOD_ID = "declared-shift.server-live.v1"
 DECLARED_SHIFT_LIVE_EVIDENCE_KIND = "declared-shift.server-live.v1;level=E4"
@@ -52,10 +53,8 @@ def _qualified_manifest_pairs(
     if not pairs:
         return None
     native_count = len(pairs)
-    if any(
-        pair.native_pair_count != native_count or not pair.slice_ids for pair in pairs
-    ):
-        return None
+    if any(pair.native_pair_count != native_count for pair in pairs):
+        raise SuiteStoreError("installed declared-shift native pair count drifted")
     pair_ids = {pair.pair_id for pair in pairs}
     coordinates = {(pair.source_case_id, pair.perturbed_case_id) for pair in pairs}
     case_ids = [
@@ -68,7 +67,26 @@ def _qualified_manifest_pairs(
         or len(coordinates) != native_count
         or len(set(case_ids)) != native_count * 2
     ):
-        return None
+        raise SuiteStoreError(
+            "installed declared-shift pairs reuse an identity or coordinate"
+        )
+    visible: dict[str, CaseVisible] = {}
+    for row in store.load_jsonl(manifest.id, "visible_cases"):
+        case = cast(CaseVisible, row)
+        if case.id in visible:
+            raise SuiteStoreError(
+                "installed declared-shift visible identity is duplicated"
+            )
+        visible[case.id] = case
+    if len(visible) != manifest.case_count:
+        raise SuiteStoreError("installed declared-shift visible cohort is incomplete")
+    if any(
+        case_id not in visible or "routing" not in visible[case_id].track_ids
+        for case_id in case_ids
+    ):
+        raise SuiteStoreError(
+            "installed declared-shift pair references a non-routing case"
+        )
     return pairs
 
 

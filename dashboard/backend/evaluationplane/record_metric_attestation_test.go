@@ -325,7 +325,7 @@ func TestValidateWorkerSingleRunMetricOwnershipRejectsComparisons(t *testing.T) 
 }
 
 func canonicalReducedMetric(id, name string, track TrackID, unit, direction string, value float64, samples int) Metric {
-	return Metric{ID: id, Name: name, TrackID: track, Value: floatPointer(value), Unit: unit, Direction: direction, SampleCount: samples}
+	return Metric{ID: id, Name: name, TrackID: track, Value: floatPointer(value), Unit: unit, Direction: direction, SampleCount: samples, AnalysisProvenance: validMetricAnalysisProvenanceFor(id, 0)}
 }
 
 func TestReducedFloatComparisonIsTightAndFinite(t *testing.T) {
