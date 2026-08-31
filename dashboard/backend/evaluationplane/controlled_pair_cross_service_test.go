@@ -114,6 +114,17 @@ func TestControlledPairConcurrentCreateIsSingleFlightAcrossServices(t *testing.T
 	case <-time.After(3 * time.Second):
 		t.Fatal("second controlled-pair create did not finish")
 	}
+	assertControlledPairSingleFlightResult(t, process, request, second, firstCreate, secondCreate)
+}
+
+func assertControlledPairSingleFlightResult(
+	t *testing.T,
+	process *controlledPairTwoServiceBarrierProcess,
+	request CreateControlledPairRequest,
+	second *Service,
+	firstCreate, secondCreate controlledPairCreateResult,
+) {
+	t.Helper()
 	if firstCreate.err != nil || secondCreate.err != nil {
 		t.Fatalf("concurrent creates failed: first=%v second=%v", firstCreate.err, secondCreate.err)
 	}

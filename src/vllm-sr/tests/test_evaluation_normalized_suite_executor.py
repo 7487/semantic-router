@@ -35,8 +35,8 @@ from cli.evaluation.suite_install_contract import NormalizedMediaEntry
 from cli.evaluation.suite_store import NormalizedSuiteStore
 from click.testing import CliRunner
 from evaluation_normalized_suite_test_support import (
-    _PRIVATE_MARKERS,
     _PIXEL,
+    _PRIVATE_MARKERS,
     _base_bundle,
     _catalog,
     _decision,
@@ -595,4 +595,3 @@ def test_imported_robustness_pairs_remain_e0_and_cannot_pass_g4(
     assert (
         next(gate for gate in report.gates if gate.id == "G4").verdict == "unavailable"
     )
-    (_receipt,)

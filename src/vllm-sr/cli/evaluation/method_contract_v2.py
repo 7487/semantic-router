@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Iterable
+from itertools import pairwise
 from math import isfinite
 from typing import Literal
 
@@ -19,6 +20,7 @@ from cli.evaluation.contracts import StrictModel
 
 EVALUATION_METHOD_CONTRACT_VERSION = "evaluation-method.v2"
 COMPOUND_MODEL_BUDGET_METHOD_ID = "r2.compound-model-budget.v2"
+_MIN_SHARED_BUDGET_POINTS = 2
 
 
 class ActionRef(StrictModel):
@@ -148,7 +150,7 @@ class EvaluationMethodPlugin(StrictModel):
 
 
 class CaseArmObservation(StrictModel):
-    """Generic observed value used by strict case×arm reducers."""
+    """Generic observed value used by strict case x arm reducers."""
 
     case_id: str
     action: ActionRef
@@ -160,7 +162,7 @@ class CaseArmObservation(StrictModel):
 def reduce_case_arm_observations(
     observations: Iterable[CaseArmObservation],
 ) -> dict[str, dict[str, float]]:
-    """Reduce one and only one observation for every supplied case×action cell."""
+    """Reduce one and only one observation for every supplied case x action cell."""
 
     reduced: dict[str, dict[str, float]] = defaultdict(dict)
     for observation in observations:
@@ -168,11 +170,11 @@ def reduce_case_arm_observations(
         action_id = observation.action.id
         if action_id in by_action:
             raise ValueError(
-                f"duplicate case×action observation: {observation.case_id}×{action_id}"
+                f"duplicate case x action observation: {observation.case_id} x {action_id}"
             )
         by_action[action_id] = observation.value
     if not reduced:
-        raise ValueError("case×action reducer requires observations")
+        raise ValueError("case x action reducer requires observations")
     return {case_id: dict(values) for case_id, values in reduced.items()}
 
 
@@ -248,24 +250,16 @@ R2_COMPOUND_MODEL_BUDGET_PLUGIN = EvaluationMethodPlugin(
 )
 
 
-def reduce_compound_model_budget(
-    outcomes: Iterable[CompoundModelBudgetOutcome],
-    *,
-    method: EvaluationMethodPlugin = R2_COMPOUND_MODEL_BUDGET_PLUGIN,
-) -> CompoundModelBudgetReport:
-    """Reduce R2 with exact rectangular cardinality and a shared raw domain.
-
-    AUDC is the sum of trapezoids across each action's score/budget curve.
-    nAUC divides AUDC by the common budget span and action count.  QNC is the
-    mean score at the largest common budget; it intentionally never imputes a
-    missing arm, case, or budget cell.
-    """
-
-    if method.id != COMPOUND_MODEL_BUDGET_METHOD_ID:
-        raise ValueError("compound reducer requires the R2 compound method plugin")
-    rows = tuple(outcomes)
-    if not rows:
-        raise ValueError("compound reducer requires outcomes")
+def _compound_domain(
+    rows: tuple[CompoundModelBudgetOutcome, ...],
+    method: EvaluationMethodPlugin,
+) -> tuple[
+    tuple[str, ...],
+    tuple[str, ...],
+    tuple[int, ...],
+    tuple[str, ...],
+    dict[tuple[str, str, int], float],
+]:
     cases = tuple(sorted({row.case_id for row in rows}))
     actions = tuple(sorted({row.action.id for row in rows}))
     budgets = tuple(sorted({row.budget for row in rows}))
@@ -279,7 +273,7 @@ def reduce_compound_model_budget(
         key = (row.case_id, row.action.id, row.budget)
         if key in seen:
             raise ValueError(
-                "duplicate case×action×budget outcome: " + "×".join(map(str, key))
+                "duplicate case x action x budget outcome: " + " x ".join(map(str, key))
             )
         seen.add(key)
         cells[key] = row.score
@@ -290,8 +284,18 @@ def reduce_compound_model_budget(
     expected = len(cases) * len(actions) * len(budgets)
     if len(cells) != expected:
         raise ValueError(
-            "compound model+budget outcomes must form an exact shared case×action×budget domain"
+            "compound model+budget outcomes must form an exact shared "
+            "case x action x budget domain"
         )
+    return cases, actions, budgets, slices, cells
+
+
+def _compound_curve(
+    cases: tuple[str, ...],
+    actions: tuple[str, ...],
+    budgets: tuple[int, ...],
+    cells: dict[tuple[str, str, int], float],
+) -> tuple[list[SharedDomainCurvePoint], dict[tuple[str, int], float]]:
     curve: list[SharedDomainCurvePoint] = []
     score_by_action_budget: dict[tuple[str, int], float] = {}
     for action_id in actions:
@@ -307,11 +311,19 @@ def reduce_compound_model_budget(
                     case_count=len(cases),
                 )
             )
-    if len(budgets) < 2:
+    return curve, score_by_action_budget
+
+
+def _compound_summary(
+    actions: tuple[str, ...],
+    budgets: tuple[int, ...],
+    score_by_action_budget: dict[tuple[str, int], float],
+) -> tuple[float, float, float, float]:
+    if len(budgets) < _MIN_SHARED_BUDGET_POINTS:
         raise ValueError("compound AUDC requires at least two shared budget points")
     audc = 0.0
     for action_id in actions:
-        for lower, upper in zip(budgets, budgets[1:]):
+        for lower, upper in pairwise(budgets):
             audc += (
                 (upper - lower)
                 * (
@@ -328,6 +340,30 @@ def reduce_compound_model_budget(
     ) / len(actions)
     if not all(isfinite(value) for value in (audc, nauc, peak, qnc)):
         raise ValueError("compound reduction produced a non-finite metric")
+    return audc, nauc, peak, qnc
+
+
+def reduce_compound_model_budget(
+    outcomes: Iterable[CompoundModelBudgetOutcome],
+    *,
+    method: EvaluationMethodPlugin = R2_COMPOUND_MODEL_BUDGET_PLUGIN,
+) -> CompoundModelBudgetReport:
+    """Reduce R2 with exact rectangular cardinality and a shared raw domain.
+
+    AUDC is the sum of trapezoids across each action's score/budget curve.
+    nAUC divides AUDC by the common budget span and action count. QNC is the
+    mean score at the largest common budget; it intentionally never imputes a
+    missing arm, case, or budget cell.
+    """
+
+    if method.id != COMPOUND_MODEL_BUDGET_METHOD_ID:
+        raise ValueError("compound reducer requires the R2 compound method plugin")
+    rows = tuple(outcomes)
+    if not rows:
+        raise ValueError("compound reducer requires outcomes")
+    cases, actions, budgets, slices, cells = _compound_domain(rows, method)
+    curve, score_by_action_budget = _compound_curve(cases, actions, budgets, cells)
+    audc, nauc, peak, qnc = _compound_summary(actions, budgets, score_by_action_budget)
     return CompoundModelBudgetReport(
         method=method,
         analysis_plan=method.analysis_plan,

@@ -75,7 +75,18 @@ func (s *Store) createControlledPairBundlesAs(
 	if err != nil {
 		return controlledPairManifest{}, err
 	}
+	return s.publishControlledPairInitialBundlesUnlocked(
+		actor, pair, baselineManifest, candidateManifest, aggregateReservationBytes,
+	)
+}
 
+func (s *Store) publishControlledPairInitialBundlesUnlocked(
+	actor Actor,
+	pair controlledPairManifest,
+	baselineManifest RunManifest,
+	candidateManifest RunManifest,
+	aggregateReservationBytes int64,
+) (controlledPairManifest, error) {
 	baselineMembership := controlledPairMembership{
 		SchemaVersion: SchemaVersion, PairID: pair.PairID,
 		RunID: pair.BaselineRunID, Role: controlledPairRoleBaseline,

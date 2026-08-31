@@ -15,6 +15,16 @@ import (
 
 func float64Pointer(value float64) *float64 { return &value }
 
+func validRoutingReportMetric() Metric {
+	value := 0.8
+	return Metric{
+		ID: "routing.accuracy", Name: "Routing accuracy", TrackID: "routing",
+		Value: &value, Unit: "fraction", Direction: "higher_is_better",
+		ConfidenceInterval: []float64{0.7, 0.9}, SampleCount: 10,
+		AnalysisProvenance: validMetricAnalysisProvenance(0),
+	}
+}
+
 func TestReportJSONIsStrictVersionedIdentityCheckedAndRaw(t *testing.T) {
 	service, root := newTestService(t, &controlledProcess{}, 1)
 	run, createErr := service.CreateRun(context.Background(), validCreateRequest())
@@ -114,15 +124,7 @@ func TestReportJSONIsStrictVersionedIdentityCheckedAndRaw(t *testing.T) {
 }
 
 func TestValidateReportMetricsRejectsMisleadingNumericEvidence(t *testing.T) {
-	validMetric := func() Metric {
-		value := 0.8
-		return Metric{
-			ID: "routing.accuracy", Name: "Routing accuracy", TrackID: "routing",
-			Value: &value, Unit: "fraction", Direction: "higher_is_better",
-			ConfidenceInterval: []float64{0.7, 0.9}, SampleCount: 10,
-			AnalysisProvenance: validMetricAnalysisProvenance(0),
-		}
-	}
+	validMetric := validRoutingReportMetric
 	if err := validateReportMetrics([]Metric{validMetric()}, []TrackID{"routing"}); err != nil {
 		t.Fatalf("valid metric rejected: %v", err)
 	}

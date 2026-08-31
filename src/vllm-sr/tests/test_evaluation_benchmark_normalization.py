@@ -16,10 +16,11 @@ from cli.evaluation.benchmark_normalization_registry import (
 )
 from cli.evaluation.benchmark_registry import get_benchmark_adapter
 from cli.evaluation.builtin_executors import DEFAULT_EXECUTOR_REGISTRY
+from cli.evaluation.catalog import CatalogSuite
 from cli.evaluation.executor_contracts import BUILTIN_NORMALIZED_SUITE_EXECUTORS
-from cli.evaluation.metric_compound_model_budget import r2_compound_report
 from cli.evaluation.method_contract_v2 import COMPOUND_MODEL_BUDGET_METHOD_ID
 from cli.evaluation.method_registry_v2 import method_plugin_for_benchmark
+from cli.evaluation.metric_compound_model_budget import r2_compound_report
 from cli.evaluation.normalized_suite_executor import execute_normalized_suites
 from cli.evaluation.normalized_suite_live_admission import (
     NORMALIZED_MULTIMODAL_LIVE_METHOD_ID,
@@ -30,7 +31,7 @@ from cli.evaluation.normalized_suite_live_robustness import (
     declared_shift_source_is_eligible,
 )
 from cli.evaluation.suite_catalog import NormalizedSuiteCatalog
-from cli.evaluation.suite_contract import BenchmarkSourceReceipt
+from cli.evaluation.suite_contract import BenchmarkSourceReceipt, BenchmarkSuiteManifest
 from cli.evaluation.suite_store import NormalizedSuiteStore
 from click.testing import CliRunner
 
@@ -83,19 +84,14 @@ def test_normalizer_inventory_is_explicit_for_all_thirteen_adapters() -> None:
             assert not descriptor.required_artifacts
 
 
-@pytest.mark.parametrize("adapter_id", EXECUTABLE_ADAPTERS)
-def test_every_executable_adapter_normalizes_installs_and_executes(
-    adapter_id: str,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _patch_source(monkeypatch)
+def _normalize_and_install(
+    adapter_id: str, tmp_path: Path
+) -> tuple[NormalizedSuiteStore, BenchmarkSuiteManifest]:
     export_root = tmp_path / "native"
     source_root = tmp_path / "sources"
     output_root = tmp_path / "normalized"
     source_root.mkdir()
     write_native_fixture(adapter_id, export_root)
-
     result = normalize_benchmark_suite(
         adapter_id=adapter_id,
         source_root=source_root,
@@ -103,7 +99,6 @@ def test_every_executable_adapter_normalizes_installs_and_executes(
         output_root=output_root,
         suite_id=f"{adapter_id}-fixture",
     )
-
     assert result.request.adapter_id == adapter_id
     assert result.request.track_ids == get_benchmark_normalizer(adapter_id).track_ids
     assert result.request.normalization_origin == "registered_parser_import"
@@ -114,7 +109,6 @@ def test_every_executable_adapter_normalizes_installs_and_executes(
     assert json.loads(result.request_path.read_text(encoding="utf-8"))["id"] == (
         f"{adapter_id}-fixture"
     )
-
     store = NormalizedSuiteStore(tmp_path / "suite-store")
     manifest = store.install(
         result.request,
@@ -122,6 +116,10 @@ def test_every_executable_adapter_normalizes_installs_and_executes(
         source_root=source_root,
         native_export_root=export_root,
     )
+    return store, manifest
+
+
+def _assert_import_qualification(manifest: BenchmarkSuiteManifest) -> None:
     assert manifest.qualification_receipt.evidence_level == "E0"
     qualification = manifest.qualification_receipt.qualification
     assert qualification.status == "exploratory_import"
@@ -130,46 +128,61 @@ def test_every_executable_adapter_normalizes_installs_and_executes(
     assert qualification.native_execution_attested is False
     assert qualification.promotion_eligible is False
     assert manifest.qualification_receipt.qualified_gate_ids == ()
+
+
+def _catalog_for(
+    store: NormalizedSuiteStore, manifest: BenchmarkSuiteManifest
+) -> CatalogSuite:
     suite_catalog = NormalizedSuiteCatalog(
         store,
         DEFAULT_EXECUTOR_REGISTRY,
         BUILTIN_NORMALIZED_SUITE_EXECUTORS,
     )
-    catalog = suite_catalog.get(manifest.id)
-    assert catalog.evidence_level == "E0"
-    imported_methods = tuple(
+    return suite_catalog.get(manifest.id)
+
+
+def _assert_import_methods(
+    adapter_id: str, manifest: BenchmarkSuiteManifest, catalog: CatalogSuite
+) -> None:
+    imported = tuple(
         method
         for method in catalog.methods
         if method.evidence_source == "normalized_import"
     )
-    assert len(imported_methods) == len(manifest.track_ids)
-    assert all(method.status == "configured" for method in imported_methods)
-    assert all(not method.qualified_gate_ids for method in imported_methods)
-    assert all(method.reason is None for method in imported_methods)
+    assert catalog.evidence_level == "E0"
+    assert len(imported) == len(manifest.track_ids)
+    assert all(method.status == "configured" for method in imported)
+    assert all(not method.qualified_gate_ids for method in imported)
+    assert all(method.reason is None for method in imported)
     assert f"research-method:{method_plugin_for_benchmark(adapter_id).status}" in (
         catalog.tags
     )
-    declared_shift_methods = tuple(
+
+
+def _assert_live_admission(
+    adapter_id: str,
+    store: NormalizedSuiteStore,
+    manifest: BenchmarkSuiteManifest,
+    catalog: CatalogSuite,
+) -> None:
+    declared_shift = tuple(
         method
         for method in catalog.methods
         if method.id == DECLARED_SHIFT_LIVE_METHOD_ID
     )
-    expected_declared_shift_live = adapter_id == "routerarena"
-    assert (
-        declared_shift_source_is_eligible(store, manifest)
-        is expected_declared_shift_live
-    )
-    multimodal_live_methods = tuple(
+    multimodal = tuple(
         method
         for method in catalog.methods
         if method.id == NORMALIZED_MULTIMODAL_LIVE_METHOD_ID
     )
-    expected_multimodal_live = adapter_id == "mmr-bench"
+    expects_shift = adapter_id == "routerarena"
+    expects_multimodal = adapter_id == "mmr-bench"
+    assert declared_shift_source_is_eligible(store, manifest) is expects_shift
     assert (
         multimodal_hidden_answer_source_is_eligible(store, manifest)
-        is expected_multimodal_live
+        is expects_multimodal
     )
-    if expected_declared_shift_live or expected_multimodal_live:
+    if expects_shift or expects_multimodal:
         assert catalog.modes == ("replay", "live")
         assert catalog.executors == {
             "replay": "normalized-suite-replay.v1",
@@ -180,27 +193,45 @@ def test_every_executable_adapter_normalizes_installs_and_executes(
         assert catalog.modes == ("replay",)
         assert catalog.executors == {"replay": "normalized-suite-replay.v1"}
         assert "target-live" not in catalog.tags
-    if expected_declared_shift_live:
-        assert len(declared_shift_methods) == 1
-        assert declared_shift_methods[0].evidence_source == "server_brokered_live"
-        assert declared_shift_methods[0].status == "configured"
-        assert declared_shift_methods[0].qualified_gate_ids == ("G4",)
-    else:
-        assert declared_shift_methods == ()
-    if expected_multimodal_live:
-        assert manifest.track_ids == ("model_pool", "multimodal")
-        assert len(multimodal_live_methods) == 1
-        assert multimodal_live_methods[0].track_id == "multimodal"
-        assert multimodal_live_methods[0].evidence_source == "live_runtime"
-        assert multimodal_live_methods[0].status == "configured"
-        assert multimodal_live_methods[0].qualified_gate_ids == ()
-        assert all(
-            method.evidence_source == "normalized_import"
-            for method in catalog.methods
-            if method.track_id == "model_pool"
-        )
-    else:
-        assert multimodal_live_methods == ()
+    _assert_declared_shift_method(declared_shift, expects_shift)
+    _assert_multimodal_method(manifest, catalog, multimodal, expects_multimodal)
+
+
+def _assert_declared_shift_method(methods: tuple[Any, ...], expected: bool) -> None:
+    if not expected:
+        assert methods == ()
+        return
+    assert len(methods) == 1
+    assert methods[0].evidence_source == "server_brokered_live"
+    assert methods[0].status == "configured"
+    assert methods[0].qualified_gate_ids == ("G4",)
+
+
+def _assert_multimodal_method(
+    manifest: BenchmarkSuiteManifest,
+    catalog: CatalogSuite,
+    methods: tuple[Any, ...],
+    expected: bool,
+) -> None:
+    if not expected:
+        assert methods == ()
+        return
+    assert manifest.track_ids == ("model_pool", "multimodal")
+    assert len(methods) == 1
+    assert methods[0].track_id == "multimodal"
+    assert methods[0].evidence_source == "live_runtime"
+    assert methods[0].status == "configured"
+    assert methods[0].qualified_gate_ids == ()
+    assert all(
+        method.evidence_source == "normalized_import"
+        for method in catalog.methods
+        if method.track_id == "model_pool"
+    )
+
+
+def _assert_replay_execution(
+    store: NormalizedSuiteStore, manifest: BenchmarkSuiteManifest
+) -> None:
     execution = execute_normalized_suites(
         store=store,
         manifests=(manifest,),
@@ -212,6 +243,21 @@ def test_every_executable_adapter_normalizes_installs_and_executes(
     )
     assert execution.records
     assert all(record.status != "unavailable" for record in execution.records)
+
+
+@pytest.mark.parametrize("adapter_id", EXECUTABLE_ADAPTERS)
+def test_every_executable_adapter_normalizes_installs_and_executes(
+    adapter_id: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_source(monkeypatch)
+    store, manifest = _normalize_and_install(adapter_id, tmp_path)
+    _assert_import_qualification(manifest)
+    catalog = _catalog_for(store, manifest)
+    _assert_import_methods(adapter_id, manifest, catalog)
+    _assert_live_admission(adapter_id, store, manifest, catalog)
+    _assert_replay_execution(store, manifest)
 
 
 def test_r2_registered_parser_reduces_the_exact_shared_model_budget_domain(

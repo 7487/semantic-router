@@ -116,61 +116,7 @@ func NewService(options Options) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	codeRevision := strings.TrimSpace(options.CodeRevision)
-	if !sourceRevisionPattern.MatchString(codeRevision) {
-		return nil, fmt.Errorf(
-			"%w: evaluation source revision must be an immutable git commit or source-tree digest",
-			ErrInvalid,
-		)
-	}
-	if options.EnvoyAPIKeyEnv != "" && !secretEnvPattern.MatchString(options.EnvoyAPIKeyEnv) {
-		return nil, fmt.Errorf("evaluation Envoy credential reference must be an uppercase environment variable name")
-	}
-	routerAuthRequired, err := resolveRouterAuthentication(options.RouterAPIKeyEnv, options.CredentialProvider)
-	if err != nil {
-		return nil, err
-	}
-	// CodeRevision identifies the evaluation implementation, not the model
-	// servers behind a Mixture.  Do not publish it as every arm's runtime
-	// revision: that would make a source-only change silently mutate the pool
-	// treatment and make schema-adapter comparisons impossible.
-	snapshot, err := LoadModelArmSnapshot(options.ConfigPath, "")
-	if err != nil {
-		return nil, err
-	}
-	installedSuites, err := loadInstalledCatalogSuites(store.SuiteRoot())
-	if err != nil {
-		return nil, err
-	}
-	deploymentTargets, err := LoadEvaluationDeploymentRegistry(options.DeploymentsDir, "")
-	if err != nil {
-		return nil, err
-	}
-	mixtures := snapshot.Mixtures
-	if len(deploymentTargets) > 0 {
-		mixtures = nil
-	}
-	_, err = NewRegistry(options.RouterAPIURL, options.EnvoyURL, RegistryOptions{
-		RouterAPIKey: configuredRuntimeSecretRef(
-			options.RouterAPIURL, deploymentTargets, options.RouterAPIKeyEnv, true,
-		),
-		EnvoyAPIKey: configuredRuntimeSecretRef(
-			options.EnvoyURL, deploymentTargets, options.EnvoyAPIKeyEnv, false,
-		),
-		AgentTaskLedger:            copyServiceEndpoint(options.AgentTaskLedger),
-		FaultRecoveryLedger:        copyServiceEndpoint(options.FaultRecoveryLedger),
-		HardPolicyLedger:           copyServiceEndpoint(options.HardPolicyLedger),
-		ProductionExperimentLedger: copyServiceEndpoint(options.ProductionExperimentLedger),
-		Mixtures:                   mixtures,
-		DeploymentTargets:          deploymentTargets,
-		DefaultConfigDigest:        snapshot.ConfigDigest,
-		RouterAuthRequired:         routerAuthRequired,
-		InstalledSuites:            installedSuites,
-	})
-	if err != nil {
-		return nil, err
-	}
-	process, err := configureServiceProcess(&options, store)
+	setup, err := prepareServiceRuntime(&options, store)
 	if err != nil {
 		return nil, err
 	}
@@ -182,10 +128,10 @@ func NewService(options Options) (*Service, error) {
 	service := &Service{
 		store:                      store,
 		suiteStorePath:             store.SuiteRoot(),
-		process:                    process,
+		process:                    setup.process,
 		configPath:                 options.ConfigPath,
 		deploymentsDir:             strings.TrimSpace(options.DeploymentsDir),
-		codeRevision:               codeRevision,
+		codeRevision:               setup.codeRevision,
 		routerAPIURL:               options.RouterAPIURL,
 		envoyURL:                   options.EnvoyURL,
 		routerAPIKeyEnv:            strings.TrimSpace(options.RouterAPIKeyEnv),
@@ -194,7 +140,7 @@ func NewService(options Options) (*Service, error) {
 		faultRecoveryLedger:        copyServiceEndpoint(options.FaultRecoveryLedger),
 		hardPolicyLedger:           copyServiceEndpoint(options.HardPolicyLedger),
 		productionExperimentLedger: copyServiceEndpoint(options.ProductionExperimentLedger),
-		routerAuthRequired:         routerAuthRequired,
+		routerAuthRequired:         setup.routerAuthRequired,
 		semaphore:                  make(chan struct{}, options.MaxConcurrent),
 		evidenceReads:              make(chan struct{}, maxConcurrentEvidenceReads),
 		workerTimeout:              options.WorkerTimeout,

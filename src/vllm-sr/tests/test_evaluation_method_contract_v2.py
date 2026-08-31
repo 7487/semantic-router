@@ -1,23 +1,22 @@
 from __future__ import annotations
 
 import pytest
-
+from cli.evaluation.evidence import ExecutionRecord
 from cli.evaluation.method_contract_v2 import (
+    R2_COMPOUND_MODEL_BUDGET_PLUGIN,
     ActionRef,
     CaseArmObservation,
     CompoundModelBudgetOutcome,
-    R2_COMPOUND_MODEL_BUDGET_PLUGIN,
     SliceRef,
     reduce_case_arm_observations,
     reduce_compound_model_budget,
 )
 from cli.evaluation.method_planner_v2 import runnable_gradeable_live_methods
-from cli.evaluation.metric_compound_model_budget import r2_compound_metrics
-from cli.evaluation.evidence import ExecutionRecord
 from cli.evaluation.method_registry_v2 import (
     METHOD_PLUGINS,
     method_plugin_for_benchmark,
 )
+from cli.evaluation.metric_compound_model_budget import r2_compound_metrics
 from cli.evaluation.research_benchmark_inventory import RESEARCH_BENCHMARKS
 
 
@@ -109,13 +108,13 @@ def test_r2_compound_model_budget_fails_closed_on_missing_or_duplicate_cells() -
     rows = _outcomes()
     with pytest.raises(ValueError, match="exact shared"):
         reduce_compound_model_budget(rows[:-1])
-    with pytest.raises(ValueError, match="duplicate case×action×budget"):
+    with pytest.raises(ValueError, match="duplicate case x action x budget"):
         reduce_compound_model_budget((*rows, rows[0]))
 
 
 def test_generic_reducer_fails_closed_on_duplicate_case_arm() -> None:
     row = CaseArmObservation(case_id="case-a", action=ActionRef(id="small"), value=0.5)
-    with pytest.raises(ValueError, match="duplicate case×action"):
+    with pytest.raises(ValueError, match="duplicate case x action"):
         reduce_case_arm_observations((row, row))
 
 

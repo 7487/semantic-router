@@ -9,13 +9,12 @@ import zipfile
 from pathlib import Path
 
 import pytest
-
 from cli.evaluation import metric_analysis_catalog as catalog
 
 
 def test_catalog_is_complete_sorted_and_fail_closed() -> None:
     assert len(catalog.STATIC_METRIC_IDS) == 132
-    assert catalog.STATIC_METRIC_IDS == tuple(sorted(catalog.STATIC_METRIC_IDS))
+    assert tuple(sorted(catalog.STATIC_METRIC_IDS)) == catalog.STATIC_METRIC_IDS
     assert catalog.DYNAMIC_FAMILY_IDS == (
         "capacity-level",
         "model-pool-arm",
@@ -57,7 +56,7 @@ def test_catalog_is_complete_sorted_and_fail_closed() -> None:
         "capacity.level.16.injected",
         "routing_recipe.e2.feasible_oracle_recall_at_65",
     ):
-        with pytest.raises(ValueError, match="unknown|canonical|base64url|range"):
+        with pytest.raises(ValueError, match=r"unknown|canonical|base64url|range"):
             catalog.resolve_metric_analysis(unknown)
 
 
@@ -86,7 +85,7 @@ def test_overlapping_dynamic_family_document_is_rejected() -> None:
     duplicate["id"] = "capacity-level-shadow"
     document["dynamic_families"].append(duplicate)
     document["dynamic_families"].sort(key=lambda item: item["id"])
-    with pytest.raises(RuntimeError, match="six dynamic families|overlap"):
+    with pytest.raises(RuntimeError, match=r"six dynamic families|overlap"):
         catalog._validate_document(document)
 
 

@@ -21,7 +21,11 @@ from cli.evaluation.gate_contract import GATE_CONTRACT_VERSION, ChangeProfile
 from cli.evaluation.method_contract_v2 import CompoundModelBudgetReport
 from cli.evaluation.metric_analysis_catalog import (
     PROVENANCE_CONTRACT_VERSION as METRIC_ANALYSIS_CONTRACT_VERSION,
+)
+from cli.evaluation.metric_analysis_catalog import (
     CatalogMetricAnalysisSpecification as MetricAnalysisSpecification,
+)
+from cli.evaluation.metric_analysis_catalog import (
     resolve_metric_analysis,
 )
 
@@ -39,6 +43,7 @@ EvidenceLevel = Literal["E0", "E1", "E2", "E3", "E4", "E5"]
 GateVerdict = Literal["pass", "fail", "unavailable", "waived", "not_applicable"]
 
 _MAX_EVENT_MESSAGE_BYTES = 512
+_MAX_METRIC_ANALYSIS_IDENTIFIER_LENGTH = 160
 _MIN_CAPACITY_CONCURRENCY = 2
 
 
@@ -180,7 +185,11 @@ class MetricAnalysisProvenance(StrictModel):
     )
     @classmethod
     def validate_contract_identifier(cls, value: str) -> str:
-        if not value or value.strip() != value or len(value) > 160:
+        if (
+            not value
+            or value.strip() != value
+            or len(value) > _MAX_METRIC_ANALYSIS_IDENTIFIER_LENGTH
+        ):
             raise ValueError(
                 "metric analysis provenance identifiers must be trimmed and non-blank"
             )

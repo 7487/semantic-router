@@ -353,15 +353,7 @@ func TestControlledPairAggregateRejectsInvalidContractWithoutResidualState(t *te
 }
 
 func TestControlledPairAggregateEnforcesActorQuotaDestinationAndIdempotency(t *testing.T) {
-	t.Run("actor", func(t *testing.T) {
-		service, _ := newControlledPairStoreTestService(t)
-		pair, baselineManifest, candidateManifest := pendingControlledPairAggregate(t, service, SystemActor())
-		_, err := service.store.createControlledPairBundlesAs(Actor{}, pair, baselineManifest, candidateManifest)
-		if !errors.Is(err, ErrInvalid) {
-			t.Fatalf("invalid actor error=%v, want ErrInvalid", err)
-		}
-		assertControlledPairAbsent(t, service.store, pair)
-	})
+	t.Run("actor", testControlledPairAggregateRejectsInvalidActor)
 
 	t.Run("quota", func(t *testing.T) {
 		service, _ := newControlledPairStoreTestService(t)
@@ -452,4 +444,14 @@ func TestControlledPairAggregateEnforcesActorQuotaDestinationAndIdempotency(t *t
 			t.Fatalf("cross-owner request identity error=%v, want ErrForbidden", err)
 		}
 	})
+}
+
+func testControlledPairAggregateRejectsInvalidActor(t *testing.T) {
+	service, _ := newControlledPairStoreTestService(t)
+	pair, baselineManifest, candidateManifest := pendingControlledPairAggregate(t, service, SystemActor())
+	_, err := service.store.createControlledPairBundlesAs(Actor{}, pair, baselineManifest, candidateManifest)
+	if !errors.Is(err, ErrInvalid) {
+		t.Fatalf("invalid actor error=%v, want ErrInvalid", err)
+	}
+	assertControlledPairAbsent(t, service.store, pair)
 }

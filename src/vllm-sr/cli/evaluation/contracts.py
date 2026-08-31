@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import Field, field_validator, model_validator
 from typing_extensions import Self
 
+from cli.evaluation import contract_primitives as _contract_primitives
 from cli.evaluation.capacity_load_contract import (
     CAPACITY_LOAD_CONFIDENCE_LEVEL,
     CAPACITY_LOAD_KIND,
@@ -22,17 +23,21 @@ from cli.evaluation.capacity_load_contract import (
     default_capacity_load_protocol_fields,
 )
 from cli.evaluation.constants import BUILTIN_SUITE_IDS, SCHEMA_VERSION, TRACK_IDS
+from cli.evaluation.contract_primitives import (
+    ArtifactRef,
+    Message,
+    SecretRef,
+    StrictModel,
+)
 from cli.evaluation.contract_validation import (
     is_portable_id,
     is_subject_target_id,
     is_valid_suite_revision,
     validate_canonical_uuid,
     validate_http_origin,
-    validate_inline_image_url,
     validate_portable_id,
     validate_run_description,
     validate_run_name,
-    validate_secret_env,
 )
 from cli.evaluation.gate_contract import GATE_CONTRACT_VERSION, ChangeProfile
 from cli.evaluation.manifest_identity import (
@@ -50,60 +55,10 @@ _MAX_SUITE_EXECUTOR_ID_LENGTH = 128
 _MINIMUM_MIXTURE_ARM_COUNT = 2
 _MINIMUM_LIVE_CAPACITY_CONCURRENCY = 2
 
-
-class StrictModel(BaseModel):
-    """Base contract that rejects silent schema drift."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-
-class ArtifactRef(StrictModel):
-    schema_version: Literal[SCHEMA_VERSION] = SCHEMA_VERSION
-    digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
-    media_type: str = Field(min_length=1, max_length=128)
-    size_bytes: int = Field(ge=0)
-
-
-class SecretRef(StrictModel):
-    """Credential reference; literal credentials are intentionally unsupported."""
-
-    schema_version: Literal[SCHEMA_VERSION] = SCHEMA_VERSION
-    env: str
-
-    @field_validator("env")
-    @classmethod
-    def validate_env(cls, value: str) -> str:
-        return validate_secret_env(value)
-
-
-class TextPart(StrictModel):
-    type: Literal["text"] = "text"
-    text: str
-
-
-class ImageURL(StrictModel):
-    url: str
-    detail: Literal["auto", "low", "high"] | None = None
-
-    @field_validator("url")
-    @classmethod
-    def validate_inline_image(cls, value: str) -> str:
-        return validate_inline_image_url(value)
-
-
-class ImagePart(StrictModel):
-    type: Literal["image_url"] = "image_url"
-    image_url: ImageURL
-
-
-ContentPart = Annotated[TextPart | ImagePart, Field(discriminator="type")]
-
-
-class Message(StrictModel):
-    role: Literal["system", "user", "assistant", "tool"]
-    content: str | tuple[ContentPart, ...]
-    name: str | None = None
-    tool_call_id: str | None = None
+ContentPart = _contract_primitives.ContentPart
+ImagePart = _contract_primitives.ImagePart
+ImageURL = _contract_primitives.ImageURL
+TextPart = _contract_primitives.TextPart
 
 
 class CaseVisible(StrictModel):

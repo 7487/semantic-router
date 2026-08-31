@@ -6,7 +6,6 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-
 from cli.evaluation.evidence import ExecutionRecord
 from cli.evaluation.metric_model_pool import (
     ModelPoolReductionContext,

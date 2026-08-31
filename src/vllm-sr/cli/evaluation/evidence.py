@@ -226,15 +226,14 @@ class ExecutionRecord(StrictModel):
                 raise ValueError("method coordinates require a method identity")
             return self
         _validate_id(self.method_id)
-        if self.method_id == "r2.compound-model-budget.v2":
-            if (
-                self.track_id != "model_pool"
-                or self.action_id is None
-                or self.budget_tokens is None
-                or self.quality is None
-                or not self.slice_ids
-            ):
-                raise ValueError("R2 evidence requires complete compound coordinates")
+        if self.method_id == "r2.compound-model-budget.v2" and (
+            self.track_id != "model_pool"
+            or self.action_id is None
+            or self.budget_tokens is None
+            or self.quality is None
+            or not self.slice_ids
+        ):
+            raise ValueError("R2 evidence requires complete compound coordinates")
         if len(self.slice_ids) != len(set(self.slice_ids)):
             raise ValueError("method slice ids must be unique")
         for slice_id in self.slice_ids:

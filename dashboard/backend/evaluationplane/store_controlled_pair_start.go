@@ -80,7 +80,12 @@ func (s *Store) startControlledPairAs(
 			return controlledPairStartResult{}, err
 		}
 	}
+	return s.commitControlledPairStartUnlocked(pair)
+}
 
+func (s *Store) commitControlledPairStartUnlocked(
+	pair controlledPairManifest,
+) (controlledPairStartResult, error) {
 	startedAt := time.Now().UTC().Truncate(time.Microsecond)
 	pair.State = controlledPairStateStarting
 	pair.StartedAt = &startedAt

@@ -23,8 +23,8 @@ from cli.evaluation.executor_registry import ExecutorRegistry
 from cli.evaluation.fixture_executor import execute_fixture
 from cli.evaluation.fixtures import fixture_inputs
 from cli.evaluation.gates import compute_gates
-from cli.evaluation.metric_core import _canonical_ordered_float_sum
 from cli.evaluation.metric_analysis_catalog import static_metric_ids_for_track
+from cli.evaluation.metric_core import _canonical_ordered_float_sum
 from cli.evaluation.metrics import compute_metrics
 from cli.evaluation.orchestrator import run_evaluation, validate_manifest
 from cli.evaluation.report_builder import _track_plan_totals

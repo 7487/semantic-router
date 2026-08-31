@@ -11,13 +11,13 @@ from cli.evaluation.benchmark_registry import (
     get_benchmark_adapter,
     get_benchmark_registry,
 )
-from cli.evaluation.research_benchmark_inventory import RESEARCH_BENCHMARKS_BY_ADAPTER
 from cli.evaluation.benchmark_sources import (
     SourceVerificationError,
     verify_benchmark_source,
 )
 from cli.evaluation.canonical import digest_value
 from cli.evaluation.contracts import ArtifactRef
+from cli.evaluation.research_benchmark_inventory import RESEARCH_BENCHMARKS_BY_ADAPTER
 from cli.evaluation.suite_contract import (
     SUITE_CONTRACT_VERSION,
     BenchmarkSourceReceipt,

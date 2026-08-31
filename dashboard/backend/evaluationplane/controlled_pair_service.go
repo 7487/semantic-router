@@ -41,6 +41,16 @@ type controlledPairSource struct {
 	attestationDigest      string
 }
 
+type controlledPairLaunchPreparation struct {
+	pair                 controlledPairManifest
+	pairExists           bool
+	alreadyStarted       bool
+	baseline             controlledPairSource
+	candidate            controlledPairSource
+	baselineCredentials  workerBrokerCredentials
+	candidateCredentials workerBrokerCredentials
+}
+
 // CreateControlledPairExecution clones two completed server-owned live target
 // snapshots into fresh workers and starts them behind one AB/BA coordinator.
 // The request contains only durable run identities; endpoint origins and
@@ -98,95 +108,117 @@ func (s *Service) CreateControlledPairExecutionAs(
 	if err := controlledPairPrelaunchErr(ctx, prelaunchContext); err != nil {
 		return ControlledPairExecution{}, err
 	}
-	var (
-		pair                                      controlledPairManifest
-		pairExists                                bool
-		baseline, candidate                       controlledPairSource
-		baselineCredentials, candidateCredentials workerBrokerCredentials
-		baselineRun, candidateRun                 Run
-		baselineManifest, candidateManifest       RunManifest
-		prepareErr                                error
-		operationErr                              error
-	)
-	s.store.lifecycle.mu.Lock()
-	pair, pairExists, prepareErr = s.store.prepareControlledPairRequestUnlocked(actor, request)
-	s.store.lifecycle.mu.Unlock()
-	if prepareErr != nil {
-		return ControlledPairExecution{}, prepareErr
-	}
-	if err := controlledPairPrelaunchErr(ctx, prelaunchContext); err != nil {
+	preparation, err := s.prepareControlledPairLaunch(actor, request, ctx, prelaunchContext)
+	if err != nil {
 		return ControlledPairExecution{}, err
 	}
+	if preparation.alreadyStarted {
+		return s.GetControlledPairExecutionAs(actor, preparation.pair.PairID)
+	}
+	return s.materializeControlledPairLaunch(ctx, prelaunchContext, actor, request, preparation)
+}
+
+func (s *Service) prepareControlledPairLaunch(
+	actor Actor,
+	request CreateControlledPairRequest,
+	ctx context.Context,
+	prelaunchContext context.Context,
+) (controlledPairLaunchPreparation, error) {
+	s.store.lifecycle.mu.Lock()
+	pair, pairExists, operationErr := s.store.prepareControlledPairRequestUnlocked(actor, request)
+	s.store.lifecycle.mu.Unlock()
+	if operationErr != nil {
+		return controlledPairLaunchPreparation{}, operationErr
+	}
+	if err := controlledPairPrelaunchErr(ctx, prelaunchContext); err != nil {
+		return controlledPairLaunchPreparation{}, err
+	}
+	preparation := controlledPairLaunchPreparation{pair: pair, pairExists: pairExists}
 	if pairExists {
 		switch pair.State {
 		case controlledPairStateRunning, controlledPairStateTerminal:
-			return s.GetControlledPairExecutionAs(actor, pair.PairID)
+			preparation.alreadyStarted = true
+			return preparation, nil
 		case controlledPairStateDeleted, controlledPairStateDeleting:
-			return ControlledPairExecution{}, fmt.Errorf("%w: controlled pair request identity is retired", ErrConflict)
+			return controlledPairLaunchPreparation{}, fmt.Errorf("%w: controlled pair request identity is retired", ErrConflict)
 		case controlledPairStatePending:
 		default:
-			return ControlledPairExecution{}, fmt.Errorf("%w: controlled pair recovery did not reach a launchable state", ErrConflict)
+			return controlledPairLaunchPreparation{}, fmt.Errorf("%w: controlled pair recovery did not reach a launchable state", ErrConflict)
 		}
 	}
-	baseline, operationErr = s.readControlledPairSource(request.BaselineSourceRunID)
+	preparation.baseline, operationErr = s.readControlledPairSource(request.BaselineSourceRunID)
 	if operationErr != nil {
-		return ControlledPairExecution{}, fmt.Errorf("baseline controlled-pair source: %w", operationErr)
+		return controlledPairLaunchPreparation{}, fmt.Errorf("baseline controlled-pair source: %w", operationErr)
 	}
-	candidate, operationErr = s.readControlledPairSource(request.CandidateSourceRunID)
+	preparation.candidate, operationErr = s.readControlledPairSource(request.CandidateSourceRunID)
 	if operationErr != nil {
-		return ControlledPairExecution{}, fmt.Errorf("candidate controlled-pair source: %w", operationErr)
+		return controlledPairLaunchPreparation{}, fmt.Errorf("candidate controlled-pair source: %w", operationErr)
 	}
-	if err := s.validateControlledPairSources(baseline, candidate); err != nil {
-		return ControlledPairExecution{}, err
+	if err := s.validateControlledPairSources(preparation.baseline, preparation.candidate); err != nil {
+		return controlledPairLaunchPreparation{}, err
 	}
 	if err := controlledPairPrelaunchErr(ctx, prelaunchContext); err != nil {
-		return ControlledPairExecution{}, err
+		return controlledPairLaunchPreparation{}, err
 	}
 	freezer, ok := s.process.(controlledPairCredentialFreezer)
 	if !ok {
-		return ControlledPairExecution{}, fmt.Errorf(
+		return controlledPairLaunchPreparation{}, fmt.Errorf(
 			"%w: controlled pairing is unavailable because the process backend cannot freeze two target credentials",
 			ErrConflict,
 		)
 	}
-	baselineCredentials, operationErr = freezer.freezeControlledPairCredentials(prelaunchContext, baseline.manifest)
+	preparation.baselineCredentials, operationErr = freezer.freezeControlledPairCredentials(prelaunchContext, preparation.baseline.manifest)
 	if operationErr != nil {
-		return ControlledPairExecution{}, fmt.Errorf("%w: baseline target capability is unavailable: %w", ErrConflict, operationErr)
+		return controlledPairLaunchPreparation{}, fmt.Errorf("%w: baseline target capability is unavailable: %w", ErrConflict, operationErr)
 	}
-	candidateCredentials, operationErr = freezer.freezeControlledPairCredentials(prelaunchContext, candidate.manifest)
+	preparation.candidateCredentials, operationErr = freezer.freezeControlledPairCredentials(prelaunchContext, preparation.candidate.manifest)
 	if operationErr != nil {
-		return ControlledPairExecution{}, fmt.Errorf("%w: candidate target capability is unavailable: %w", ErrConflict, operationErr)
+		return controlledPairLaunchPreparation{}, fmt.Errorf("%w: candidate target capability is unavailable: %w", ErrConflict, operationErr)
 	}
 	if err := controlledPairPrelaunchErr(ctx, prelaunchContext); err != nil {
-		return ControlledPairExecution{}, err
+		return controlledPairLaunchPreparation{}, err
 	}
 	if ledgerErr := s.RequireCompleteRunLedger(); ledgerErr != nil {
-		return ControlledPairExecution{}, ledgerErr
+		return controlledPairLaunchPreparation{}, ledgerErr
 	}
 	if err := controlledPairPrelaunchErr(ctx, prelaunchContext); err != nil {
-		return ControlledPairExecution{}, err
+		return controlledPairLaunchPreparation{}, err
 	}
+	return preparation, nil
+}
 
-	if !pairExists {
+func (s *Service) materializeControlledPairLaunch(
+	ctx context.Context,
+	prelaunchContext context.Context,
+	actor Actor,
+	request CreateControlledPairRequest,
+	preparation controlledPairLaunchPreparation,
+) (ControlledPairExecution, error) {
+	pair := preparation.pair
+	var baselineManifest, candidateManifest RunManifest
+	if !preparation.pairExists {
 		baselineCreatedAt := time.Now().UTC().Truncate(time.Microsecond)
 		candidateCreatedAt := baselineCreatedAt.Add(time.Microsecond)
-		baselineRun, baselineManifest, operationErr = cloneControlledPairRun(
-			baseline, request.BaselineRunID, "", controlledPairRoleBaseline, baselineCreatedAt,
+		baselineRun, manifest, err := cloneControlledPairRun(
+			preparation.baseline, request.BaselineRunID, "", controlledPairRoleBaseline, baselineCreatedAt,
 		)
-		if operationErr != nil {
-			return ControlledPairExecution{}, operationErr
+		if err != nil {
+			return ControlledPairExecution{}, err
 		}
-		candidateRun, candidateManifest, operationErr = cloneControlledPairRun(
-			candidate, request.CandidateRunID, request.BaselineRunID, controlledPairRoleCandidate, candidateCreatedAt,
+		baselineManifest = manifest
+		candidateRun, manifest, err := cloneControlledPairRun(
+			preparation.candidate, request.CandidateRunID, request.BaselineRunID, controlledPairRoleCandidate, candidateCreatedAt,
 		)
-		if operationErr != nil {
-			return ControlledPairExecution{}, operationErr
+		if err != nil {
+			return ControlledPairExecution{}, err
 		}
-		pair, operationErr = newControlledPairManifest(
-			actor, request, baseline, candidate, baselineRun, candidateRun, baselineManifest, candidateManifest,
+		candidateManifest = manifest
+		pair, err = newControlledPairManifest(
+			actor, request, preparation.baseline, preparation.candidate,
+			baselineRun, candidateRun, baselineManifest, candidateManifest,
 		)
-		if operationErr != nil {
-			return ControlledPairExecution{}, operationErr
+		if err != nil {
+			return ControlledPairExecution{}, err
 		}
 	}
 	if err := controlledPairPrelaunchErr(ctx, prelaunchContext); err != nil {
@@ -202,13 +234,14 @@ func (s *Service) CreateControlledPairExecutionAs(
 			releaseSlots()
 		}
 	}()
-	if !pairExists {
+	if !preparation.pairExists {
 		if err := controlledPairPrelaunchErr(ctx, prelaunchContext); err != nil {
 			return ControlledPairExecution{}, err
 		}
-		pair, operationErr = s.persistControlledPairRunsAs(actor, pair, baselineManifest, candidateManifest)
-		if operationErr != nil {
-			return ControlledPairExecution{}, operationErr
+		var err error
+		pair, err = s.persistControlledPairRunsAs(actor, pair, baselineManifest, candidateManifest)
+		if err != nil {
+			return ControlledPairExecution{}, err
 		}
 	}
 	if err := controlledPairPrelaunchErr(ctx, prelaunchContext); err != nil {
@@ -217,13 +250,13 @@ func (s *Service) CreateControlledPairExecutionAs(
 	if pair.State == controlledPairStateRunning || pair.State == controlledPairStateTerminal {
 		return s.GetControlledPairExecutionAs(actor, pair.PairID)
 	}
-	baselineManifest, _, operationErr = s.readDurableManifest(pair.BaselineRunID)
-	if operationErr != nil {
-		return ControlledPairExecution{}, operationErr
+	baselineManifest, _, manifestErr := s.readDurableManifest(pair.BaselineRunID)
+	if manifestErr != nil {
+		return ControlledPairExecution{}, manifestErr
 	}
-	candidateManifest, _, operationErr = s.readDurableManifest(pair.CandidateRunID)
-	if operationErr != nil {
-		return ControlledPairExecution{}, operationErr
+	candidateManifest, _, manifestErr = s.readDurableManifest(pair.CandidateRunID)
+	if manifestErr != nil {
+		return ControlledPairExecution{}, manifestErr
 	}
 	if err := controlledPairPrelaunchErr(ctx, prelaunchContext); err != nil {
 		return ControlledPairExecution{}, err
@@ -233,21 +266,21 @@ func (s *Service) CreateControlledPairExecutionAs(
 		request.ClientRequestID, candidateManifest.Seed, baselineManifest, candidateManifest,
 	)
 	baselineContext := &controlledPairRunContext{
-		role: controlledPairRoleBaseline, coordinator: coordinator, credentials: baselineCredentials,
+		role: controlledPairRoleBaseline, coordinator: coordinator, credentials: preparation.baselineCredentials,
 	}
 	candidateContext := &controlledPairRunContext{
-		role: controlledPairRoleCandidate, coordinator: coordinator, credentials: candidateCredentials,
+		role: controlledPairRoleCandidate, coordinator: coordinator, credentials: preparation.candidateCredentials,
 	}
-	_, _, launched, operationErr := s.startControlledPairRunsAs(
+	_, _, launched, err := s.startControlledPairRunsAs(
 		ctx, actor, pair.PairID, baselineContext, candidateContext,
 	)
-	if operationErr != nil {
+	if err != nil {
 		if launched {
 			slotsTransferred = true
 		} else {
-			coordinator.abort(operationErr)
+			coordinator.abort(err)
 		}
-		return ControlledPairExecution{}, operationErr
+		return ControlledPairExecution{}, err
 	}
 	if launched {
 		slotsTransferred = true

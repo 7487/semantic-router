@@ -371,26 +371,7 @@ func TestRoutingRecipeDecisionMutationInvalidatesBrokerReceiptAndAttestation(t *
 	if _, err := store.readExecutionAttestationForManifest(runID, manifest); err != nil {
 		t.Fatalf("exact manifest read rejected: %v", err)
 	}
-	readMismatch := manifest
-	readMismatch.Target.Mixture = copyManifestMixture(manifest.Target.Mixture)
-	readMismatch.Target.Mixture.RoutingRecipePlan.Signals = append(
-		readMismatch.Target.Mixture.RoutingRecipePlan.Signals,
-		RoutingRecipeInputSpec{ID: "language:english", ValueKind: "numeric"},
-	)
-	readMismatch.Target.Mixture.RoutingRecipePlan, operationErr = canonicalRoutingRecipePlan(
-		readMismatch.Target.Mixture.RoutingRecipePlan,
-	)
-	if operationErr != nil {
-		t.Fatalf("canonicalize read-mismatch plan: %v", operationErr)
-	}
-	if _, err := store.readExecutionAttestationForManifest(runID, readMismatch); err == nil {
-		t.Fatal("durable read accepted a self-consistent attestation against a different manifest plan")
-	}
-	if _, err := indexBrokerAttestationEntries(
-		readMismatch, attestation.Entries, attestation.StartedAt, attestation.CompletedAt,
-	); err == nil {
-		t.Fatal("persistence binding accepted a broker transcript against a different manifest plan")
-	}
+	assertRoutingRecipeManifestMutationRejected(t, store, runID, manifest, attestation)
 
 	mutated := attestation
 	mutated.Entries = append([]executionAttestationEntry(nil), attestation.Entries...)
@@ -408,6 +389,37 @@ func TestRoutingRecipeDecisionMutationInvalidatesBrokerReceiptAndAttestation(t *
 	}
 	if err := validateExecutionAttestationIdentity(runID, mutated); err == nil {
 		t.Fatal("routing decision mutation retained its original broker receipt")
+	}
+}
+
+func assertRoutingRecipeManifestMutationRejected(
+	t *testing.T,
+	store *Store,
+	runID string,
+	manifest RunManifest,
+	attestation executionAttestation,
+) {
+	t.Helper()
+	readMismatch := manifest
+	readMismatch.Target.Mixture = copyManifestMixture(manifest.Target.Mixture)
+	readMismatch.Target.Mixture.RoutingRecipePlan.Signals = append(
+		readMismatch.Target.Mixture.RoutingRecipePlan.Signals,
+		RoutingRecipeInputSpec{ID: "language:english", ValueKind: "numeric"},
+	)
+	canonicalPlan, operationErr := canonicalRoutingRecipePlan(
+		readMismatch.Target.Mixture.RoutingRecipePlan,
+	)
+	if operationErr != nil {
+		t.Fatalf("canonicalize read-mismatch plan: %v", operationErr)
+	}
+	readMismatch.Target.Mixture.RoutingRecipePlan = canonicalPlan
+	if _, err := store.readExecutionAttestationForManifest(runID, readMismatch); err == nil {
+		t.Fatal("durable read accepted a self-consistent attestation against a different manifest plan")
+	}
+	if _, err := indexBrokerAttestationEntries(
+		readMismatch, attestation.Entries, attestation.StartedAt, attestation.CompletedAt,
+	); err == nil {
+		t.Fatal("persistence binding accepted a broker transcript against a different manifest plan")
 	}
 }
 

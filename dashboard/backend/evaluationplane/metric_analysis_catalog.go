@@ -194,6 +194,23 @@ func validateMetricAnalysisCatalogDocument(index *metricAnalysisCatalogIndex) er
 	if err := validateMetricAnalysisEncoding(&document.IdentifierEncoding); err != nil {
 		return err
 	}
+	if err := validateMetricAnalysisTemplates(index); err != nil {
+		return err
+	}
+	if err := validateMetricAnalysisDynamicFamilies(index); err != nil {
+		return err
+	}
+	if err := validateMetricAnalysisStaticMetrics(index); err != nil {
+		return err
+	}
+	if err := validateMetricAnalysisRetiredMetrics(index); err != nil {
+		return err
+	}
+	return validateMetricAnalysisFamilyExamples(index)
+}
+
+func validateMetricAnalysisTemplates(index *metricAnalysisCatalogIndex) error {
+	document := &index.document
 	index.templates = make(map[string]MetricAnalysisCatalogSpecification, len(document.AnalysisTemplates))
 	templateIDs := make([]string, 0, len(document.AnalysisTemplates))
 	for _, specification := range document.AnalysisTemplates {
@@ -209,6 +226,11 @@ func validateMetricAnalysisCatalogDocument(index *metricAnalysisCatalogIndex) er
 	if !sort.StringsAreSorted(templateIDs) {
 		return fmt.Errorf("metric analysis templates are not sorted")
 	}
+	return nil
+}
+
+func validateMetricAnalysisDynamicFamilies(index *metricAnalysisCatalogIndex) error {
+	document := &index.document
 	if len(document.DynamicFamilies) != metricAnalysisDynamicFamilyCount {
 		return fmt.Errorf("metric analysis catalog must contain six dynamic families")
 	}
@@ -294,6 +316,11 @@ func validateMetricAnalysisCatalogDocument(index *metricAnalysisCatalogIndex) er
 			}
 		}
 	}
+	return nil
+}
+
+func validateMetricAnalysisStaticMetrics(index *metricAnalysisCatalogIndex) error {
+	document := &index.document
 	if len(document.StaticMetrics) != metricAnalysisStaticCount {
 		return fmt.Errorf("metric analysis catalog must contain 132 exact metrics")
 	}
@@ -320,6 +347,11 @@ func validateMetricAnalysisCatalogDocument(index *metricAnalysisCatalogIndex) er
 	if !sort.StringsAreSorted(staticIDs) {
 		return fmt.Errorf("metric analysis static ids are not sorted")
 	}
+	return nil
+}
+
+func validateMetricAnalysisRetiredMetrics(index *metricAnalysisCatalogIndex) error {
+	document := &index.document
 	if len(document.RetiredMetricIDs) != 11 {
 		return fmt.Errorf("metric analysis retired-id inventory is invalid")
 	}
@@ -341,6 +373,11 @@ func validateMetricAnalysisCatalogDocument(index *metricAnalysisCatalogIndex) er
 	if !sortedDistinctStrings(retiredIDs) {
 		return fmt.Errorf("metric analysis retired ids are not sorted and unique")
 	}
+	return nil
+}
+
+func validateMetricAnalysisFamilyExamples(index *metricAnalysisCatalogIndex) error {
+	document := &index.document
 	for _, family := range document.DynamicFamilies {
 		for _, example := range family.Examples {
 			match, err := resolveMetricAnalysisCatalog(index, example.MetricID)

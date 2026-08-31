@@ -2,23 +2,40 @@
 
 from __future__ import annotations
 
-import re
 from collections import Counter
 from dataclasses import dataclass
 from itertools import combinations
 from math import inf, isfinite, log2
 
 from cli.evaluation.evidence import ExecutionRecord
-from cli.evaluation.metric_analysis_catalog import (
-    decode_metric_subject_id,
-    encode_metric_subject_id,
-)
 from cli.evaluation.metric_core import MetricDraft, _metric
+from cli.evaluation.metric_model_pool_contract import (
+    ARM_MEASURES as _ARM_MEASURES,
+)
+from cli.evaluation.metric_model_pool_contract import (
+    MIN_DENSE_POOL_ARMS as _MIN_DENSE_POOL_ARMS,
+)
+from cli.evaluation.metric_model_pool_contract import (
+    ModelPoolReductionContext,
+    build_dense_model_pool_matrix,
+    model_pool_arm_metric_id,
+)
+from cli.evaluation.metric_model_pool_contract import (
+    decode_model_pool_arm_segment as _decode_model_pool_arm_segment,
+)
+from cli.evaluation.metric_model_pool_contract import (
+    model_pool_arm_segment as _model_pool_arm_segment,
+)
+from cli.evaluation.metric_model_pool_contract import (
+    parse_model_pool_arm_metric_id as _parse_model_pool_arm_metric_id,
+)
+from cli.evaluation.metric_model_pool_metadata import (
+    metric_metadata as _metric_metadata,
+)
 
-_MIN_DENSE_POOL_ARMS = 2
-_MAX_DENSE_POOL_ARMS = 64
-_MAX_DENSE_POOL_CELLS = 50_000
-_EVIDENCE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+decode_model_pool_arm_segment = _decode_model_pool_arm_segment
+model_pool_arm_segment = _model_pool_arm_segment
+parse_model_pool_arm_metric_id = _parse_model_pool_arm_metric_id
 
 _NON_AUTHORITATIVE = "non_authoritative"
 _MISSING_ARM_CELL = "missing_arm_cell"
@@ -47,94 +64,6 @@ _STATIC_METRIC_IDS = (
     "model_pool.unique_wins",
     "model_pool.worst_arm_reliability",
 )
-_ARM_MEASURES = ("marginal_contribution", "quality", "success_rate")
-
-
-@dataclass(frozen=True)
-class ModelPoolReductionContext:
-    """Immutable cohort supplied by the manifest/case plan, never records."""
-
-    frozen_arm_ids: tuple[str, ...]
-    planned_case_ids: tuple[str, ...]
-    authoritative: bool
-
-    def __post_init__(self) -> None:
-        arms = tuple(sorted(self.frozen_arm_ids))
-        cases = tuple(sorted(self.planned_case_ids))
-        if (
-            not isinstance(self.authoritative, bool)
-            or len(arms) < _MIN_DENSE_POOL_ARMS
-            or len(arms) > _MAX_DENSE_POOL_ARMS
-            or len(arms) != len(set(arms))
-            or not cases
-            or len(cases) != len(set(cases))
-            or len(arms) * len(cases) > _MAX_DENSE_POOL_CELLS
-            or any(_EVIDENCE_ID.fullmatch(value) is None for value in (*arms, *cases))
-        ):
-            raise ValueError("model-pool reduction context is not a frozen dense plan")
-        object.__setattr__(self, "frozen_arm_ids", arms)
-        object.__setattr__(self, "planned_case_ids", cases)
-
-
-def model_pool_arm_segment(arm_id: str) -> str:
-    """Return the catalog-owned one-segment portable arm encoding."""
-
-    return encode_metric_subject_id(arm_id)
-
-
-def decode_model_pool_arm_segment(segment: str) -> str:
-    return decode_metric_subject_id(segment)
-
-
-def model_pool_arm_metric_id(arm_id: str, measure: str) -> str:
-    if measure not in _ARM_MEASURES:
-        raise ValueError("unknown model-pool arm metric measure")
-    return f"model_pool.arm.{model_pool_arm_segment(arm_id)}.{measure}"
-
-
-def parse_model_pool_arm_metric_id(metric_id: str) -> tuple[str, str] | None:
-    """Decode a dynamic metric without ever splitting a raw dotted arm ID."""
-
-    prefix = "model_pool.arm."
-    if not metric_id.startswith(prefix):
-        return None
-    segment_and_measure = metric_id.removeprefix(prefix).rsplit(".", 1)
-    if len(segment_and_measure) != 2:
-        return None
-    segment, measure = segment_and_measure
-    if measure not in _ARM_MEASURES:
-        return None
-    try:
-        arm_id = decode_model_pool_arm_segment(segment)
-    except ValueError:
-        return None
-    if _EVIDENCE_ID.fullmatch(arm_id) is None:
-        return None
-    return arm_id, measure
-
-
-def build_dense_model_pool_matrix(
-    records: list[ExecutionRecord], context: ModelPoolReductionContext
-) -> dict[str, dict[str, ExecutionRecord | None]]:
-    """Validate coordinates against the immutable case x arm plan."""
-
-    arm_ids = frozenset(context.frozen_arm_ids)
-    case_ids = frozenset(context.planned_case_ids)
-    matrix: dict[str, dict[str, ExecutionRecord | None]] = {
-        case_id: {arm_id: None for arm_id in context.frozen_arm_ids}
-        for case_id in context.planned_case_ids
-    }
-    for record in records:
-        if record.track_id != "model_pool" or record.arm_id is None:
-            raise ValueError(
-                "model-pool reducer received a record without one pool coordinate"
-            )
-        if record.case_id not in case_ids or record.arm_id not in arm_ids:
-            raise ValueError("model-pool record lies outside frozen matrix")
-        if matrix[record.case_id][record.arm_id] is not None:
-            raise ValueError("model-pool record duplicates frozen coordinate")
-        matrix[record.case_id][record.arm_id] = record
-    return matrix
 
 
 def outcome_quality(record: ExecutionRecord) -> float | None:
@@ -163,76 +92,14 @@ class _ReducedMetric:
 
 
 @dataclass(frozen=True)
-class _MetricMetadata:
-    name: str
-    unit: str
-    direction: str
-
-
-_METADATA = {
-    "model_pool.all_arm_failure_rate": _MetricMetadata(
-        "Cases where every arm failed", "fraction", "lower_is_better"
-    ),
-    "model_pool.arm_count": _MetricMetadata("Observed model arms", "arms", "target"),
-    "model_pool.best_single_quality": _MetricMetadata(
-        "Best single-arm quality", "score", "higher_is_better"
-    ),
-    "model_pool.mean_pairwise_failure_jaccard": _MetricMetadata(
-        "Mean pairwise arm failure overlap", "fraction", "lower_is_better"
-    ),
-    "model_pool.oracle_gain": _MetricMetadata(
-        "Oracle gain over best single arm", "score", "higher_is_better"
-    ),
-    "model_pool.oracle_quality": _MetricMetadata(
-        "Pool oracle quality", "score", "higher_is_better"
-    ),
-    "model_pool.pareto_dominated_arm_count": _MetricMetadata(
-        "Quality-cost Pareto-dominated arms", "arms", "lower_is_better"
-    ),
-    "model_pool.pareto_evaluable_arm_count": _MetricMetadata(
-        "Arms with complete comparable quality and cost",
-        "arms",
-        "higher_is_better",
-    ),
-    "model_pool.quality_cost_shared_support_cases": _MetricMetadata(
-        "Cases with complete arm quality and cost support",
-        "cases",
-        "higher_is_better",
-    ),
-    "model_pool.quality_cost_shared_support_fraction": _MetricMetadata(
-        "Complete arm quality and cost support rate",
-        "fraction",
-        "higher_is_better",
-    ),
-    "model_pool.quality_dominated_arm_count": _MetricMetadata(
-        "Quality-dominated arms on complete common cases",
-        "arms",
-        "lower_is_better",
-    ),
-    "model_pool.quality_shared_support_cases": _MetricMetadata(
-        "Cases with complete arm quality support", "cases", "higher_is_better"
-    ),
-    "model_pool.quality_shared_support_fraction": _MetricMetadata(
-        "Complete arm quality support rate", "fraction", "higher_is_better"
-    ),
-    "model_pool.selection_arm_coverage": _MetricMetadata(
-        "Selected-arm coverage", "fraction", "higher_is_better"
-    ),
-    "model_pool.selection_entropy_bits": _MetricMetadata(
-        "Arm selection entropy", "bits", "target"
-    ),
-    "model_pool.unique_win_rate": _MetricMetadata(
-        "Unique-win case rate", "fraction", "higher_is_better"
-    ),
-    "model_pool.unique_wins": _MetricMetadata(
-        "Cases with a unique winning arm", "cases", "higher_is_better"
-    ),
-    "model_pool.worst_arm_reliability": _MetricMetadata(
-        "Reliability of the least reliable frozen arm",
-        "fraction",
-        "higher_is_better",
-    ),
-}
+class _SupportSummary:
+    cells: dict[str, dict[str, _PoolCell]]
+    quality_reasons: Counter[str]
+    success_reasons: Counter[str]
+    cost_reasons: Counter[str]
+    quality_complete_cases: tuple[str, ...]
+    quality_cost_complete_cases: tuple[str, ...]
+    success_complete: bool
 
 
 def _cell_from_record(record: ExecutionRecord) -> _PoolCell:
@@ -398,13 +265,13 @@ def _pareto_counts(
     return len(arm_ids), dominated
 
 
-def _reduce_selection(
+def _selected_arms(
     joint_records: list[ExecutionRecord],
     case_ids: tuple[str, ...],
     arm_ids: tuple[str, ...],
     *,
     strict: bool,
-) -> tuple[_ReducedMetric, _ReducedMetric]:
+) -> tuple[dict[str, str], Counter[str]]:
     case_set = frozenset(case_ids)
     arm_set = frozenset(arm_ids)
     selected: dict[str, str] = {}
@@ -431,6 +298,17 @@ def _reduce_selection(
                 "model-pool reducer received joint evidence with an invalid selected arm"
             )
         selected[record.case_id] = record.selected_arm_id
+    return selected, reasons
+
+
+def _reduce_selection(
+    joint_records: list[ExecutionRecord],
+    case_ids: tuple[str, ...],
+    arm_ids: tuple[str, ...],
+    *,
+    strict: bool,
+) -> tuple[_ReducedMetric, _ReducedMetric]:
+    selected, reasons = _selected_arms(joint_records, case_ids, arm_ids, strict=strict)
     for case_id in case_ids:
         if case_id not in selected:
             reasons[_MISSING_SELECTION] += 1
@@ -447,23 +325,6 @@ def _reduce_selection(
     return (
         _ReducedMetric(entropy, len(case_ids), Counter()),
         _ReducedMetric(len(counts) / len(arm_ids), len(case_ids), Counter()),
-    )
-
-
-def _metric_metadata(metric_id: str) -> _MetricMetadata:
-    metadata = _METADATA.get(metric_id)
-    if metadata is not None:
-        return metadata
-    parsed = parse_model_pool_arm_metric_id(metric_id)
-    if parsed is None:
-        raise ValueError(f"unknown model-pool metric {metric_id}")
-    arm_id, measure = parsed
-    if measure == "quality":
-        return _MetricMetadata(f"{arm_id} quality", "score", "higher_is_better")
-    if measure == "success_rate":
-        return _MetricMetadata(f"{arm_id} success rate", "fraction", "higher_is_better")
-    return _MetricMetadata(
-        f"{arm_id} marginal contribution", "score", "higher_is_better"
     )
 
 
@@ -520,28 +381,10 @@ def _infer_diagnostic_context(
     return ModelPoolReductionContext(arm_ids, case_ids, authoritative=True)
 
 
-def model_pool_metrics(
-    records: list[ExecutionRecord],
-    joint_records: list[ExecutionRecord],
-    *,
-    context: ModelPoolReductionContext | None = None,
-) -> list[MetricDraft]:
-    """Reduce the exact metric universe attested by the Go server reducer."""
-
-    inferred_context = context is None
-    if context is None:
-        context = _infer_diagnostic_context(records, joint_records)
-        if context is None:
-            return []
-    metric_ids = _metric_ids(context.frozen_arm_ids)
-    if not context.authoritative:
-        reason = Counter({_NON_AUTHORITATIVE: 1})
-        return _drafts(
-            {metric_id: _ReducedMetric(None, 0, reason) for metric_id in metric_ids},
-            context,
-        )
-
-    record_matrix = build_dense_model_pool_matrix(records, context)
+def _collect_support(
+    record_matrix: dict[str, dict[str, ExecutionRecord | None]],
+    context: ModelPoolReductionContext,
+) -> _SupportSummary:
     cells = {
         case_id: {
             arm_id: _cell_from_record(record)
@@ -589,176 +432,281 @@ def model_pool_metrics(
             quality_complete_cases.append(case_id)
         if quality_complete and cost_complete:
             quality_cost_complete_cases.append(case_id)
+    return _SupportSummary(
+        cells=cells,
+        quality_reasons=quality_reasons,
+        success_reasons=success_reasons,
+        cost_reasons=cost_reasons,
+        quality_complete_cases=tuple(quality_complete_cases),
+        quality_cost_complete_cases=tuple(quality_cost_complete_cases),
+        success_complete=success_complete,
+    )
 
+
+def _put_reduced(
+    reduced: dict[str, _ReducedMetric],
+    metric_id: str,
+    value: float | None,
+    sample_count: int,
+    reasons: Counter[str] | None = None,
+) -> None:
+    reduced[metric_id] = _ReducedMetric(
+        value, sample_count, Counter() if reasons is None else Counter(reasons)
+    )
+
+
+def _put_support_metrics(
+    reduced: dict[str, _ReducedMetric],
+    support: _SupportSummary,
+    context: ModelPoolReductionContext,
+) -> None:
     case_count = len(context.planned_case_ids)
-    reduced: dict[str, _ReducedMetric] = {}
+    quality_count = len(support.quality_complete_cases)
+    quality_cost_count = len(support.quality_cost_complete_cases)
+    _put_reduced(
+        reduced, "model_pool.arm_count", float(len(context.frozen_arm_ids)), case_count
+    )
+    for metric_id, value, reasons in (
+        (
+            "model_pool.quality_shared_support_cases",
+            float(quality_count),
+            support.quality_reasons,
+        ),
+        (
+            "model_pool.quality_shared_support_fraction",
+            quality_count / case_count,
+            support.quality_reasons,
+        ),
+        (
+            "model_pool.quality_cost_shared_support_cases",
+            float(quality_cost_count),
+            support.cost_reasons,
+        ),
+        (
+            "model_pool.quality_cost_shared_support_fraction",
+            quality_cost_count / case_count,
+            support.cost_reasons,
+        ),
+    ):
+        _put_reduced(reduced, metric_id, value, case_count, reasons)
 
-    def put(
-        metric_id: str,
-        value: float | None,
-        sample_count: int,
-        reasons: Counter[str] | None = None,
-    ) -> None:
-        reduced[metric_id] = _ReducedMetric(
-            value, sample_count, Counter() if reasons is None else Counter(reasons)
+
+def _put_dense_quality_metrics(
+    reduced: dict[str, _ReducedMetric],
+    support: _SupportSummary,
+    context: ModelPoolReductionContext,
+) -> None:
+    case_count = len(context.planned_case_ids)
+    quality_by_arm, oracle, unique_wins, marginal = _quality_reduction(
+        context.planned_case_ids, context.frozen_arm_ids, support.cells
+    )
+    best_single = max(quality_by_arm.values())
+    for arm_id in context.frozen_arm_ids:
+        _put_reduced(
+            reduced,
+            model_pool_arm_metric_id(arm_id, "quality"),
+            quality_by_arm[arm_id],
+            case_count,
         )
-
-    put("model_pool.arm_count", float(len(context.frozen_arm_ids)), case_count)
-    put(
-        "model_pool.quality_shared_support_cases",
-        float(len(quality_complete_cases)),
-        case_count,
-        quality_reasons,
-    )
-    put(
-        "model_pool.quality_shared_support_fraction",
-        len(quality_complete_cases) / case_count,
-        case_count,
-        quality_reasons,
-    )
-    put(
-        "model_pool.quality_cost_shared_support_cases",
-        float(len(quality_cost_complete_cases)),
-        case_count,
-        cost_reasons,
-    )
-    put(
-        "model_pool.quality_cost_shared_support_fraction",
-        len(quality_cost_complete_cases) / case_count,
-        case_count,
-        cost_reasons,
-    )
-
-    quality_dense = len(quality_complete_cases) == case_count
-    if quality_dense:
-        quality_by_arm, oracle, unique_wins, marginal = _quality_reduction(
-            context.planned_case_ids, context.frozen_arm_ids, cells
+        _put_reduced(
+            reduced,
+            model_pool_arm_metric_id(arm_id, "marginal_contribution"),
+            marginal[arm_id],
+            case_count,
         )
-        best_single = max(quality_by_arm.values())
-        for arm_id in context.frozen_arm_ids:
-            put(
-                model_pool_arm_metric_id(arm_id, "quality"),
-                quality_by_arm[arm_id],
-                case_count,
-            )
-            put(
-                model_pool_arm_metric_id(arm_id, "marginal_contribution"),
-                marginal[arm_id],
-                case_count,
-            )
-        put("model_pool.best_single_quality", best_single, case_count)
-        put("model_pool.oracle_quality", oracle, case_count)
-        put("model_pool.oracle_gain", oracle - best_single, case_count)
-        put("model_pool.unique_wins", float(unique_wins), case_count)
-        put("model_pool.unique_win_rate", unique_wins / case_count, case_count)
-        put(
+    for metric_id, value in (
+        ("model_pool.best_single_quality", best_single),
+        ("model_pool.oracle_quality", oracle),
+        ("model_pool.oracle_gain", oracle - best_single),
+        ("model_pool.unique_wins", float(unique_wins)),
+        ("model_pool.unique_win_rate", unique_wins / case_count),
+        (
             "model_pool.quality_dominated_arm_count",
             float(
                 _quality_dominated_arm_count(
-                    context.planned_case_ids, context.frozen_arm_ids, cells
+                    context.planned_case_ids, context.frozen_arm_ids, support.cells
                 )
             ),
-            case_count,
-        )
-    else:
-        quality_samples = len(quality_complete_cases)
-        for arm_id in context.frozen_arm_ids:
-            put(
-                model_pool_arm_metric_id(arm_id, "quality"),
+        ),
+    ):
+        _put_reduced(reduced, metric_id, value, case_count)
+
+
+def _put_unavailable_quality_metrics(
+    reduced: dict[str, _ReducedMetric],
+    support: _SupportSummary,
+    context: ModelPoolReductionContext,
+) -> None:
+    quality_samples = len(support.quality_complete_cases)
+    for arm_id in context.frozen_arm_ids:
+        for measure in ("quality", "marginal_contribution"):
+            _put_reduced(
+                reduced,
+                model_pool_arm_metric_id(arm_id, measure),
                 None,
                 quality_samples,
-                quality_reasons,
+                support.quality_reasons,
             )
-            put(
-                model_pool_arm_metric_id(arm_id, "marginal_contribution"),
-                None,
-                quality_samples,
-                quality_reasons,
-            )
-        for metric_id in (
-            "model_pool.best_single_quality",
-            "model_pool.oracle_quality",
-            "model_pool.oracle_gain",
-            "model_pool.unique_wins",
-            "model_pool.unique_win_rate",
-            "model_pool.quality_dominated_arm_count",
-        ):
-            put(metric_id, None, quality_samples, quality_reasons)
+    for metric_id in (
+        "model_pool.best_single_quality",
+        "model_pool.oracle_quality",
+        "model_pool.oracle_gain",
+        "model_pool.unique_wins",
+        "model_pool.unique_win_rate",
+        "model_pool.quality_dominated_arm_count",
+    ):
+        _put_reduced(reduced, metric_id, None, quality_samples, support.quality_reasons)
 
-    if success_complete:
-        all_arm_failures = 0
-        reliability_by_arm: list[float] = []
-        for case_id in context.planned_case_ids:
-            if all(
-                not cells[case_id][arm_id].success for arm_id in context.frozen_arm_ids
-            ):
-                all_arm_failures += 1
-        for arm_id in context.frozen_arm_ids:
-            successes = sum(
-                cells[case_id][arm_id].success for case_id in context.planned_case_ids
-            )
-            reliability = successes / case_count
-            reliability_by_arm.append(reliability)
-            put(
-                model_pool_arm_metric_id(arm_id, "success_rate"),
-                reliability,
-                case_count,
-            )
-        put("model_pool.worst_arm_reliability", min(reliability_by_arm), case_count)
-        put(
-            "model_pool.all_arm_failure_rate",
-            all_arm_failures / case_count,
-            case_count,
-        )
-        put(
-            "model_pool.mean_pairwise_failure_jaccard",
-            _failure_jaccard(context.planned_case_ids, context.frozen_arm_ids, cells),
-            case_count,
-        )
-    else:
-        for arm_id in context.frozen_arm_ids:
-            put(
-                model_pool_arm_metric_id(arm_id, "success_rate"),
-                None,
-                0,
-                success_reasons,
-            )
-        for metric_id in (
-            "model_pool.worst_arm_reliability",
-            "model_pool.all_arm_failure_rate",
-            "model_pool.mean_pairwise_failure_jaccard",
-        ):
-            put(metric_id, None, 0, success_reasons)
 
-    cost_dense = len(quality_cost_complete_cases) == case_count
-    if quality_dense and cost_dense:
-        pareto_evaluable, pareto_dominated = _pareto_counts(
-            context.planned_case_ids, context.frozen_arm_ids, cells
-        )
-        put(
-            "model_pool.pareto_evaluable_arm_count",
-            float(pareto_evaluable),
-            case_count,
-        )
-        put(
-            "model_pool.pareto_dominated_arm_count",
-            float(pareto_dominated),
-            case_count,
-        )
+def _put_quality_metrics(
+    reduced: dict[str, _ReducedMetric],
+    support: _SupportSummary,
+    context: ModelPoolReductionContext,
+) -> None:
+    if len(support.quality_complete_cases) == len(context.planned_case_ids):
+        _put_dense_quality_metrics(reduced, support, context)
     else:
-        cost_samples = len(quality_cost_complete_cases)
-        put(
+        _put_unavailable_quality_metrics(reduced, support, context)
+
+
+def _put_dense_success_metrics(
+    reduced: dict[str, _ReducedMetric],
+    support: _SupportSummary,
+    context: ModelPoolReductionContext,
+) -> None:
+    case_count = len(context.planned_case_ids)
+    all_arm_failures = sum(
+        all(
+            not support.cells[case_id][arm_id].success
+            for arm_id in context.frozen_arm_ids
+        )
+        for case_id in context.planned_case_ids
+    )
+    reliability_by_arm: list[float] = []
+    for arm_id in context.frozen_arm_ids:
+        successes = sum(
+            support.cells[case_id][arm_id].success
+            for case_id in context.planned_case_ids
+        )
+        reliability = successes / case_count
+        reliability_by_arm.append(reliability)
+        _put_reduced(
+            reduced,
+            model_pool_arm_metric_id(arm_id, "success_rate"),
+            reliability,
+            case_count,
+        )
+    for metric_id, value in (
+        ("model_pool.worst_arm_reliability", min(reliability_by_arm)),
+        ("model_pool.all_arm_failure_rate", all_arm_failures / case_count),
+        (
+            "model_pool.mean_pairwise_failure_jaccard",
+            _failure_jaccard(
+                context.planned_case_ids, context.frozen_arm_ids, support.cells
+            ),
+        ),
+    ):
+        _put_reduced(reduced, metric_id, value, case_count)
+
+
+def _put_unavailable_success_metrics(
+    reduced: dict[str, _ReducedMetric],
+    support: _SupportSummary,
+    context: ModelPoolReductionContext,
+) -> None:
+    for arm_id in context.frozen_arm_ids:
+        _put_reduced(
+            reduced,
+            model_pool_arm_metric_id(arm_id, "success_rate"),
+            None,
+            0,
+            support.success_reasons,
+        )
+    for metric_id in (
+        "model_pool.worst_arm_reliability",
+        "model_pool.all_arm_failure_rate",
+        "model_pool.mean_pairwise_failure_jaccard",
+    ):
+        _put_reduced(reduced, metric_id, None, 0, support.success_reasons)
+
+
+def _put_success_metrics(
+    reduced: dict[str, _ReducedMetric],
+    support: _SupportSummary,
+    context: ModelPoolReductionContext,
+) -> None:
+    if support.success_complete:
+        _put_dense_success_metrics(reduced, support, context)
+    else:
+        _put_unavailable_success_metrics(reduced, support, context)
+
+
+def _put_pareto_metrics(
+    reduced: dict[str, _ReducedMetric],
+    support: _SupportSummary,
+    context: ModelPoolReductionContext,
+) -> None:
+    case_count = len(context.planned_case_ids)
+    dense = (
+        len(support.quality_complete_cases) == case_count
+        and len(support.quality_cost_complete_cases) == case_count
+    )
+    if dense:
+        evaluable, dominated = _pareto_counts(
+            context.planned_case_ids, context.frozen_arm_ids, support.cells
+        )
+        _put_reduced(
+            reduced,
             "model_pool.pareto_evaluable_arm_count",
-            None,
-            cost_samples,
-            cost_reasons,
+            float(evaluable),
+            case_count,
         )
-        put(
+        _put_reduced(
+            reduced,
             "model_pool.pareto_dominated_arm_count",
-            None,
-            cost_samples,
-            cost_reasons,
+            float(dominated),
+            case_count,
         )
+        return
+    cost_samples = len(support.quality_cost_complete_cases)
+    for metric_id in (
+        "model_pool.pareto_evaluable_arm_count",
+        "model_pool.pareto_dominated_arm_count",
+    ):
+        _put_reduced(reduced, metric_id, None, cost_samples, support.cost_reasons)
+
+
+def model_pool_metrics(
+    records: list[ExecutionRecord],
+    joint_records: list[ExecutionRecord],
+    *,
+    context: ModelPoolReductionContext | None = None,
+) -> list[MetricDraft]:
+    """Reduce the exact metric universe attested by the Go server reducer."""
+
+    inferred_context = context is None
+    if context is None:
+        context = _infer_diagnostic_context(records, joint_records)
+        if context is None:
+            return []
+    metric_ids = _metric_ids(context.frozen_arm_ids)
+    if not context.authoritative:
+        reason = Counter({_NON_AUTHORITATIVE: 1})
+        return _drafts(
+            {metric_id: _ReducedMetric(None, 0, reason) for metric_id in metric_ids},
+            context,
+        )
+
+    record_matrix = build_dense_model_pool_matrix(records, context)
+    support = _collect_support(record_matrix, context)
+    reduced: dict[str, _ReducedMetric] = {}
+    _put_support_metrics(reduced, support, context)
+
+    _put_quality_metrics(reduced, support, context)
+
+    _put_success_metrics(reduced, support, context)
+
+    _put_pareto_metrics(reduced, support, context)
 
     entropy, coverage = _reduce_selection(
         joint_records,

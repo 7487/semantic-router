@@ -21,7 +21,7 @@ from cli.evaluation.suite_store_error import SuiteStoreError
 def r2_compound_model_budget_records(
     case: SelectedCase, evidence: SuiteEvidence
 ) -> list[ExecutionRecord]:
-    """Keep R2's action×budget tensor out of generic model-pool reducers."""
+    """Keep R2's action x budget tensor out of generic model-pool reducers."""
 
     if evidence.outcomes is None:
         return [

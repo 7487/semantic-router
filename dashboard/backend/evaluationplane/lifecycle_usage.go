@@ -38,6 +38,14 @@ type lifecycleUsageSnapshot struct {
 	owners map[string]OwnerLifecycleUsage
 }
 
+type lifecycleUsageAccumulator struct {
+	store         *Store
+	owners        map[string]OwnerLifecycleUsage
+	ownerCAS      map[string]map[string]bool
+	ownerReserved map[string]int64
+	totalReserved int64
+}
+
 func (s *Store) Usage(actor Actor) (LifecycleUsageReport, error) {
 	if err := validateActor(actor); err != nil {
 		return LifecycleUsageReport{}, err
@@ -74,142 +82,164 @@ func (s *Store) lifecycleUsageUnlocked() (lifecycleUsageSnapshot, error) {
 	if ledgerErr != nil {
 		return lifecycleUsageSnapshot{}, fmt.Errorf("%w: lifecycle usage requires a complete run ledger: %w", ErrConflict, ledgerErr)
 	}
-	owners := make(map[string]OwnerLifecycleUsage)
-	ownerCAS := make(map[string]map[string]bool)
-	ownerReserved := make(map[string]int64)
-	var totalReserved int64
+	usage := &lifecycleUsageAccumulator{
+		store: s, owners: make(map[string]OwnerLifecycleUsage),
+		ownerCAS: make(map[string]map[string]bool), ownerReserved: make(map[string]int64),
+	}
 	for _, run := range runs {
-		lifecycle, lifecycleErr := s.readRunLifecycle(run)
-		if lifecycleErr != nil {
-			return lifecycleUsageSnapshot{}, fmt.Errorf("%w: lifecycle usage requires valid ownership metadata", ErrConflict)
-		}
-		bytes, sizeErr := privateDirectoryBytes(filepath.Join(s.runsRoot, run.ID), "")
-		if sizeErr != nil {
-			return lifecycleUsageSnapshot{}, sizeErr
-		}
-		attestationBytes, sizeErr := s.executionAttestationBytes(run.ID)
-		if sizeErr != nil {
-			return lifecycleUsageSnapshot{}, sizeErr
-		}
-		bytes, sizeErr = checkedLifecycleBytes(bytes, attestationBytes)
-		if sizeErr != nil {
-			return lifecycleUsageSnapshot{}, sizeErr
-		}
-		owner := owners[lifecycle.OwnerPrincipalDigest]
-		owner.PrincipalDigest = lifecycle.OwnerPrincipalDigest
-		owner.RunCount++
-		owner.ActualBytes, sizeErr = checkedLifecycleBytes(owner.ActualBytes, bytes)
-		if sizeErr != nil {
-			return lifecycleUsageSnapshot{}, sizeErr
-		}
-		remainingReservation := s.lifecyclePolicy.ReservedRunBytes - bytes
-		if remainingReservation < 0 {
-			remainingReservation = 0
-		}
-		ownerReserved[lifecycle.OwnerPrincipalDigest], sizeErr = checkedLifecycleBytes(
-			ownerReserved[lifecycle.OwnerPrincipalDigest], remainingReservation,
-		)
-		if sizeErr != nil {
-			return lifecycleUsageSnapshot{}, sizeErr
-		}
-		totalReserved, sizeErr = checkedLifecycleBytes(totalReserved, remainingReservation)
-		if sizeErr != nil {
-			return lifecycleUsageSnapshot{}, sizeErr
-		}
-		if lifecycle.EvidenceHold {
-			owner.HeldRuns++
-		}
-		if lifecycle.RetentionClass == RetentionProtected {
-			owner.ProtectedRuns++
-		}
-		owners[lifecycle.OwnerPrincipalDigest] = owner
-		references := make(map[string]bool)
-		if err := s.markRunCASReferences(run.ID, references); err != nil {
-			return lifecycleUsageSnapshot{}, fmt.Errorf("%w: lifecycle usage cannot verify run evidence: %w", ErrConflict, err)
-		}
-		if ownerCAS[lifecycle.OwnerPrincipalDigest] == nil {
-			ownerCAS[lifecycle.OwnerPrincipalDigest] = make(map[string]bool)
-		}
-		for digest := range references {
-			ownerCAS[lifecycle.OwnerPrincipalDigest][digest] = true
+		if err := usage.addRun(run); err != nil {
+			return lifecycleUsageSnapshot{}, err
 		}
 	}
+	if err := usage.addControlledPairs(); err != nil {
+		return lifecycleUsageSnapshot{}, err
+	}
+	if err := usage.addCASEvidence(); err != nil {
+		return lifecycleUsageSnapshot{}, err
+	}
+	return usage.snapshot(len(runs))
+}
+
+func (usage *lifecycleUsageAccumulator) addRun(run Run) error {
+	s := usage.store
+	lifecycle, err := s.readRunLifecycle(run)
+	if err != nil {
+		return fmt.Errorf("%w: lifecycle usage requires valid ownership metadata", ErrConflict)
+	}
+	bytes, err := privateDirectoryBytes(filepath.Join(s.runsRoot, run.ID), "")
+	if err != nil {
+		return err
+	}
+	attestationBytes, err := s.executionAttestationBytes(run.ID)
+	if err != nil {
+		return err
+	}
+	bytes, err = checkedLifecycleBytes(bytes, attestationBytes)
+	if err != nil {
+		return err
+	}
+	owner := usage.owners[lifecycle.OwnerPrincipalDigest]
+	owner.PrincipalDigest = lifecycle.OwnerPrincipalDigest
+	owner.RunCount++
+	owner.ActualBytes, err = checkedLifecycleBytes(owner.ActualBytes, bytes)
+	if err != nil {
+		return err
+	}
+	remainingReservation := s.lifecyclePolicy.ReservedRunBytes - bytes
+	if remainingReservation < 0 {
+		remainingReservation = 0
+	}
+	usage.ownerReserved[lifecycle.OwnerPrincipalDigest], err = checkedLifecycleBytes(
+		usage.ownerReserved[lifecycle.OwnerPrincipalDigest], remainingReservation,
+	)
+	if err != nil {
+		return err
+	}
+	usage.totalReserved, err = checkedLifecycleBytes(usage.totalReserved, remainingReservation)
+	if err != nil {
+		return err
+	}
+	if lifecycle.EvidenceHold {
+		owner.HeldRuns++
+	}
+	if lifecycle.RetentionClass == RetentionProtected {
+		owner.ProtectedRuns++
+	}
+	usage.owners[lifecycle.OwnerPrincipalDigest] = owner
+	references := make(map[string]bool)
+	if err := s.markRunCASReferences(run.ID, references); err != nil {
+		return fmt.Errorf("%w: lifecycle usage cannot verify run evidence: %w", ErrConflict, err)
+	}
+	if usage.ownerCAS[lifecycle.OwnerPrincipalDigest] == nil {
+		usage.ownerCAS[lifecycle.OwnerPrincipalDigest] = make(map[string]bool)
+	}
+	for digest := range references {
+		usage.ownerCAS[lifecycle.OwnerPrincipalDigest][digest] = true
+	}
+	return nil
+}
+
+func (usage *lifecycleUsageAccumulator) addControlledPairs() error {
+	s := usage.store
 	pairEntries, err := os.ReadDir(s.controlledPairRoot)
 	if err != nil {
-		return lifecycleUsageSnapshot{}, fmt.Errorf("list controlled pair usage: %w", err)
+		return fmt.Errorf("list controlled pair usage: %w", err)
 	}
 	for _, entry := range pairEntries {
 		if !entry.IsDir() || !validClientRequestID(entry.Name()) {
-			return lifecycleUsageSnapshot{}, fmt.Errorf("%w: controlled pair usage ledger is invalid", ErrConflict)
+			return fmt.Errorf("%w: controlled pair usage ledger is invalid", ErrConflict)
 		}
-		pair, pairErr := s.readControlledPair(entry.Name())
-		if pairErr != nil {
-			return lifecycleUsageSnapshot{}, pairErr
+		pair, err := s.readControlledPair(entry.Name())
+		if err != nil {
+			return err
 		}
-		pairBytes, sizeErr := privateDirectoryBytes(filepath.Join(s.controlledPairRoot, entry.Name()), "")
-		if sizeErr != nil {
-			return lifecycleUsageSnapshot{}, sizeErr
+		pairBytes, err := privateDirectoryBytes(filepath.Join(s.controlledPairRoot, entry.Name()), "")
+		if err != nil {
+			return err
 		}
-		owner := owners[pair.OwnerPrincipalDigest]
+		owner := usage.owners[pair.OwnerPrincipalDigest]
 		owner.PrincipalDigest = pair.OwnerPrincipalDigest
-		owner.ActualBytes, sizeErr = checkedLifecycleBytes(owner.ActualBytes, pairBytes)
-		if sizeErr != nil {
-			return lifecycleUsageSnapshot{}, sizeErr
+		owner.ActualBytes, err = checkedLifecycleBytes(owner.ActualBytes, pairBytes)
+		if err != nil {
+			return err
 		}
 		if pair.State != controlledPairStateDeleted {
 			envelopeBytes, envelopeErr := controlledPairIntentReservationBytes(pair)
 			if envelopeErr != nil {
-				return lifecycleUsageSnapshot{}, envelopeErr
+				return envelopeErr
 			}
 			remainingReservation := envelopeBytes - pairBytes
 			if remainingReservation < 0 {
 				remainingReservation = 0
 			}
-			ownerReserved[pair.OwnerPrincipalDigest], sizeErr = checkedLifecycleBytes(
-				ownerReserved[pair.OwnerPrincipalDigest], remainingReservation,
-			)
-			if sizeErr != nil {
-				return lifecycleUsageSnapshot{}, sizeErr
+			usage.ownerReserved[pair.OwnerPrincipalDigest], err = checkedLifecycleBytes(usage.ownerReserved[pair.OwnerPrincipalDigest], remainingReservation)
+			if err != nil {
+				return err
 			}
-			totalReserved, sizeErr = checkedLifecycleBytes(totalReserved, remainingReservation)
-			if sizeErr != nil {
-				return lifecycleUsageSnapshot{}, sizeErr
+			usage.totalReserved, err = checkedLifecycleBytes(usage.totalReserved, remainingReservation)
+			if err != nil {
+				return err
 			}
 		}
-		owners[pair.OwnerPrincipalDigest] = owner
+		usage.owners[pair.OwnerPrincipalDigest] = owner
 	}
-	casRoot := filepath.Join(s.root, "objects", "sha256")
-	for ownerDigest, references := range ownerCAS {
-		owner := owners[ownerDigest]
+	return nil
+}
+
+func (usage *lifecycleUsageAccumulator) addCASEvidence() error {
+	casRoot := filepath.Join(usage.store.root, "objects", "sha256")
+	for ownerDigest, references := range usage.ownerCAS {
+		owner := usage.owners[ownerDigest]
 		for digest := range references {
-			info, statErr := os.Lstat(filepath.Join(casRoot, digest))
-			if os.IsNotExist(statErr) {
-				// Run-local artifacts (notably the immutable manifest) are
-				// checksummed by the same reference scanner but intentionally
-				// have no duplicate CAS object.
+			info, err := os.Lstat(filepath.Join(casRoot, digest))
+			if os.IsNotExist(err) {
 				continue
 			}
-			if statErr != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm() != 0o600 {
-				return lifecycleUsageSnapshot{}, fmt.Errorf("%w: lifecycle usage cannot verify CAS evidence", ErrConflict)
+			if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm() != 0o600 {
+				return fmt.Errorf("%w: lifecycle usage cannot verify CAS evidence", ErrConflict)
 			}
-			var addErr error
-			owner.ActualBytes, addErr = checkedLifecycleBytes(owner.ActualBytes, info.Size())
-			if addErr != nil {
-				return lifecycleUsageSnapshot{}, addErr
+			owner.ActualBytes, err = checkedLifecycleBytes(owner.ActualBytes, info.Size())
+			if err != nil {
+				return err
 			}
 		}
-		owners[ownerDigest] = owner
+		usage.owners[ownerDigest] = owner
 	}
-	ownerList := make([]OwnerLifecycleUsage, 0, len(owners))
-	for digest, owner := range owners {
-		owner.ReservedBytes = ownerReserved[digest]
-		var addErr error
-		owner.ChargeableBytes, addErr = checkedLifecycleBytes(owner.ActualBytes, owner.ReservedBytes)
-		if addErr != nil {
-			return lifecycleUsageSnapshot{}, addErr
+	return nil
+}
+
+func (usage *lifecycleUsageAccumulator) snapshot(runCount int) (lifecycleUsageSnapshot, error) {
+	s := usage.store
+	ownerList := make([]OwnerLifecycleUsage, 0, len(usage.owners))
+	for digest, owner := range usage.owners {
+		owner.ReservedBytes = usage.ownerReserved[digest]
+		var err error
+		owner.ChargeableBytes, err = checkedLifecycleBytes(owner.ActualBytes, owner.ReservedBytes)
+		if err != nil {
+			return lifecycleUsageSnapshot{}, err
 		}
 		owner.MaxBytes, owner.MaxRuns = s.lifecyclePolicy.Limits.MaxOwnerBytes, s.lifecyclePolicy.Limits.MaxOwnerRuns
-		owners[digest] = owner
+		usage.owners[digest] = owner
 		ownerList = append(ownerList, owner)
 	}
 	sort.Slice(ownerList, func(i, j int) bool { return ownerList[i].PrincipalDigest < ownerList[j].PrincipalDigest })
@@ -217,19 +247,19 @@ func (s *Store) lifecycleUsageUnlocked() (lifecycleUsageSnapshot, error) {
 	if err != nil {
 		return lifecycleUsageSnapshot{}, err
 	}
-	chargeable, err := checkedLifecycleBytes(managed, totalReserved)
+	chargeable, err := checkedLifecycleBytes(managed, usage.totalReserved)
 	if err != nil {
 		return lifecycleUsageSnapshot{}, err
 	}
 	return lifecycleUsageSnapshot{
 		report: LifecycleUsageReport{
 			SchemaVersion: lifecyclePolicySchemaVersion, PolicyRevision: lifecyclePolicyRevision,
-			ManagedPhysicalBytes: managed, ReservedBytes: totalReserved, ChargeableBytes: chargeable,
+			ManagedPhysicalBytes: managed, ReservedBytes: usage.totalReserved, ChargeableBytes: chargeable,
 			MaxStoreBytes: s.lifecyclePolicy.Limits.MaxStoreBytes,
 			AuditBytes:    s.lifecycle.bytes, MaxAuditBytes: s.lifecyclePolicy.Limits.MaxAuditBytes,
-			RunCount: len(runs), Owners: ownerList,
+			RunCount: runCount, Owners: ownerList,
 		},
-		owners: owners,
+		owners: usage.owners,
 	}, nil
 }
 

@@ -10,8 +10,8 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from cli.evaluation.builtin_executors import DEFAULT_EXECUTOR_REGISTRY
-from cli.evaluation.case_plan import planned_case_ids_by_track
 from cli.evaluation.capacity_profile import CapacityProfile, build_capacity_profile
+from cli.evaluation.case_plan import planned_case_ids_by_track
 from cli.evaluation.contracts import ArtifactRef, ResolvedRunSnapshot, RunManifest
 from cli.evaluation.evidence import ExecutionRecord
 from cli.evaluation.evidence_collection import collect_evidence
@@ -26,8 +26,8 @@ from cli.evaluation.executor_registry import CollectedEvidence, ExecutorRegistry
 from cli.evaluation.finalize import finalize_report_bundle
 from cli.evaluation.gates import compute_gates
 from cli.evaluation.method_gate_evidence import derive_method_gate_evidence
-from cli.evaluation.metrics import compute_metrics
 from cli.evaluation.metric_model_pool import ModelPoolReductionContext
+from cli.evaluation.metrics import compute_metrics
 from cli.evaluation.normalized_suite_live_robustness import (
     declared_shift_gate_is_complete,
 )

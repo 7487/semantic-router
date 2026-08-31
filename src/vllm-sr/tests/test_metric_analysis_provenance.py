@@ -1,12 +1,11 @@
 from types import SimpleNamespace
 
 import pytest
-from pydantic import ValidationError
-
-from cli.evaluation.metric_core import _metric, metric_analysis_provenance
 from cli.evaluation.metric_analysis_catalog import resolve_metric_analysis
+from cli.evaluation.metric_core import _metric, metric_analysis_provenance
 from cli.evaluation.metrics import _bind_metric_analysis_provenance
 from cli.evaluation.reporting import EvaluationMetric
+from pydantic import ValidationError
 
 
 def _metric_payload() -> dict[str, object]:

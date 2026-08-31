@@ -8,11 +8,11 @@ from cli.evaluation.architecture_feedback import architecture_recommendations
 from cli.evaluation.contracts import RunManifest
 from cli.evaluation.evidence import ExecutionRecord
 from cli.evaluation.evidence_level import track_evidence_level
+from cli.evaluation.metric_compound_model_budget import r2_compound_report
 from cli.evaluation.metric_core import (
     _canonical_ordered_float_sum,
     aggregate_track_coverage,
 )
-from cli.evaluation.metric_compound_model_budget import r2_compound_report
 from cli.evaluation.metrics import coverage
 from cli.evaluation.reporting import (
     EvaluationArtifact,

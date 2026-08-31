@@ -87,7 +87,7 @@ def _bind_metric_analysis_provenance(
     Each draft states its reducer-owned planned population; its local
     exclusions are therefore ``planned - sample_count``.  The dispatcher only
     adds unavailable source units through a metric-specific projection.  It
-    never infers exclusions from all records in a track, because a case×arm
+    never infers exclusions from all records in a track, because a case x arm
     metric, a per-arm metric, and a capacity repetition have different units.
     """
 

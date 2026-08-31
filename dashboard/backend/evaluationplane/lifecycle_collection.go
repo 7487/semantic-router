@@ -269,36 +269,9 @@ func (s *Store) collectControlledPairCandidatesUnlocked(
 				return nil, fmt.Errorf("%w: collection cannot verify controlled pair evidence", ErrConflict)
 			}
 		}
-		reason := ""
-		lifecycles := make([]RunLifecycle, 0, 2)
-		for _, id := range ids {
-			lifecycle, lifecycleErr := s.readRunLifecycle(byID[id])
-			if lifecycleErr != nil {
-				return nil, fmt.Errorf("%w: collection requires controlled pair lifecycle metadata", ErrConflict)
-			}
-			lifecycles = append(lifecycles, lifecycle)
-			switch {
-			case s.lifecycle.contains(id):
-				reason = "active"
-			case pair.State != controlledPairStateTerminal || !terminalStatus(byID[id].Status):
-				reason = "active"
-			case lifecycle.EvidenceHold:
-				reason = "held"
-			case lifecycle.RetentionClass == RetentionProtected:
-				reason = "protected"
-			case lifecycle.DeleteAfter == nil || lifecycle.DeleteAfter.After(now):
-				reason = "not_expired"
-			}
-		}
-		if reason == "" {
-			if referenceErr := s.ensureControlledPairNotExternallyReferencedUnlocked(pair); referenceErr != nil {
-				reason = "referenced"
-			}
-			for _, id := range ids {
-				if referenceErr := s.ensureRunNotCampaignReferencedUnlocked(id); referenceErr != nil {
-					reason = "referenced"
-				}
-			}
+		lifecycles, reason, lifecycleErr := s.controlledPairCollectionLifecycles(pair, ids, byID, now)
+		if lifecycleErr != nil {
+			return nil, lifecycleErr
 		}
 		if reason != "" {
 			build.skipped[reason]++
@@ -357,6 +330,47 @@ func (s *Store) collectControlledPairCandidatesUnlocked(
 		build.candidateReferences["pair:"+pair.PairID] = references
 	}
 	return members, nil
+}
+
+func (s *Store) controlledPairCollectionLifecycles(
+	pair controlledPairManifest,
+	ids []string,
+	byID map[string]Run,
+	now time.Time,
+) ([]RunLifecycle, string, error) {
+	reason := ""
+	lifecycles := make([]RunLifecycle, 0, len(ids))
+	for _, id := range ids {
+		lifecycle, err := s.readRunLifecycle(byID[id])
+		if err != nil {
+			return nil, "", fmt.Errorf("%w: collection requires controlled pair lifecycle metadata", ErrConflict)
+		}
+		lifecycles = append(lifecycles, lifecycle)
+		switch {
+		case s.lifecycle.contains(id):
+			reason = "active"
+		case pair.State != controlledPairStateTerminal || !terminalStatus(byID[id].Status):
+			reason = "active"
+		case lifecycle.EvidenceHold:
+			reason = "held"
+		case lifecycle.RetentionClass == RetentionProtected:
+			reason = "protected"
+		case lifecycle.DeleteAfter == nil || lifecycle.DeleteAfter.After(now):
+			reason = "not_expired"
+		}
+	}
+	if reason != "" {
+		return lifecycles, reason, nil
+	}
+	if err := s.ensureControlledPairNotExternallyReferencedUnlocked(pair); err != nil {
+		return lifecycles, "referenced", nil
+	}
+	for _, id := range ids {
+		if err := s.ensureRunNotCampaignReferencedUnlocked(id); err != nil {
+			return lifecycles, "referenced", nil
+		}
+	}
+	return lifecycles, "", nil
 }
 
 func collectionRunSkipReason(run Run, lifecycle RunLifecycle, referenced map[string]bool, now time.Time) string {

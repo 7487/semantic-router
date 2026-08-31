@@ -141,6 +141,16 @@ type modelPoolCell struct {
 	runtimeCost  *float64
 }
 
+type modelPoolSupport struct {
+	qualityReasons           map[modelPoolMissingReason]int
+	successReasons           map[modelPoolMissingReason]int
+	costReasons              map[modelPoolMissingReason]int
+	qualityCompleteCases     []string
+	qualityCostCompleteCases []string
+	successComplete          bool
+	allArmFailures           int
+}
+
 func reduceAuthoritativeModelPoolMetrics(input modelPoolReductionInput) ([]modelPoolMetricEvidence, error) {
 	arms, err := canonicalModelPoolIDs(input.FrozenArmIDs, "frozen arm")
 	if err != nil {
@@ -183,129 +193,20 @@ func reduceAuthoritativeModelPoolMetrics(input modelPoolReductionInput) ([]model
 		cells[record.CaseID][*record.ArmID] = cell
 	}
 
-	qualityReasons := make(map[modelPoolMissingReason]int)
-	successReasons := make(map[modelPoolMissingReason]int)
-	costReasons := make(map[modelPoolMissingReason]int)
-	qualityCompleteCases := make([]string, 0, len(cases))
-	qualityCostCompleteCases := make([]string, 0, len(cases))
-	successComplete := true
-	allArmFailures := 0
-	for _, caseID := range cases {
-		qualityComplete, costComplete, allFailed := true, true, true
-		for _, armID := range arms {
-			cell, present := cells[caseID][armID]
-			if !present {
-				qualityComplete, costComplete, successComplete = false, false, false
-				qualityReasons[modelPoolMissingArmCell]++
-				costReasons[modelPoolMissingArmCell]++
-				successReasons[modelPoolMissingArmCell]++
-				continue
-			}
-			if !cell.successKnown {
-				successComplete = false
-				successReasons[modelPoolUnavailableRecord]++
-			}
-			if cell.quality == nil {
-				qualityComplete, costComplete = false, false
-				var reason modelPoolMissingReason
-				if cell.successKnown && cell.success {
-					reason = modelPoolUngradedSuccess
-				} else {
-					reason = modelPoolUnavailableRecord
-				}
-				qualityReasons[reason]++
-				// Pareto analysis needs a quality/cost pair. A missing quality
-				// excludes the cost axis as well, so retain that evidence there.
-				costReasons[reason]++
-			}
-			if cell.runtimeCost == nil {
-				costComplete = false
-				costReasons[modelPoolMissingRuntimeCost]++
-			}
-			if !cell.successKnown || cell.success {
-				allFailed = false
-			}
-		}
-		if qualityComplete {
-			qualityCompleteCases = append(qualityCompleteCases, caseID)
-		}
-		if qualityComplete && costComplete {
-			qualityCostCompleteCases = append(qualityCostCompleteCases, caseID)
-		}
-		if successComplete && allFailed {
-			allArmFailures++
-		}
-	}
-	qualityDense := len(qualityCompleteCases) == len(cases)
-	costDense := len(qualityCostCompleteCases) == len(cases)
+	support := summarizeModelPoolSupport(cases, arms, cells)
 
 	metrics := make(map[string]modelPoolMetricEvidence, len(metricIDs))
 	put := func(id string, value *float64, sampleCount int, reasons map[modelPoolMissingReason]int) {
 		metrics[id] = modelPoolMetricEvidence{ID: id, Value: value, SampleCount: sampleCount, MissingReasonCounts: copyModelPoolReasons(reasons)}
 	}
 	put("model_pool.arm_count", modelPoolFloat(float64(len(arms))), len(cases), nil)
-	put("model_pool.quality_shared_support_cases", modelPoolFloat(float64(len(qualityCompleteCases))), len(cases), qualityReasons)
-	put("model_pool.quality_shared_support_fraction", modelPoolFloat(float64(len(qualityCompleteCases))/float64(len(cases))), len(cases), qualityReasons)
-	put("model_pool.quality_cost_shared_support_cases", modelPoolFloat(float64(len(qualityCostCompleteCases))), len(cases), costReasons)
-	put("model_pool.quality_cost_shared_support_fraction", modelPoolFloat(float64(len(qualityCostCompleteCases))/float64(len(cases))), len(cases), costReasons)
-
-	if qualityDense {
-		qualityByArm, oracleValues, uniqueWins, marginal := reduceDensePoolQuality(cases, arms, cells)
-		bestSingle := math.Inf(-1)
-		for _, armID := range arms {
-			if qualityByArm[armID] > bestSingle {
-				bestSingle = qualityByArm[armID]
-			}
-			put(modelPoolArmMetricID(armID, "quality"), modelPoolFloat(qualityByArm[armID]), len(cases), nil)
-			put(modelPoolArmMetricID(armID, "marginal_contribution"), modelPoolFloat(marginal[armID]), len(cases), nil)
-		}
-		oracle := modelPoolMean(oracleValues)
-		put("model_pool.best_single_quality", modelPoolFloat(bestSingle), len(cases), nil)
-		put("model_pool.oracle_quality", modelPoolFloat(oracle), len(cases), nil)
-		put("model_pool.oracle_gain", modelPoolFloat(oracle-bestSingle), len(cases), nil)
-		put("model_pool.unique_wins", modelPoolFloat(float64(uniqueWins)), len(cases), nil)
-		put("model_pool.unique_win_rate", modelPoolFloat(float64(uniqueWins)/float64(len(cases))), len(cases), nil)
-		put("model_pool.quality_dominated_arm_count", modelPoolFloat(float64(modelPoolQualityDominated(cases, arms, cells))), len(cases), nil)
-	} else {
-		for _, armID := range arms {
-			put(modelPoolArmMetricID(armID, "quality"), nil, len(qualityCompleteCases), qualityReasons)
-			put(modelPoolArmMetricID(armID, "marginal_contribution"), nil, len(qualityCompleteCases), qualityReasons)
-		}
-		for _, id := range []string{"model_pool.best_single_quality", "model_pool.oracle_quality", "model_pool.oracle_gain", "model_pool.unique_wins", "model_pool.unique_win_rate", "model_pool.quality_dominated_arm_count"} {
-			put(id, nil, len(qualityCompleteCases), qualityReasons)
-		}
-	}
-
-	if successComplete {
-		for _, armID := range arms {
-			successes := 0
-			for _, caseID := range cases {
-				if cells[caseID][armID].success {
-					successes++
-				}
-			}
-			put(modelPoolArmMetricID(armID, "success_rate"), modelPoolFloat(float64(successes)/float64(len(cases))), len(cases), nil)
-		}
-		put("model_pool.worst_arm_reliability", modelPoolFloat(modelPoolWorstReliability(cases, arms, cells)), len(cases), nil)
-		put("model_pool.all_arm_failure_rate", modelPoolFloat(float64(allArmFailures)/float64(len(cases))), len(cases), nil)
-		put("model_pool.mean_pairwise_failure_jaccard", modelPoolFloat(modelPoolFailureJaccard(cases, arms, cells)), len(cases), nil)
-	} else {
-		for _, armID := range arms {
-			put(modelPoolArmMetricID(armID, "success_rate"), nil, 0, successReasons)
-		}
-		for _, id := range []string{"model_pool.worst_arm_reliability", "model_pool.all_arm_failure_rate", "model_pool.mean_pairwise_failure_jaccard"} {
-			put(id, nil, 0, successReasons)
-		}
-	}
-
-	if qualityDense && costDense {
-		paretoEvaluable, paretoDominated := modelPoolPareto(cases, arms, cells)
-		put("model_pool.pareto_evaluable_arm_count", modelPoolFloat(float64(paretoEvaluable)), len(cases), nil)
-		put("model_pool.pareto_dominated_arm_count", modelPoolFloat(float64(paretoDominated)), len(cases), nil)
-	} else {
-		put("model_pool.pareto_evaluable_arm_count", nil, len(qualityCostCompleteCases), costReasons)
-		put("model_pool.pareto_dominated_arm_count", nil, len(qualityCostCompleteCases), costReasons)
-	}
+	put("model_pool.quality_shared_support_cases", modelPoolFloat(float64(len(support.qualityCompleteCases))), len(cases), support.qualityReasons)
+	put("model_pool.quality_shared_support_fraction", modelPoolFloat(float64(len(support.qualityCompleteCases))/float64(len(cases))), len(cases), support.qualityReasons)
+	put("model_pool.quality_cost_shared_support_cases", modelPoolFloat(float64(len(support.qualityCostCompleteCases))), len(cases), support.costReasons)
+	put("model_pool.quality_cost_shared_support_fraction", modelPoolFloat(float64(len(support.qualityCostCompleteCases))/float64(len(cases))), len(cases), support.costReasons)
+	putModelPoolQualityMetrics(put, cases, arms, cells, support)
+	putModelPoolSuccessMetrics(put, cases, arms, cells, support)
+	putModelPoolParetoMetrics(put, cases, arms, cells, support)
 
 	if err := reduceModelPoolSelection(cases, arms, input.JointRecords, put); err != nil {
 		return nil, err
@@ -315,6 +216,124 @@ func reduceAuthoritativeModelPoolMetrics(input modelPoolReductionInput) ([]model
 		result = append(result, metrics[id])
 	}
 	return result, nil
+}
+
+func summarizeModelPoolSupport(cases, arms []string, cells map[string]map[string]modelPoolCell) modelPoolSupport {
+	support := modelPoolSupport{
+		qualityReasons:           make(map[modelPoolMissingReason]int),
+		successReasons:           make(map[modelPoolMissingReason]int),
+		costReasons:              make(map[modelPoolMissingReason]int),
+		qualityCompleteCases:     make([]string, 0, len(cases)),
+		qualityCostCompleteCases: make([]string, 0, len(cases)),
+		successComplete:          true,
+	}
+	for _, caseID := range cases {
+		qualityComplete, costComplete, allFailed := true, true, true
+		for _, armID := range arms {
+			cell, present := cells[caseID][armID]
+			if !present {
+				qualityComplete, costComplete, support.successComplete = false, false, false
+				support.qualityReasons[modelPoolMissingArmCell]++
+				support.costReasons[modelPoolMissingArmCell]++
+				support.successReasons[modelPoolMissingArmCell]++
+				continue
+			}
+			if !cell.successKnown {
+				support.successComplete = false
+				support.successReasons[modelPoolUnavailableRecord]++
+			}
+			if cell.quality == nil {
+				qualityComplete, costComplete = false, false
+				reason := modelPoolUnavailableRecord
+				if cell.successKnown && cell.success {
+					reason = modelPoolUngradedSuccess
+				}
+				support.qualityReasons[reason]++
+				support.costReasons[reason]++
+			}
+			if cell.runtimeCost == nil {
+				costComplete = false
+				support.costReasons[modelPoolMissingRuntimeCost]++
+			}
+			if !cell.successKnown || cell.success {
+				allFailed = false
+			}
+		}
+		if qualityComplete {
+			support.qualityCompleteCases = append(support.qualityCompleteCases, caseID)
+		}
+		if qualityComplete && costComplete {
+			support.qualityCostCompleteCases = append(support.qualityCostCompleteCases, caseID)
+		}
+		if support.successComplete && allFailed {
+			support.allArmFailures++
+		}
+	}
+	return support
+}
+
+func putModelPoolQualityMetrics(put func(string, *float64, int, map[modelPoolMissingReason]int), cases, arms []string, cells map[string]map[string]modelPoolCell, support modelPoolSupport) {
+	if len(support.qualityCompleteCases) != len(cases) {
+		for _, armID := range arms {
+			put(modelPoolArmMetricID(armID, "quality"), nil, len(support.qualityCompleteCases), support.qualityReasons)
+			put(modelPoolArmMetricID(armID, "marginal_contribution"), nil, len(support.qualityCompleteCases), support.qualityReasons)
+		}
+		for _, id := range []string{"model_pool.best_single_quality", "model_pool.oracle_quality", "model_pool.oracle_gain", "model_pool.unique_wins", "model_pool.unique_win_rate", "model_pool.quality_dominated_arm_count"} {
+			put(id, nil, len(support.qualityCompleteCases), support.qualityReasons)
+		}
+		return
+	}
+	qualityByArm, oracleValues, uniqueWins, marginal := reduceDensePoolQuality(cases, arms, cells)
+	bestSingle := math.Inf(-1)
+	for _, armID := range arms {
+		if qualityByArm[armID] > bestSingle {
+			bestSingle = qualityByArm[armID]
+		}
+		put(modelPoolArmMetricID(armID, "quality"), modelPoolFloat(qualityByArm[armID]), len(cases), nil)
+		put(modelPoolArmMetricID(armID, "marginal_contribution"), modelPoolFloat(marginal[armID]), len(cases), nil)
+	}
+	oracle := modelPoolMean(oracleValues)
+	put("model_pool.best_single_quality", modelPoolFloat(bestSingle), len(cases), nil)
+	put("model_pool.oracle_quality", modelPoolFloat(oracle), len(cases), nil)
+	put("model_pool.oracle_gain", modelPoolFloat(oracle-bestSingle), len(cases), nil)
+	put("model_pool.unique_wins", modelPoolFloat(float64(uniqueWins)), len(cases), nil)
+	put("model_pool.unique_win_rate", modelPoolFloat(float64(uniqueWins)/float64(len(cases))), len(cases), nil)
+	put("model_pool.quality_dominated_arm_count", modelPoolFloat(float64(modelPoolQualityDominated(cases, arms, cells))), len(cases), nil)
+}
+
+func putModelPoolSuccessMetrics(put func(string, *float64, int, map[modelPoolMissingReason]int), cases, arms []string, cells map[string]map[string]modelPoolCell, support modelPoolSupport) {
+	if !support.successComplete {
+		for _, armID := range arms {
+			put(modelPoolArmMetricID(armID, "success_rate"), nil, 0, support.successReasons)
+		}
+		for _, id := range []string{"model_pool.worst_arm_reliability", "model_pool.all_arm_failure_rate", "model_pool.mean_pairwise_failure_jaccard"} {
+			put(id, nil, 0, support.successReasons)
+		}
+		return
+	}
+	for _, armID := range arms {
+		successes := 0
+		for _, caseID := range cases {
+			if cells[caseID][armID].success {
+				successes++
+			}
+		}
+		put(modelPoolArmMetricID(armID, "success_rate"), modelPoolFloat(float64(successes)/float64(len(cases))), len(cases), nil)
+	}
+	put("model_pool.worst_arm_reliability", modelPoolFloat(modelPoolWorstReliability(cases, arms, cells)), len(cases), nil)
+	put("model_pool.all_arm_failure_rate", modelPoolFloat(float64(support.allArmFailures)/float64(len(cases))), len(cases), nil)
+	put("model_pool.mean_pairwise_failure_jaccard", modelPoolFloat(modelPoolFailureJaccard(cases, arms, cells)), len(cases), nil)
+}
+
+func putModelPoolParetoMetrics(put func(string, *float64, int, map[modelPoolMissingReason]int), cases, arms []string, cells map[string]map[string]modelPoolCell, support modelPoolSupport) {
+	if len(support.qualityCompleteCases) == len(cases) && len(support.qualityCostCompleteCases) == len(cases) {
+		paretoEvaluable, paretoDominated := modelPoolPareto(cases, arms, cells)
+		put("model_pool.pareto_evaluable_arm_count", modelPoolFloat(float64(paretoEvaluable)), len(cases), nil)
+		put("model_pool.pareto_dominated_arm_count", modelPoolFloat(float64(paretoDominated)), len(cases), nil)
+		return
+	}
+	put("model_pool.pareto_evaluable_arm_count", nil, len(support.qualityCostCompleteCases), support.costReasons)
+	put("model_pool.pareto_dominated_arm_count", nil, len(support.qualityCostCompleteCases), support.costReasons)
 }
 
 func canonicalModelPoolIDs(ids []string, label string) ([]string, error) {
@@ -377,18 +396,7 @@ func reduceDensePoolQuality(cases, arms []string, cells map[string]map[string]mo
 	oracles := make([]float64, 0, len(cases))
 	uniqueWins := 0
 	for _, caseID := range cases {
-		best, secondBest, bestCount := math.Inf(-1), math.Inf(-1), 0
-		for _, armID := range arms {
-			quality := *cells[caseID][armID].quality
-			valuesByArm[armID] = append(valuesByArm[armID], quality)
-			if quality > best {
-				secondBest, best, bestCount = best, quality, 1
-			} else if quality == best {
-				bestCount++
-			} else if quality > secondBest {
-				secondBest = quality
-			}
-		}
+		best, secondBest, bestCount := densePoolCaseQuality(caseID, arms, cells, valuesByArm)
 		oracles = append(oracles, best)
 		if bestCount == 1 {
 			uniqueWins++
@@ -407,6 +415,28 @@ func reduceDensePoolQuality(cases, arms []string, cells map[string]map[string]mo
 		marginal[armID] = modelPoolMean(marginalValues[armID])
 	}
 	return means, oracles, uniqueWins, marginal
+}
+
+func densePoolCaseQuality(
+	caseID string,
+	arms []string,
+	cells map[string]map[string]modelPoolCell,
+	valuesByArm map[string][]float64,
+) (float64, float64, int) {
+	best, secondBest, bestCount := math.Inf(-1), math.Inf(-1), 0
+	for _, armID := range arms {
+		quality := *cells[caseID][armID].quality
+		valuesByArm[armID] = append(valuesByArm[armID], quality)
+		switch {
+		case quality > best:
+			secondBest, best, bestCount = best, quality, 1
+		case quality == best:
+			bestCount++
+		case quality > secondBest:
+			secondBest = quality
+		}
+	}
+	return best, secondBest, bestCount
 }
 
 func modelPoolQualityDominated(cases, arms []string, cells map[string]map[string]modelPoolCell) int {

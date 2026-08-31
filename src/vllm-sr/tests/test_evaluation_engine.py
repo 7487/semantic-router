@@ -50,8 +50,8 @@ from cli.evaluation.metrics import compute_metrics
 from cli.evaluation.mom_replay_executor import mom_replay_fixture
 from cli.evaluation.orchestrator import run_evaluation, validate_manifest
 from cli.evaluation.reporting import EvaluationReport
-from cli.evaluation.routing_recipe_plan import build_routing_recipe_plan
 from cli.evaluation.resolution import resolve_snapshot, sample_fixture
+from cli.evaluation.routing_recipe_plan import build_routing_recipe_plan
 from cli.evaluation.runtime_factors import runtime_factors
 from cli.evaluation.store import LocalArtifactStore
 

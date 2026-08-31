@@ -145,30 +145,22 @@ func reduceRoutingRecipeInputAvailability(specs []RoutingRecipeInputSpec, cases 
 		report := RoutingRecipeInputAvailabilityReport{ID: spec.ID, Expected: len(cases)}
 		latencies := make([]float64, 0, len(cases))
 		for _, caseID := range cases {
-			var observed []RoutingRecipeObservedInput
-			if projection {
-				observed = decisions[caseID].Projections
-			} else {
-				observed = decisions[caseID].Signals
+			item, ok := routingRecipeObservedInput(decisions[caseID], spec.ID, projection)
+			if !ok {
+				continue
 			}
-			for _, item := range observed {
-				if item.ID != spec.ID {
-					continue
+			switch item.State {
+			case "present":
+				report.Present++
+				if item.LatencyMS != nil {
+					latencies = append(latencies, *item.LatencyMS)
 				}
-				switch item.State {
-				case "present":
-					report.Present++
-					if item.LatencyMS != nil {
-						latencies = append(latencies, *item.LatencyMS)
-					}
-				case "missing":
-					report.Missing++
-				case "error":
-					report.Error++
-				case "timeout":
-					report.Timeout++
-				}
-				break
+			case "missing":
+				report.Missing++
+			case "error":
+				report.Error++
+			case "timeout":
+				report.Timeout++
 			}
 		}
 		report.Latency = routingRecipeLatency(latencies)
@@ -176,6 +168,23 @@ func reduceRoutingRecipeInputAvailability(specs []RoutingRecipeInputSpec, cases 
 	}
 	sort.Slice(reports, func(left, right int) bool { return reports[left].ID < reports[right].ID })
 	return reports
+}
+
+func routingRecipeObservedInput(
+	decision RoutingRecipeDecisionSnapshot,
+	specID string,
+	projection bool,
+) (RoutingRecipeObservedInput, bool) {
+	observed := decision.Signals
+	if projection {
+		observed = decision.Projections
+	}
+	for _, item := range observed {
+		if item.ID == specID {
+			return item, true
+		}
+	}
+	return RoutingRecipeObservedInput{}, false
 }
 
 func routingRecipeLatency(values []float64) RoutingRecipeLatencyReport {

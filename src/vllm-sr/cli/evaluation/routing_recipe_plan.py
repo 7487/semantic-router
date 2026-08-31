@@ -17,6 +17,9 @@ ROUTING_RECIPE_PLAN_CONTRACT_VERSION = "routing-recipe-plan.v1"
 
 _MAX_ROUTING_RECIPE_ITEMS = 128
 _MAX_ROUTING_RECIPE_ARMS = 64
+_MAX_RUNTIME_INPUT_ID_LENGTH = 128
+_SIGNAL_PART_COUNT = 2
+_KB_METRIC_PART_COUNT = 3
 _ROUTING_RECIPE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 _SUPPORTED_SIGNAL_TYPES = frozenset(
     {
@@ -51,7 +54,7 @@ class _RoutingRecipeModel(BaseModel):
 
 
 def _valid_runtime_input_id(value: str, *, projection: bool) -> bool:
-    if not value or value.strip() != value or len(value) > 128:
+    if not value or value.strip() != value or len(value) > _MAX_RUNTIME_INPUT_ID_LENGTH:
         return False
     parts = value.split(":")
     if len(parts) not in (2, 3) or any(
@@ -62,14 +65,14 @@ def _valid_runtime_input_id(value: str, *, projection: bool) -> bool:
     if signal_type != signal_type.lower():
         return False
     if projection:
-        return signal_type == "projection" and len(parts) == 2
+        return signal_type == "projection" and len(parts) == _SIGNAL_PART_COUNT
     if signal_type == "projection":
         return False
     if signal_type == "kb_metric":
-        return len(parts) == 3
+        return len(parts) == _KB_METRIC_PART_COUNT
     if signal_type not in _SUPPORTED_SIGNAL_TYPES:
         return False
-    return len(parts) == 2 or signal_type == "classifier"
+    return len(parts) == _SIGNAL_PART_COUNT or signal_type == "classifier"
 
 
 class RoutingRecipeInputSpec(_RoutingRecipeModel):

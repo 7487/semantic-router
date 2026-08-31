@@ -13,6 +13,7 @@ from types import MappingProxyType
 from typing import Any
 
 INVENTORY_SCHEMA_VERSION = "evaluation-research-benchmark-inventory.v1"
+_EXPECTED_BENCHMARK_COUNT = 13
 _EXPECTED_IDS = frozenset(
     {
         "routerarena",
@@ -49,7 +50,7 @@ def _load_inventory() -> tuple[dict[str, Any], ...]:
         raise RuntimeError("research benchmark inventory has an invalid envelope")
     benchmarks = tuple(document["benchmarks"])
     ids = {item.get("adapter_id") for item in benchmarks if isinstance(item, dict)}
-    if len(benchmarks) != 13 or ids != _EXPECTED_IDS:
+    if len(benchmarks) != _EXPECTED_BENCHMARK_COUNT or ids != _EXPECTED_IDS:
         raise RuntimeError(
             "research benchmark inventory must contain exactly the audited thirteen"
         )
