@@ -507,6 +507,9 @@ async function expectEvaluationControlSystem(page: Page) {
   if ((await disclosures.count()) > 0) {
     const summary = disclosures.first()
     await summary.focus()
+    await page.keyboard.press('Tab')
+    await page.keyboard.press('Shift+Tab')
+    await expect(summary).toBeFocused()
     const focus = await summary.evaluate((element) => {
       const style = getComputedStyle(element)
       return {
@@ -1268,9 +1271,9 @@ test.describe('Evaluation Plane', () => {
     const options = await selector.locator('option').allTextContents()
     expect(options).toEqual([
       'Select a completed run',
-      'Candidate recipe · E0',
-      'Production baseline · E0',
-      'Unpaired diagnostic · E0',
+      'Candidate recipe · #00000001 · Routing recipe · Replay · E0 · n=4',
+      'Production baseline · #00000002 · Routing recipe · Replay · E0 · n=4',
+      'Unpaired diagnostic · #00000003 · Routing recipe · Replay · E0 · n=4',
     ])
     expect(options.join(' ')).not.toContain('Live AMD validation')
     expect(options.join(' ')).not.toContain('Failed diagnostic')
@@ -1664,10 +1667,12 @@ test.describe('Evaluation Plane', () => {
     const candidates = page.getByLabel('Comparison candidate')
     expect(await candidates.locator('option').allTextContents()).toEqual([
       'Select a candidate with baseline lineage',
-      'Candidate recipe · recipe',
+      'Candidate recipe · #00000001 · Routing recipe · Replay · E0 · n=4',
     ])
     const baseline = page.getByLabel('Pinned baseline')
-    await expect(baseline).toHaveValue('Production baseline')
+    await expect(baseline).toHaveValue(
+      'Production baseline · #00000002 · Routing recipe · Replay · E0 · n=4',
+    )
     await expect(baseline).toHaveJSProperty('readOnly', true)
     await captureEvaluationSurface(page, 'comparison-setup-desktop')
 
@@ -1923,7 +1928,9 @@ test.describe('Evaluation Plane', () => {
         baselineRunID: controlledPairRequest.baseline_run_id,
         candidateRunID: controlledPairRequest.candidate_run_id,
       })
-    await expect(page.getByText('Paired scientific statistics')).toBeVisible()
+    await expect(
+      page.getByRole('heading', { name: 'Paired scientific statistics', exact: true }),
+    ).toBeVisible()
     await page.getByLabel('G2 Hard policy evidence').selectOption(EVALUATION_RUN_IDS.campaignG2)
     await page
       .getByLabel('G4 Declared-shift robustness evidence')
