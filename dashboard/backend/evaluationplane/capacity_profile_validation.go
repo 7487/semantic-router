@@ -79,7 +79,7 @@ type capacityRecordBatch struct {
 	latencies    []float64
 	inputTokens  int64
 	outputTokens int64
-	runtimeCost  float64
+	runtimeCosts []float64
 }
 
 type reducedCapacityLevel struct {
@@ -233,9 +233,11 @@ func reduceCapacityRecordBatches(
 			if record.OutputTokens != nil {
 				batch.outputTokens += *record.OutputTokens
 			}
+			runtimeCost := 0.0
 			if record.RuntimeCost != nil {
-				batch.runtimeCost += *record.RuntimeCost
+				runtimeCost = *record.RuntimeCost
 			}
+			batch.runtimeCosts = append(batch.runtimeCosts, runtimeCost)
 			return nil
 		},
 	)
@@ -314,7 +316,7 @@ func validateCapacityLevels(
 			errorRate:   float64(errors) / float64(measurement.rows),
 			errorUpper:  capacityOneSidedWilsonUpper(errors, measurement.rows),
 			inputTokens: measurement.inputTokens, outputTokens: measurement.outputTokens,
-			runtimeCost: measurement.runtimeCost, repetitions: repetitions,
+			runtimeCost: capacityOrderedSum(measurement.runtimeCosts), repetitions: repetitions,
 		}
 		if index > 0 {
 			scaling := (level.throughput / reduced[index-1].throughput) /
@@ -367,7 +369,15 @@ func mergeCapacityBatch(target, source *capacityRecordBatch) {
 	target.latencies = append(target.latencies, source.latencies...)
 	target.inputTokens += source.inputTokens
 	target.outputTokens += source.outputTokens
-	target.runtimeCost += source.runtimeCost
+	target.runtimeCosts = append(target.runtimeCosts, source.runtimeCosts...)
+}
+
+func capacityOrderedSum(values []float64) float64 {
+	total := 0.0
+	for _, value := range values {
+		total += value
+	}
+	return total
 }
 
 func measurementElapsed(repetitions []capacityProfileRepetition) float64 {

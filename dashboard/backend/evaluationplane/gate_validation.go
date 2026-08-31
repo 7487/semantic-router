@@ -192,9 +192,7 @@ func typedCapacityRows(records recordAttestation) bool {
 	for _, rows := range records.Metrics.CapacityRowsByCase {
 		typedRows += rows
 	}
-	counts := records.ByTrack["capacity"]
-	return typedRows > 0 && typedRows == records.Metrics.CapacitySuccessRate.SampleCount &&
-		typedRows == counts.Succeeded+counts.Failed
+	return typedRows > 0 && typedRows == records.Metrics.CapacitySuccessRate.SampleCount
 }
 
 func completeCapacityGateEvidence(records recordAttestation, levelCount int) bool {

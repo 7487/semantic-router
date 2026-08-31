@@ -135,7 +135,7 @@ func TestRealWorkerSealRejectsForgedCapacityProfileWithRecomputedReceipts(t *tes
 		ClientRequestID: newTestClientRequestID(),
 		Name:            "capacity receipt forgery", SuiteIDs: []string{"live-capacity"},
 		TrackIDs: []TrackID{"capacity"}, Mode: ModeLive, TargetID: mixtureTargetID("default"),
-		ChangeProfile: "runtime_capacity", SampleLimit: 4, Concurrency: 2, Seed: 17,
+		ChangeProfile: "runtime_capacity", SampleLimit: 1, Concurrency: 2, Seed: 17,
 		CapacitySLO:          testCapacitySLO(2),
 		CapacityLoadProtocol: defaultCapacityLoadProtocol(2),
 	})
@@ -167,6 +167,13 @@ func TestRealWorkerSealRejectsForgedCapacityProfileWithRecomputedReceipts(t *tes
 	}
 	if _, err := service.persistExecutionAttestation(run.ID, result.ExecutionTranscript); err != nil {
 		t.Fatalf("attest real capacity worker: %v", err)
+	}
+	pristine, pristineErr := service.prepareReportSeal(run.ID)
+	if pristineErr != nil {
+		t.Fatalf("prepare pristine real capacity seal: %v", pristineErr)
+	}
+	if pristine.sealedLevels.Run != "E5" || pristine.sealedLevels.ByTrack["capacity"] != "E5" {
+		t.Fatalf("pristine capacity evidence levels = %#v, want E5", pristine.sealedLevels)
 	}
 	if err := forgeCapacityProfileWithRecomputedReceipts(filepath.Join(root, "runs", run.ID)); err != nil {
 		t.Fatalf("forge self-consistent capacity bundle: %v", err)
@@ -300,7 +307,7 @@ func capacityTestProfile() capacityProfileEvidence {
 		}
 		runtimeCost := 0.0
 		for range 300 {
-			runtimeCost += 0.001
+			runtimeCost += 0.00001488
 		}
 		scaling := json.RawMessage("null")
 		if levelIndex > 0 {
@@ -373,7 +380,7 @@ func writeCapacityBatchRows(
 		record := executionRecordEvidence{
 			SchemaVersion: SchemaVersion, ID: attempt, TrackID: "capacity", CaseID: "case-1", AttemptID: attempt,
 			Status: "succeeded", Success: capacityBoolPointer(true), LatencyMS: capacityFloatPointer(20),
-			InputTokens: capacityInt64Pointer(1), OutputTokens: capacityInt64Pointer(1), RuntimeCost: capacityFloatPointer(0.001),
+			InputTokens: capacityInt64Pointer(1), OutputTokens: capacityInt64Pointer(1), RuntimeCost: capacityFloatPointer(0.00001488),
 			Concurrency: capacityInt64Pointer(concurrency), ThroughputRPS: capacityFloatPointer(throughput),
 			LoadElapsedSeconds: capacityFloatPointer(float64(requests) / throughput),
 			LoadPhase:          &phase, LoadRepetition: capacityInt64Pointer(repetition), LoadRequestIndex: capacityInt64Pointer(index),

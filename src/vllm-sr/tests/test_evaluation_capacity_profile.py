@@ -8,6 +8,7 @@ from cli.evaluation.contracts import (
     default_capacity_load_protocol,
 )
 from cli.evaluation.evidence import ExecutionRecord
+from cli.evaluation.evidence_level import run_evidence_level, track_evidence_level
 from pydantic import ValidationError
 
 
@@ -119,6 +120,20 @@ def test_capacity_profile_qualifies_a_repeated_stable_slo_envelope() -> None:
     assert profile.levels[1].error_rate_upper_bound < 0.01
     assert profile.levels[1].throughput_scaling_efficiency == pytest.approx(1)
     assert all(level.qualified for level in profile.levels)
+
+
+def test_live_capacity_records_publish_the_sealed_e5_level() -> None:
+    records = _records(default_capacity_load_protocol(2))
+    sealed = [
+        record.model_copy(update={"broker_receipt": f"sha256:{index:064x}"})
+        for index, record in enumerate(records, 1)
+    ]
+
+    assert track_evidence_level("live", "live-runtime", "capacity", records) == "E0"
+    assert track_evidence_level("live", "live-runtime", "capacity", sealed) == "E5"
+    assert (
+        run_evidence_level("live", "live-runtime", ("capacity",), sealed, "E5") == "E5"
+    )
 
 
 def test_capacity_profile_fails_at_the_scaling_saturation_boundary() -> None:

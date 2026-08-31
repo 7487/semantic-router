@@ -72,6 +72,29 @@ def _normalized_live_multimodal_level(
     return "E4" if complete else "E0"
 
 
+def _live_capacity_level(records: list[ExecutionRecord]) -> EvidenceLevel:
+    receipts = [record.broker_receipt for record in records]
+    complete = (
+        bool(records)
+        and all(receipts)
+        and len(receipts) == len(set(receipts))
+        and all(
+            record.evidence_kind == "capacity.closed-loop.v1"
+            and record.status in {"succeeded", "failed"}
+            and record.success is not None
+            and record.concurrency is not None
+            and record.load_phase is not None
+            and record.load_repetition is not None
+            and record.load_request_index is not None
+            and record.latency_ms is not None
+            and record.throughput_rps is not None
+            and record.load_elapsed_seconds is not None
+            for record in records
+        )
+    )
+    return "E5" if complete else "E0"
+
+
 def _normalized_replay_level(
     executor_id: str, track_id: str, records: list[ExecutionRecord]
 ) -> EvidenceLevel:
@@ -104,6 +127,8 @@ def track_evidence_level(
         return _normalized_replay_level(executor_id, track_id, records)
     if not records or any(record.status == "unavailable" for record in records):
         return "E0"
+    if track_id == "capacity":
+        return _live_capacity_level(records)
     if track_id == "multimodal":
         normalized_level = _normalized_live_multimodal_level(executor_id, records)
         if normalized_level is not None:
