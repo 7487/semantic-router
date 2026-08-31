@@ -268,6 +268,7 @@ def _execute_run(
         completed_at=reduced.completed_at,
         benchmark_revisions=collected.inputs.suite_revisions,
         private_identity_map=collected.inputs.private_identity_map,
+        server_managed=not manage_control_state,
     )
     if manage_control_state:
         store.set_status(manifest.run_id, completed_run)

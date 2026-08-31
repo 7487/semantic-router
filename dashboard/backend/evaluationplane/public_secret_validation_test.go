@@ -42,7 +42,7 @@ func TestArtifactDownloadRejectsConfiguredSecretWithRecomputedReceipts(t *testin
 	cases := []byte(`{"schema_version":"evaluation.v1","id":"case-1","track_ids":["routing"],"messages":[{"role":"user","content":"test"}],"modality":"text","tags":[]}` + "\n")
 	// Encode one character non-canonically so the configured secret is absent
 	// from the raw bytes but present in the decoded JSON string.
-	trace := []byte(`{"schema_version":"evaluation.v1","case_id":"case-1","recipe":"eval-\u0073ecret-token-123","plugins":[],"recommended_models":[],"traces":[],"signals":[]}` + "\n")
+	trace := []byte(`{"schema_version":"evaluation.v1","case_id":"case-1","recipe":"eval-\u0073ecret-token-123","plugins":[],"recommended_models":[],"traces":[],"signals":[],"applied_unknown_policies":[]}` + "\n")
 	if strings.Contains(string(trace), secret) {
 		t.Fatal("test fixture must exercise a non-canonical JSON encoding")
 	}

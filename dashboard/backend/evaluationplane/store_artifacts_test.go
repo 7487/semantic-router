@@ -344,7 +344,7 @@ func TestArtifactSensitivityAllowlistExcludesCasesGradingAndConnectivity(t *test
 		t.Fatalf("CreateRun: %v", createErr)
 	}
 	runDir := filepath.Join(root, "runs", run.ID)
-	traceBytes := []byte(`{"schema_version":"evaluation.v1","case_id":"case-1","plugins":[],"recommended_models":[],"traces":[],"signals":[]}` + "\n")
+	traceBytes := []byte(`{"schema_version":"evaluation.v1","case_id":"case-1","plugins":[],"recommended_models":[],"traces":[],"signals":[],"applied_unknown_policies":[]}` + "\n")
 	caseBytes := []byte(`{"schema_version":"evaluation.v1","id":"case-1","track_ids":["routing"],"messages":[{"role":"user","content":"test"}],"modality":"text","tags":[]}` + "\n")
 	artifacts := []Artifact{
 		artifactForBytes("traces", "routing-traces.jsonl", "application/x-ndjson", traceBytes),

@@ -24,16 +24,20 @@ type routingTraceNodeEvidence struct {
 	SignalType       *string                    `json:"signal_type"`
 	SignalName       *string                    `json:"signal_name"`
 	Label            *string                    `json:"label"`
+	State            *string                    `json:"state"`
 	Matched          bool                       `json:"matched"`
 	Confidence       *float64                   `json:"confidence"`
+	HasSignalError   bool                       `json:"has_signal_error"`
 	ConfidenceScored bool                       `json:"confidence_scored"`
 	Children         []routingTraceNodeEvidence `json:"children"`
 }
 
 type routingDecisionTraceEvidence struct {
 	DecisionName string                    `json:"decision_name"`
+	State        *string                   `json:"state"`
 	Matched      bool                      `json:"matched"`
 	Confidence   *float64                  `json:"confidence"`
+	OnUnknown    *string                   `json:"on_unknown"`
 	RootTrace    *routingTraceNodeEvidence `json:"root_trace"`
 }
 
@@ -45,20 +49,21 @@ type routingSignalEvidence struct {
 }
 
 type routingDiagnosticEvidence struct {
-	SchemaVersion     string                         `json:"schema_version"`
-	CaseID            string                         `json:"case_id"`
-	Truncated         bool                           `json:"truncated"`
-	Recipe            *string                        `json:"recipe"`
-	DecisionName      *string                        `json:"decision_name"`
-	Algorithm         *string                        `json:"algorithm"`
-	Plugins           []string                       `json:"plugins"`
-	RecommendedModels []string                       `json:"recommended_models"`
-	SelectedModel     *string                        `json:"selected_model"`
-	SelectionStatus   *string                        `json:"selection_status"`
-	SelectionMethod   *string                        `json:"selection_method"`
-	RoutingDecision   *string                        `json:"routing_decision"`
-	Traces            []routingDecisionTraceEvidence `json:"traces"`
-	Signals           []routingSignalEvidence        `json:"signals"`
+	SchemaVersion          string                         `json:"schema_version"`
+	CaseID                 string                         `json:"case_id"`
+	Truncated              bool                           `json:"truncated"`
+	Recipe                 *string                        `json:"recipe"`
+	DecisionName           *string                        `json:"decision_name"`
+	Algorithm              *string                        `json:"algorithm"`
+	Plugins                []string                       `json:"plugins"`
+	RecommendedModels      []string                       `json:"recommended_models"`
+	SelectedModel          *string                        `json:"selected_model"`
+	SelectionStatus        *string                        `json:"selection_status"`
+	SelectionMethod        *string                        `json:"selection_method"`
+	RoutingDecision        *string                        `json:"routing_decision"`
+	Traces                 []routingDecisionTraceEvidence `json:"traces"`
+	Signals                []routingSignalEvidence        `json:"signals"`
+	AppliedUnknownPolicies [][]string                     `json:"applied_unknown_policies"`
 }
 
 func (s *Service) validateStoredRoutingTrace(runID string) error {
@@ -128,11 +133,13 @@ func validateRoutingDiagnostic(trace routingDiagnosticEvidence, caseIDs map[stri
 	if _, ok := caseIDs[trace.CaseID]; !ok {
 		return fmt.Errorf("case_id %q is absent from the validated case set", trace.CaseID)
 	}
-	if trace.Plugins == nil || trace.RecommendedModels == nil || trace.Traces == nil || trace.Signals == nil {
+	if trace.Plugins == nil || trace.RecommendedModels == nil || trace.Traces == nil || trace.Signals == nil ||
+		trace.AppliedUnknownPolicies == nil {
 		return fmt.Errorf("routing trace collections cannot be null")
 	}
 	if len(trace.Plugins) > maxRoutingTraceTokens || len(trace.RecommendedModels) > maxRoutingTraceTokens ||
-		len(trace.Traces) > maxRoutingTraceDecisions || len(trace.Signals) > maxRoutingTraceSignals {
+		len(trace.Traces) > maxRoutingTraceDecisions || len(trace.Signals) > maxRoutingTraceSignals ||
+		len(trace.AppliedUnknownPolicies) > maxRoutingTraceSignals {
 		return fmt.Errorf("routing trace collection exceeds its cardinality limit")
 	}
 	for name, value := range map[string]*string{
@@ -179,11 +186,33 @@ func validateRoutingDiagnostic(trace routingDiagnosticEvidence, caseIDs map[stri
 			}
 		}
 	}
+	previousPolicyKey := ""
+	for index, policy := range trace.AppliedUnknownPolicies {
+		if len(policy) != 2 {
+			return fmt.Errorf("applied unknown policy %d must contain a key and policy", index+1)
+		}
+		if err := validateRoutingSafeToken("applied unknown policy key", &policy[0], 128); err != nil {
+			return fmt.Errorf("applied unknown policy %d: %w", index+1, err)
+		}
+		if err := validateRoutingSafeToken("applied unknown policy", &policy[1], 32); err != nil {
+			return fmt.Errorf("applied unknown policy %d: %w", index+1, err)
+		}
+		if previousPolicyKey != "" && policy[0] <= previousPolicyKey {
+			return fmt.Errorf("applied unknown policies must have unique canonical key order")
+		}
+		previousPolicyKey = policy[0]
+	}
 	return nil
 }
 
 func validateRoutingDecisionTrace(trace routingDecisionTraceEvidence, nodeCount *int) error {
 	if err := validateRoutingSafeToken("decision_name", &trace.DecisionName, 128); err != nil {
+		return err
+	}
+	if err := validateRoutingSafeToken("decision state", trace.State, 32); err != nil {
+		return err
+	}
+	if err := validateRoutingSafeToken("on_unknown", trace.OnUnknown, 32); err != nil {
 		return err
 	}
 	if trace.Confidence != nil && (!finiteFloat(*trace.Confidence) || *trace.Confidence < 0 || *trace.Confidence > 1) {
@@ -212,6 +241,9 @@ func validateRoutingTraceNode(node routingTraceNodeEvidence, depth int, nodeCoun
 		if err := validateRoutingSafeToken(name, value, 128); err != nil {
 			return err
 		}
+	}
+	if err := validateRoutingSafeToken("node state", node.State, 32); err != nil {
+		return err
 	}
 	if node.Confidence != nil && (!finiteFloat(*node.Confidence) || *node.Confidence < 0 || *node.Confidence > 1) {
 		return fmt.Errorf("confidence must be a finite fraction")

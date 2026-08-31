@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from importlib.resources import files
+from pathlib import Path
 
 import pytest
 from cli.evaluation.canonical import digest_value, sha256_digest
@@ -15,6 +16,8 @@ from cli.evaluation.contracts import (
 )
 from cli.evaluation.executor_contracts import BUILTIN_EXECUTOR_CONTRACTS
 from cli.evaluation.manifest_identity import seal_manifest_fields
+from cli.evaluation.orchestrator import run_evaluation
+from cli.evaluation.store import LocalArtifactStore
 from cli.evaluation.target_capabilities import DEFAULT_TARGET_REGISTRY
 from pydantic import ValidationError
 
@@ -138,3 +141,17 @@ def test_visible_and_grading_case_artifacts_must_be_physically_separate() -> Non
 
 def test_canonical_digest_is_key_order_independent() -> None:
     assert digest_value({"b": 2, "a": [3, 1]}) == digest_value({"a": [3, 1], "b": 2})
+
+
+def test_server_managed_worker_omits_server_owned_report_reductions(
+    tmp_path: Path,
+) -> None:
+    manifest = RunManifest.model_validate(_golden("manifest.json"))
+    store = LocalArtifactStore(tmp_path / "store")
+    store.write_run_json(manifest.run_id, "run-manifest.json", manifest)
+
+    report = run_evaluation(manifest, store, manage_control_state=False)
+    worker_payload = store.read_run_json(manifest.run_id, "report.json")
+
+    assert report.run.status == "completed"
+    assert "method_reports" not in worker_payload

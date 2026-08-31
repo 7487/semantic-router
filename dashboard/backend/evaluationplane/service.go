@@ -116,13 +116,14 @@ func NewService(options Options) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	setup, err := prepareServiceRuntime(&options, store)
-	if err != nil {
-		return nil, err
-	}
 	diagnosticSink := options.DiagnosticSink
 	if diagnosticSink == nil {
 		diagnosticSink = os.Stderr
+	}
+	options.DiagnosticSink = diagnosticSink
+	setup, err := prepareServiceRuntime(&options, store)
+	if err != nil {
+		return nil, err
 	}
 	prelaunchContext, prelaunchCancel := context.WithCancel(context.Background())
 	service := &Service{
@@ -177,6 +178,7 @@ func configureServiceProcess(options *Options, store *Store) (Process, error) {
 		commandProcess.routerAPIKeyEnv = strings.TrimSpace(options.RouterAPIKeyEnv)
 		commandProcess.envoyAPIKeyEnv = strings.TrimSpace(options.EnvoyAPIKeyEnv)
 		commandProcess.cpuSeconds = workerCPULimit(options.WorkerTimeout)
+		commandProcess.diagnosticSink = options.DiagnosticSink
 		commandProcess.publishEvidence = store.importWorkerEvidence
 		process = commandProcess
 	}

@@ -77,7 +77,7 @@ func validateMethodRecord(record executionRecordEvidence, executor executorContr
 // independently reduce.  Coordinates without a v2 method are rejected so an
 // ordinary model-pool record can never be silently treated as an R2 cell.
 func validateV2MethodCoordinates(record executionRecordEvidence) error {
-	coordinatesPresent := record.ActionID != nil || record.BudgetTokens != nil || record.SliceIDs != nil
+	coordinatesPresent := record.ActionID != nil || record.BudgetTokens != nil || len(record.SliceIDs) != 0
 	if record.MethodID == nil {
 		if coordinatesPresent {
 			return fmt.Errorf("v2 method coordinates require method_id")

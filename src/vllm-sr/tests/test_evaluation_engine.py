@@ -454,6 +454,7 @@ def test_fixture_run_completes_all_tracks_with_rich_bundle(tmp_path: Path) -> No
     _assert_fixture_run_summary(report)
     _assert_fixture_metrics(report)
     _assert_fixture_bundle(report, store)
+    assert "method_reports" in store.read_run_json(report.run.id, "report.json")
 
 
 def test_rich_pool_and_preference_reducers_preserve_decision_information() -> None:

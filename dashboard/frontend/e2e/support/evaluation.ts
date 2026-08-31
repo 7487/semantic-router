@@ -942,7 +942,6 @@ function diagnosticMetric(trackID: EvaluationTrackId): EvaluationMetric {
     },
   }
   const metric = metrics[trackID]
-  const analysis = metricAnalysisSpecification(metric.id)
   return {
     ...metric,
     baseline_value: null,
@@ -950,17 +949,34 @@ function diagnosticMetric(trackID: EvaluationTrackId): EvaluationMetric {
     confidence_interval:
       metrics[trackID].unit === 'fraction' ? ([0.51, 1] as [number, number]) : undefined,
     sample_count: 4,
-    analysis_provenance: {
-      contract_version: 'metric-analysis.v1',
-      estimator_id: analysis.estimator_id,
-      estimator_version: 'v1',
-      analysis_unit: analysis.analysis_unit,
-      cluster_unit: analysis.cluster_unit,
-      weighting: analysis.weighting,
-      missingness: 'fail_closed',
-      exclusion_policy: 'exclude_unavailable_evidence',
-      observed_exclusions: 0,
-    },
+    analysis_provenance: evaluationMetricAnalysisProvenance(metric.id),
+  }
+}
+
+function evaluationMetricAnalysisProvenance(
+  metricID: string,
+): EvaluationMetric['analysis_provenance'] {
+  return {
+    contract_version: 'metric-analysis.v1',
+    ...metricAnalysisSpecification(metricID),
+    observed_exclusions: 0,
+  }
+}
+
+function denseReportMetric(index: number): EvaluationMetric {
+  const ordinal = index + 1
+  const id = `capacity.level.${ordinal}.throughput_rps`
+  return {
+    id,
+    name: `Diagnostic metric ${ordinal}`,
+    track_id: 'capacity',
+    value: 30 + ordinal,
+    unit: 'requests/s',
+    direction: 'higher_is_better',
+    baseline_value: null,
+    delta: null,
+    sample_count: 4,
+    analysis_provenance: evaluationMetricAnalysisProvenance(id),
   }
 }
 
@@ -1161,6 +1177,7 @@ export const evaluationComparison: EvaluationComparison = {
       baseline_value: 0.88,
       delta: 0.03,
       sample_count: 4,
+      analysis_provenance: evaluationMetricAnalysisProvenance('joint.realized_quality'),
     },
     {
       id: 'capacity.latency_p95_ms',
@@ -1172,6 +1189,7 @@ export const evaluationComparison: EvaluationComparison = {
       baseline_value: 370,
       delta: -28,
       sample_count: 4,
+      analysis_provenance: evaluationMetricAnalysisProvenance('capacity.latency_p95_ms'),
     },
   ],
   statistics: [
@@ -2115,11 +2133,9 @@ export async function mockEvaluationPlane(
     }
     const report = evaluationReport(run)
     if (options.reportMetricCount && report.metrics.length) {
-      report.metrics = Array.from({ length: options.reportMetricCount }, (_, index) => ({
-        ...report.metrics[index % report.metrics.length],
-        id: `diagnostic.metric_${String(index + 1).padStart(2, '0')}`,
-        name: `Diagnostic metric ${index + 1}`,
-      }))
+      report.metrics = Array.from({ length: options.reportMetricCount }, (_, index) =>
+        denseReportMetric(index),
+      )
     }
     if (typeof options.diagnosticArtifactBodies?.capacityProfile === 'string') {
       report.artifacts = [

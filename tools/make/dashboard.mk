@@ -115,7 +115,8 @@ dashboard-go-mod-tidy: ## Check go mod tidy for dashboard backend
 
 dashboard-test-backend: ## Run dashboard backend Go tests (run from repo root: make dashboard-test-backend)
 	@$(LOG_TARGET)
-	cd $(DASHBOARD_BACKEND_DIR) && go test ./...
+	cd $(DASHBOARD_BACKEND_DIR) && \
+		VLLM_SR_EVALUATION_TEST_PYTHON="$${VLLM_SR_EVALUATION_TEST_PYTHON:-python3}" go test ./...
 
 dashboard-check: dashboard-lint dashboard-type-check dashboard-test-frontend dashboard-test-backend dashboard-go-mod-tidy ## Run all dashboard checks (lint, type-check, frontend + backend tests, go mod tidy)
 	@$(LOG_TARGET)

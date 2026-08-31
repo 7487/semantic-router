@@ -64,7 +64,7 @@ nothing in CI is missing locally. Run it before pushing. It runs, in order:
 | `dashboard-lint` | ESLint on the frontend, golangci-lint on the backend |
 | `dashboard-type-check` | TypeScript type checking (frontend + Knowledge Map) |
 | `dashboard-test-frontend` | Frontend unit tests |
-| `dashboard-test-backend` | `go test ./...` on `dashboard/backend` |
+| `dashboard-test-backend` | `go test ./...` on `dashboard/backend`, including the real Go → sandboxed Python Evaluation worker contract |
 | `dashboard-go-mod-tidy` | Verifies `go.mod` / `go.sum` are tidy |
 
 The dashboard backend is a **separate Go module**, so `go test ./...` from the

@@ -229,9 +229,10 @@ def finalize_report_bundle(
     run: EvaluationRun,
     completed_at: datetime,
     benchmark_revisions: Mapping[str, str],
+    server_managed: bool,
     private_identity_map: NormalizedSuiteIdentities | None = None,
 ) -> EvaluationReport:
-    """Write the non-self-referential bundle, then its canonical report."""
+    """Write a standalone report or a server-sealable worker draft."""
 
     selected_metrics = select_report_metrics(manifest, metrics)
     provenance = _provenance(manifest, resolved, completed_at, benchmark_revisions)
@@ -302,9 +303,14 @@ def finalize_report_bundle(
         **report_options,
         artifacts=public_artifacts(artifact_rows),
     )
+    server_owned_fields = {"method_reports"} if server_managed else set()
     store.write_run_json(
         manifest.run_id,
         "report.json",
-        report.model_dump(mode="json", exclude_none=False),
+        report.model_dump(
+            mode="json",
+            exclude_none=False,
+            exclude=server_owned_fields,
+        ),
     )
     return report

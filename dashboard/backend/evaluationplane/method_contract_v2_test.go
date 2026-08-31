@@ -111,6 +111,17 @@ func TestR2CoordinatesRequireTheCompleteIdentityAndRemainDistinctPerBudget(t *te
 	}
 }
 
+func TestEmptyMethodSlicesDoNotTurnOrdinaryRecordsIntoV2Coordinates(t *testing.T) {
+	record := executionRecordEvidence{TrackID: "routing", Status: "succeeded", SliceIDs: []string{}}
+	if err := validateV2MethodCoordinates(record); err != nil {
+		t.Fatalf("ordinary record with no method slices rejected: %v", err)
+	}
+	record.SliceIDs = []string{"all"}
+	if err := validateV2MethodCoordinates(record); err == nil || !strings.Contains(err.Error(), "require method_id") {
+		t.Fatalf("unbound non-empty method slices accepted: %v", err)
+	}
+}
+
 func TestInstalledMethodPluginsDeclareAllBenchmarkReadinessBoundaries(t *testing.T) {
 	adapterIDs := []string{
 		"routerarena", "routejudge-orbit", "coderouterbench", "llmrouterbench", "routereval", "routerbench",

@@ -70,7 +70,7 @@ func TestRealWorkerRoutingTracePassesServerBudgets(t *testing.T) {
 		case "/v1/models":
 			_, _ = writer.Write([]byte(`{"data":[{"id":"entrypoint-a","routing":{"resolution":"virtual","selectable":true,"default_route":true,"recipe":"default"}}]}`))
 		case "/api/v1/eval":
-			_, _ = writer.Write([]byte(`{"recipe":"default","decision_result":{"decision_name":"route","algorithm":"static","plugins":["audit"]},"recommended_models":["Org/Fast Model"],"selected_model":"Org/Fast Model","selection_status":"selected","selection_method":"static","eval_trace":[{"decision_name":"route","matched":true,"confidence":0.9,"root_trace":{"node_type":"leaf","matched":true,"confidence":0.9,"children":[]}}],"signal_confidences":{"domain:reasoning":0.9}}`))
+			_, _ = writer.Write([]byte(`{"recipe":"default","decision_result":{"decision_name":"route","algorithm":"static","plugins":["audit"]},"recommended_models":["Org/Fast Model"],"selected_model":"Org/Fast Model","selection_status":"selected","selection_method":"static","eval_trace":[{"decision_name":"route","state":"matched","matched":true,"confidence":0.9,"on_unknown":"no_match","root_trace":{"node_type":"leaf","state":"matched","matched":true,"confidence":0.9,"children":[]}}],"signal_confidences":{"domain:reasoning":0.9},"applied_unknown_policies":{"domain:reasoning":"no_match"}}`))
 		default:
 			http.NotFound(writer, request)
 		}
@@ -169,6 +169,15 @@ func TestValidateRoutingTraceArtifactRejectsUntrustedOrUnboundedRows(t *testing.
 			cases: map[string]struct{}{"case-1": {}}, match: "cardinality limit",
 		},
 		{
+			name: "malformed applied unknown policy",
+			rows: []map[string]any{func() map[string]any {
+				row := routingTraceRow("case-1")
+				row["applied_unknown_policies"] = []any{[]string{"signal-only"}}
+				return row
+			}()},
+			cases: map[string]struct{}{"case-1": {}}, match: "must contain a key and policy",
+		},
+		{
 			name:  "trace tree exceeds depth",
 			rows:  []map[string]any{routingTraceRowWithDepth("case-1", maxRoutingTraceDepth+1)},
 			cases: map[string]struct{}{"case-1": {}}, match: "depth limit",
@@ -187,14 +196,15 @@ func TestValidateRoutingTraceArtifactRejectsUntrustedOrUnboundedRows(t *testing.
 
 func routingTraceRow(caseID string) map[string]any {
 	return map[string]any{
-		"schema_version":     SchemaVersion,
-		"case_id":            caseID,
-		"truncated":          false,
-		"recipe":             "default recipe",
-		"plugins":            []string{},
-		"recommended_models": []string{},
-		"traces":             []any{},
-		"signals":            []any{},
+		"schema_version":           SchemaVersion,
+		"case_id":                  caseID,
+		"truncated":                false,
+		"recipe":                   "default recipe",
+		"plugins":                  []string{},
+		"recommended_models":       []string{},
+		"traces":                   []any{},
+		"signals":                  []any{},
+		"applied_unknown_policies": []any{},
 	}
 }
 
