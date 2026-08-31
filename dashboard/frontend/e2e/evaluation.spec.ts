@@ -634,6 +634,22 @@ async function expectResponsiveEvaluationSurface(
     .toBeLessThanOrEqual(1)
   await expectNoHorizontalOverflow(page)
   await expectEvaluationControlSystem(page)
+  if (surface.capture === 'runs' && viewportName === 'mobile-compact') {
+    const completedStatus = page
+      .locator('[data-evaluation-tag="true"]')
+      .filter({ hasText: /^Completed$/ })
+      .first()
+    await expect(completedStatus).toBeVisible()
+    const statusGeometry = await completedStatus.evaluate((element) => {
+      const rect = element.getBoundingClientRect()
+      const parentRect = element.parentElement?.getBoundingClientRect()
+      return {
+        textFits: element.scrollWidth <= element.clientWidth,
+        staysInsideRow: Boolean(parentRect && rect.right <= parentRect.right + 1),
+      }
+    })
+    expect(statusGeometry).toEqual({ textFits: true, staysInsideRow: true })
+  }
   await captureEvaluationSurface(page, `${surface.capture}-${viewportName}`)
   if (viewportName === 'desktop') {
     await captureEvaluationFullPage(page, `${surface.capture}-${viewportName}-full`)
