@@ -37,9 +37,11 @@ var evaluationTrackIDs = []string{
 }
 
 type dashboardEvaluationRun struct {
-	ID              string `json:"id"`
-	ClientRequestID string `json:"client_request_id"`
-	Status          string `json:"status"`
+	ID              string     `json:"id"`
+	ClientRequestID string     `json:"client_request_id"`
+	Status          string     `json:"status"`
+	StartedAt       *time.Time `json:"started_at"`
+	CompletedAt     *time.Time `json:"completed_at"`
 	Progress        struct {
 		Percent int `json:"percent"`
 	} `json:"progress"`
@@ -100,7 +102,7 @@ type dashboardEvaluationErrorResponse struct {
 
 func init() {
 	pkgtestcases.Register("dashboard-evaluation-plane", pkgtestcases.TestCase{
-		Description: "Run all Evaluation Plane tracks and verify evidence, gates, reports, paired admission, and cancellation",
+		Description: "Run all Evaluation Plane tracks and verify evidence, gates, reports, paired admission, and lifecycle guards",
 		Tags:        []string{"dashboard", "evaluation"},
 		Fn:          testDashboardEvaluationPlane,
 	})
@@ -140,7 +142,7 @@ func testDashboardEvaluationPlane(
 	if err := verifySameRevisionCandidateAdmissionGuard(ctx, httpClient, baseURL, token, baseline.ID); err != nil {
 		return err
 	}
-	if err := verifyEvaluationCancellation(ctx, httpClient, baseURL, token); err != nil {
+	if err := verifyPendingEvaluationCancellationGuard(ctx, httpClient, baseURL, token); err != nil {
 		return err
 	}
 
@@ -205,27 +207,6 @@ func verifySameRevisionCandidateAdmissionGuard(
 	const expected = `invalid evaluation request: change_profile "schema_adapter" requires the code treatment factor to change`
 	if response.Error.Message != expected {
 		return fmt.Errorf("same-revision candidate was rejected for the wrong reason: %s", response.Error.Message)
-	}
-	return nil
-}
-
-func verifyEvaluationCancellation(
-	ctx context.Context,
-	client *http.Client,
-	baseURL, token string,
-) error {
-	pending, err := createEvaluationRun(
-		ctx, client, baseURL, token, newEvaluationClientRequestID(), "cancel-contract", 43, "",
-	)
-	if err != nil {
-		return err
-	}
-	cancelled, err := mutateEvaluationRun(ctx, client, baseURL, token, pending.ID, "cancel")
-	if err != nil {
-		return err
-	}
-	if cancelled.Status != "cancelled" {
-		return fmt.Errorf("cancelled run status = %q, want cancelled", cancelled.Status)
 	}
 	return nil
 }
