@@ -1054,6 +1054,25 @@ test.describe('Evaluation Plane', () => {
     )
   })
 
+  test('keeps live Mixture deployment targets distinct while preserving their server IDs', async ({
+    page,
+  }) => {
+    await mockEvaluationPlane(page)
+    await page.goto('/evaluation?view=new')
+
+    await page.getByRole('radio', { name: /Live Execute against/ }).check()
+    const target = page.getByLabel('Mixture to evaluate')
+    expect(await target.locator('option').allTextContents()).toEqual([
+      'Select target',
+      'test-mom · Baseline',
+      'test-mom · Candidate',
+    ])
+    await target.selectOption(EVALUATION_BASELINE_MOM_TARGET_ID)
+    await expect(target).toHaveValue(EVALUATION_BASELINE_MOM_TARGET_ID)
+    await target.selectOption(EVALUATION_MOM_TARGET_ID)
+    await expect(target).toHaveValue(EVALUATION_MOM_TARGET_ID)
+  })
+
   test('creates and starts an E0 run through separately authorized endpoints', async ({ page }) => {
     const state = await mockEvaluationPlane(page, defaultEvaluationRuns, { mutationDelayMs: 250 })
     await page.goto('/evaluation?view=new')
@@ -1931,6 +1950,14 @@ test.describe('Evaluation Plane', () => {
     await expect(
       page.getByRole('heading', { name: 'Paired scientific statistics', exact: true }),
     ).toBeVisible()
+    const controlledPairStatistics = page.getByRole('table', {
+      name: 'Server-reduced paired scientific statistics',
+    })
+    await expect(controlledPairStatistics).toBeVisible()
+    await expect(
+      controlledPairStatistics.getByRole('row').filter({ hasText: 'joint.normalized_regret' }),
+    ).toContainText('Not estimable')
+    await expect(page.getByText(/comparison G3 is not server-owned/i)).toHaveCount(0)
     await page.getByLabel('G2 Hard policy evidence').selectOption(EVALUATION_RUN_IDS.campaignG2)
     await page
       .getByLabel('G4 Declared-shift robustness evidence')

@@ -107,12 +107,18 @@
 }
 
 .runRowTop strong {
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   color: var(--text-primary);
   font-size: var(--text-sm);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Keep terminal state legible on the narrow ledger: the run name, not its state, yields first. */
+.runRowTop > [data-evaluation-tag='true'] {
+  flex: 0 0 auto;
 }
 
 .runRowMeta,

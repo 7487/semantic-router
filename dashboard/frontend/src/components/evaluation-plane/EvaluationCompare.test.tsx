@@ -213,6 +213,40 @@ describe('EvaluationCompare evidence labels', () => {
     ).not.toContain('Routing Recipe aggregate boundary')
   })
 
+  it('uses readable cohort labels instead of raw profile and target identifiers', () => {
+    const cohortBaseline: EvaluationRun = {
+      ...baseline,
+      id: 'baseline-internal-target',
+      target_id: 'internal-baseline-deployment',
+      change_profile: 'agent_multimodal',
+    }
+    const cohortCandidate: EvaluationRun = {
+      ...candidate,
+      id: 'candidate-internal-target',
+      target_id: 'internal-candidate-deployment',
+      baseline_run_id: cohortBaseline.id,
+      change_profile: 'agent_multimodal',
+      mixture: evaluationMixture,
+    }
+
+    const markup = renderComparison(
+      {
+        ...comparison,
+        baseline_run_id: cohortBaseline.id,
+        candidate_run_id: cohortCandidate.id,
+      },
+      [cohortCandidate, cohortBaseline],
+      cohortBaseline.id,
+      cohortCandidate.id,
+    )
+
+    expect(markup).toContain('Agent + multimodal')
+    expect(markup).toContain('vllm-sr/auto')
+    expect(markup).not.toContain('agent_multimodal')
+    expect(markup).not.toContain('internal-candidate-deployment')
+    expect(markup).not.toContain('internal-baseline-deployment')
+  })
+
   it('offers an attested controlled-pair candidate despite its intentional target treatment', () => {
     const controlledBaseline: EvaluationRun = {
       ...baseline,

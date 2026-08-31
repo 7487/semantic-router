@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
 import type { EvaluationRun } from '../../types/evaluationPlane'
-import { runOptionLabels } from './evaluationRunPresentation'
+import {
+  changeProfileLabel,
+  runCohortTargetLabel,
+  runOptionLabels,
+} from './evaluationRunPresentation'
 
 function run(id: string): EvaluationRun {
   return {
@@ -27,6 +31,20 @@ function run(id: string): EvaluationRun {
 }
 
 describe('evaluation run option labels', () => {
+  it('presents cohort identity without exposing an internal target identifier', () => {
+    const candidate = run('candidate-target')
+    candidate.target_id = 'internal-candidate-deployment'
+
+    expect(changeProfileLabel('agent_multimodal')).toBe('Agent + multimodal')
+    expect(runCohortTargetLabel(candidate)).toBe('Frozen deployment snapshot')
+    expect(
+      runCohortTargetLabel({
+        ...candidate,
+        mixture: { entrypoint_model: 'vllm-sr/auto' } as EvaluationRun['mixture'],
+      }),
+    ).toBe('vllm-sr/auto')
+  })
+
   it('keeps canonical runs with the same UUID prefix visibly distinct', () => {
     const first = run('00000000-0000-4000-8000-000000000001')
     const second = run('00000000-0000-4000-8000-000000000002')

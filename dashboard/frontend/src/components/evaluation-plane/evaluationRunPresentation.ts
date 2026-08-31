@@ -15,6 +15,20 @@ const CHANGE_PROFILE_LABELS: Record<EvaluationChangeProfileId, string> = {
   online_adaptation: 'Online adaptation',
 }
 
+type RunCohortIdentity = Pick<EvaluationRun, 'mixture'>
+
+export function changeProfileLabel(profile: EvaluationChangeProfileId): string {
+  return CHANGE_PROFILE_LABELS[profile]
+}
+
+/**
+ * A run retains an internal target identifier for attestation, but the Compare
+ * view should orient people with the evaluated public Mixture instead.
+ */
+export function runCohortTargetLabel(run: RunCohortIdentity): string {
+  return run.mixture?.entrypoint_model || 'Frozen deployment snapshot'
+}
+
 function compactRunID(runID: string): string {
   return runID.replace(/-/g, '')
 }
@@ -40,7 +54,7 @@ export function runOptionLabels(runs: readonly RunOptionIdentity[]): Map<string,
       [
         run.name,
         `#${compactRunID(run.id).slice(-suffixWidth)}`,
-        CHANGE_PROFILE_LABELS[run.change_profile],
+        changeProfileLabel(run.change_profile),
         run.mode === 'live' ? 'Live' : 'Replay',
         run.evidence_level,
         `n=${run.sample_limit}`,

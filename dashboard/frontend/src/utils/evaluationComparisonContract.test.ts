@@ -6,7 +6,7 @@ import { decodeEvaluationComparison } from './evaluationComparisonContract'
 const BASELINE = '10000000-0000-4000-8000-000000000001'
 const CANDIDATE = '10000000-0000-4000-8000-000000000002'
 
-function gates(g3Verdict: 'pass' | 'fail' | 'unavailable' = 'pass'): EvaluationGate[] {
+function gates(g3Verdict: 'pass' | 'fail' | 'unavailable' = 'unavailable'): EvaluationGate[] {
   return Array.from({ length: 10 }, (_, index) => ({
     id: `G${index}`,
     name: `Gate ${index}`,
@@ -23,12 +23,10 @@ function gates(g3Verdict: 'pass' | 'fail' | 'unavailable' = 'pass'): EvaluationG
             'comparison-statistic:joint.normalized_regret',
           ]
         : [`gate:G${index}`],
-    evidence_level: index === 3 ? 'E4' : 'E5',
+    evidence_level: index === 3 ? 'E0' : 'E5',
     ...(index === 3
       ? {
           owner: 'recipe-and-model-pool',
-          observed: 0.11,
-          threshold: { operator: '<=', value: 0.25, unit: 'fraction' },
           sample_count: 20,
         }
       : {}),
@@ -41,8 +39,8 @@ function comparison() {
     attestation_revision: 'evaluation-server-attestation.v2',
     baseline_run_id: BASELINE,
     candidate_run_id: CANDIDATE,
-    verdict: 'pass',
-    summary: 'Server-reduced comparison passed.',
+    verdict: 'unavailable',
+    summary: 'Server-reduced comparison remains diagnostic.',
     metrics: [],
     statistics: [
       {
@@ -70,7 +68,7 @@ function comparison() {
 }
 
 describe('evaluation comparison scientific contract', () => {
-  it('binds G3 to the server-reduced absolute and relative replay evidence', () => {
+  it('binds G3 to the server-reduced E0 diagnostic without making a release claim', () => {
     expect(decodeEvaluationComparison(comparison(), BASELINE, CANDIDATE)).toEqual(comparison())
   })
 
@@ -83,17 +81,13 @@ describe('evaluation comparison scientific contract', () => {
       candidate_confidence_interval: [],
       verdict: 'unavailable',
     }
-    payload.gates = gates('unavailable').map((gate) =>
-      gate.id === 'G3'
-        ? { ...gate, observed: undefined, threshold: undefined, sample_count: 2 }
-        : gate,
-    )
+    payload.gates = gates().map((gate) => (gate.id === 'G3' ? { ...gate, sample_count: 2 } : gate))
     expect(decodeEvaluationComparison(payload, BASELINE, CANDIDATE).gates[3].verdict).toBe(
       'unavailable',
     )
     payload.gates[3] = { ...payload.gates[3], verdict: 'pass' }
     expect(() => decodeEvaluationComparison(payload, BASELINE, CANDIDATE)).toThrow(
-      /overclaims incomplete paired evidence/i,
+      /overclaims its E0 diagnostic reduction/i,
     )
   })
 
@@ -138,5 +132,65 @@ describe('evaluation comparison scientific contract', () => {
         CANDIDATE,
       ),
     ).toThrow(/not server-owned/i)
+
+    expect(() =>
+      decodeEvaluationComparison(
+        {
+          ...payload,
+          gates: payload.gates.map((gate) =>
+            gate.id === 'G3' ? { ...gate, verdict: 'pass' } : gate,
+          ),
+        },
+        BASELINE,
+        CANDIDATE,
+      ),
+    ).toThrow(/overclaims its E0 diagnostic reduction/i)
+
+    for (const g3Patch of [
+      { evidence_level: 'E4' },
+      { observed: 0.1 },
+      { threshold: { operator: '<=', value: 0.25, unit: 'fraction' } },
+      { sample_count: 19 },
+    ]) {
+      expect(() =>
+        decodeEvaluationComparison(
+          {
+            ...payload,
+            gates: payload.gates.map((gate) => (gate.id === 'G3' ? { ...gate, ...g3Patch } : gate)),
+          },
+          BASELINE,
+          CANDIDATE,
+        ),
+      ).toThrow(/not server-owned|overclaims its E0 diagnostic reduction/i)
+    }
+  })
+
+  it('accepts a live diagnostic without a replay-derived G3 sample count', () => {
+    const payload = comparison()
+    payload.gates = payload.gates.map((gate) =>
+      gate.id === 'G3' ? { ...gate, sample_count: undefined } : gate,
+    )
+    expect(decodeEvaluationComparison(payload, BASELINE, CANDIDATE).statistics).toHaveLength(1)
+  })
+
+  it('requires a not-applicable G3 diagnostic to carry no synthetic sample claim', () => {
+    const payload = comparison()
+    payload.gates = payload.gates.map((gate) =>
+      gate.id === 'G3'
+        ? {
+            ...gate,
+            disposition: 'not_applicable',
+            verdict: 'not_applicable',
+            sample_count: undefined,
+          }
+        : gate,
+    )
+    expect(decodeEvaluationComparison(payload, BASELINE, CANDIDATE).gates[3].verdict).toBe(
+      'not_applicable',
+    )
+    payload.gates[3] = { ...payload.gates[3], sample_count: 20 }
+    expect(() => decodeEvaluationComparison(payload, BASELINE, CANDIDATE)).toThrow(
+      /not-applicable result is invalid/i,
+    )
   })
 })

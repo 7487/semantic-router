@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestCampaignPairedLiveEvidenceBindsProviderTargetWithoutLiteralTargetAssumptions(t *testing.T) {
@@ -43,6 +44,8 @@ func TestCampaignPairedLiveEvidenceBindsProviderTargetWithoutLiteralTargetAssump
 
 func TestGenericComparisonAcceptsOnlyValidatedCrossDeploymentControlledPair(t *testing.T) {
 	fixture := newCampaignPairedLiveFixture(campaignPairedMinimumCases, false)
+	fixture.baseline.report.Gates = testReleaseGates("recipe", time.Time{})
+	fixture.candidate.report.Gates = testReleaseGates("recipe", time.Time{})
 	comparison, err := compareControlledPairReports(fixture.baseline, fixture.candidate)
 	if err != nil {
 		t.Fatalf("compare controlled pair reports: %v", err)
@@ -50,6 +53,13 @@ func TestGenericComparisonAcceptsOnlyValidatedCrossDeploymentControlledPair(t *t
 	if comparison.BaselineRunID != fixture.baseline.report.Run.ID ||
 		comparison.CandidateRunID != fixture.candidate.report.Run.ID {
 		t.Fatalf("comparison identities = %+v", comparison)
+	}
+	g3, found := reportGateFromSlice(comparison.Gates, "G3")
+	if !found || g3.Verdict != "unavailable" || g3.EvidenceLevel != "E0" ||
+		g3.Owner != "recipe-and-model-pool" || g3.Observed != nil || g3.Threshold != nil ||
+		g3.SampleCount != nil || len(g3.EvidenceRefs) != 4 ||
+		g3.EvidenceRefs[0] != comparativeG3ReductionRef {
+		t.Fatalf("generic controlled-pair G3 must remain an E0 diagnostic: %+v", g3)
 	}
 
 	fixture.candidate.attestation.Entries[0].ControlledPair = nil

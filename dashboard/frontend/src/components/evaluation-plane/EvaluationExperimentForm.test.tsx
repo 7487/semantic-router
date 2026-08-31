@@ -408,9 +408,23 @@ describe('EvaluationExperimentForm contract', () => {
       ],
       targets: [
         {
-          id: 'mom-live',
-          name: 'vllm-sr/auto',
+          id: 'baseline--mom-live',
+          name: 'Baseline · vllm-sr/auto',
           description: 'Balanced routing.',
+          kind: 'mixture-of-models',
+          track_ids: ['routing', 'model_pool', 'joint'],
+          modes: ['replay', 'live'],
+          accepted_executors: {
+            replay: ['mom-cohort-replay.v1'],
+            live: ['live-runtime.v1'],
+          },
+          healthy: true,
+          mixture,
+        },
+        {
+          id: 'candidate--mom-live',
+          name: 'Candidate · vllm-sr/auto',
+          description: 'Balanced routing candidate.',
           kind: 'mixture-of-models',
           track_ids: ['routing', 'model_pool', 'joint'],
           modes: ['replay', 'live'],
@@ -440,6 +454,12 @@ describe('EvaluationExperimentForm contract', () => {
       }),
     )
     expect(markup).toContain('checked="" value="live"')
+    expect(markup).toContain(
+      '<option value="baseline--mom-live" selected="">Baseline · vllm-sr/auto</option>',
+    )
+    expect(markup).toContain(
+      '<option value="candidate--mom-live">Candidate · vllm-sr/auto</option>',
+    )
     expect(markup).toContain('Selected Mixture-of-Models')
     expect(markup).toContain('vllm-sr/auto')
     expect(markup).toContain('balanced')

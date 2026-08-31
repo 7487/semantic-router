@@ -530,7 +530,7 @@ describe('Evaluation Plane API', () => {
                     'comparison-statistic:joint.normalized_regret',
                   ]
                 : [`gate:G${index}`],
-            evidence_level: index === 3 ? 'E4' : 'E5',
+            evidence_level: index === 3 ? 'E0' : 'E5',
             ...(index === 3 ? { owner: 'recipe-and-model-pool' } : {}),
           })),
           recommendations: [],

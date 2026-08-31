@@ -1223,12 +1223,13 @@ export const evaluationComparison: EvaluationComparison = {
             `run:candidate:${EVALUATION_RUN_IDS.candidate}`,
             'comparison-statistic:joint.normalized_regret',
           ],
-          evidence_level: 'E4',
+          evidence_level: 'E0',
           observed: undefined,
           threshold: undefined,
           sample_count: 4,
           owner: 'recipe-and-model-pool',
-          rationale: 'The paired sample is below the minimum analysis-unit requirement.',
+          rationale:
+            'Server-reduced synthetic replay regret is retained as an E0 diagnostic only; it cannot pass or fail G3.',
         }
       : gate,
   ),
@@ -2020,6 +2021,10 @@ export async function mockEvaluationPlane(
         gate.id === 'G3'
           ? {
               ...gate,
+              sample_count: controlledPairMatches ? undefined : gate.sample_count,
+              rationale: controlledPairMatches
+                ? 'A run comparison cannot decide G3; use a campaign with controlled AB/BA paired-live outcomes.'
+                : gate.rationale,
               evidence_refs: [
                 'server-reduction:comparative-g3.v1',
                 `run:baseline:${baseline.id}`,

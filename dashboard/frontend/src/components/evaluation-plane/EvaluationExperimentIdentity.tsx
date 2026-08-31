@@ -5,6 +5,7 @@ import EvaluationExperimentSectionHeading from './EvaluationExperimentSectionHea
 import EvaluationExperimentMixture from './EvaluationExperimentMixture'
 import { EvaluationActionButton } from './EvaluationPrimitives'
 import { runOptionLabels } from './evaluationRunPresentation'
+import { targetOptionLabels } from './evaluationTargetPresentation'
 import styles from './EvaluationExperimentFields.module.css'
 import sectionStyles from './EvaluationExperimentSection.module.css'
 
@@ -35,6 +36,8 @@ export default function EvaluationExperimentIdentity({
 }: EvaluationExperimentIdentityProps) {
   const selectedTarget = catalog.targets.find((target) => target.id === form.targetID)
   const baselineLabels = runOptionLabels(form.completedRuns)
+  const modeTargets = catalog.targets.filter((target) => target.modes.includes(form.mode))
+  const targetLabels = targetOptionLabels(modeTargets)
   return (
     <section className={sectionStyles.formSection}>
       <EvaluationExperimentSectionHeading
@@ -100,14 +103,12 @@ export default function EvaluationExperimentIdentity({
             required
           >
             <option value="">Select target</option>
-            {catalog.targets
-              .filter((target) => target.modes.includes(form.mode))
-              .map((target) => (
-                <option key={target.id} value={target.id} disabled={target.healthy === false}>
-                  {target.mixture?.entrypoint_model || target.name}
-                  {target.healthy === false ? ' · runtime unavailable' : ''}
-                </option>
-              ))}
+            {modeTargets.map((target) => (
+              <option key={target.id} value={target.id} disabled={target.healthy === false}>
+                {targetLabels.get(target.id)}
+                {target.healthy === false ? ' · runtime unavailable' : ''}
+              </option>
+            ))}
           </select>
           <small>
             {selectedTarget?.description || 'Only server-approved targets are selectable.'}

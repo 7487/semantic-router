@@ -5,7 +5,11 @@ import EvaluationMetricTable from './EvaluationMetricTable'
 import EvaluationComparisonStatistics from './EvaluationComparisonStatistics'
 import { effectiveGateVerdict } from './evaluationPresentation'
 import { EvaluationActionButton, GateVerdictBadge } from './EvaluationPrimitives'
-import { runOptionLabels } from './evaluationRunPresentation'
+import {
+  changeProfileLabel,
+  runCohortTargetLabel,
+  runOptionLabels,
+} from './evaluationRunPresentation'
 import { comparisonCohortMismatches, eligibleComparisonCandidates } from './evaluationRunSupport'
 import styles from './EvaluationCompare.module.css'
 import disclosureStyles from './EvaluationReportDisclosures.module.css'
@@ -204,13 +208,11 @@ export default function EvaluationCompare({
           <dl className={styles.comparabilityStrip} aria-label="Comparison cohort">
             <div>
               <dt>Profile</dt>
-              <dd>{candidate.change_profile}</dd>
+              <dd>{changeProfileLabel(candidate.change_profile)}</dd>
             </div>
             <div>
-              <dt>Mode / target</dt>
-              <dd>
-                {candidate.mode} · {candidate.target_id}
-              </dd>
+              <dt>Mixture</dt>
+              <dd>{runCohortTargetLabel(candidate)}</dd>
             </div>
             <div>
               <dt>Workload</dt>

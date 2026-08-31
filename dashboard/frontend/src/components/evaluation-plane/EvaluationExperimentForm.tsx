@@ -9,6 +9,7 @@ import EvaluationExperimentCapacitySLO from './EvaluationExperimentCapacitySLO'
 import EvaluationExperimentGateScope from './EvaluationExperimentGateScope'
 import EvaluationExperimentIdentity from './EvaluationExperimentIdentity'
 import { EvaluationActionButton, EvaluationTag } from './EvaluationPrimitives'
+import { targetPresentationLabel } from './evaluationTargetPresentation'
 import useEvaluationExperimentForm from './useEvaluationExperimentForm'
 import styles from './EvaluationForm.module.css'
 
@@ -140,7 +141,7 @@ export default function EvaluationExperimentForm({
           <span>
             {form.suiteIDs.length} suites · {form.trackIDs.length} tracks · profile{' '}
             {form.changeProfile || 'not selected'} · target{' '}
-            {selectedTarget?.mixture?.entrypoint_model || selectedTarget?.name || 'not selected'}
+            {selectedTarget ? targetPresentationLabel(selectedTarget) : 'not selected'}
             {form.capacitySLOActive ? ' · capacity SLO + load protocol frozen' : ''}
           </span>
           <EvaluationActionButton type="submit" variant="primary" disabled={pending}>

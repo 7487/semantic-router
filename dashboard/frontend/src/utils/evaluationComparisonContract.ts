@@ -20,7 +20,6 @@ import { isEvaluationGate, isEvaluationMetric } from './evaluationReportContract
 
 const CONFIDENCE_LEVEL = 0.95
 const MINIMUM_ANALYSIS_UNITS = 20
-const G3_ABSOLUTE_BOUND = 0.25
 const G3_REDUCTION = 'server-reduction:comparative-g3.v1'
 const PAIRED_DELTA_ESTIMATOR_ID = 'paired-bootstrap-case-clustered-delta'
 const GATE_IDS = Array.from({ length: 10 }, (_, index) => `G${index}`)
@@ -227,7 +226,7 @@ function validateG3(
   if (
     gate.evidence_refs.length !== expectedRefs.length ||
     gate.evidence_refs.some((reference, index) => reference !== expectedRefs[index]) ||
-    gate.evidence_level !== 'E4' ||
+    gate.evidence_level !== 'E0' ||
     gate.owner !== 'recipe-and-model-pool'
   ) {
     throw new Error('Evaluation comparison G3 is not server-owned.')
@@ -236,39 +235,22 @@ function validateG3(
     if (
       gate.verdict !== 'not_applicable' ||
       gate.observed !== undefined ||
-      gate.threshold !== undefined
+      gate.threshold !== undefined ||
+      gate.sample_count !== undefined
     ) {
       throw new Error('Evaluation comparison G3 not-applicable result is invalid.')
     }
     return
   }
   const statistic = statistics.find((item) => item.id === 'joint.normalized_regret')
-  if (!statistic || statistic.sample_count < MINIMUM_ANALYSIS_UNITS) {
-    if (
-      gate.verdict !== 'unavailable' ||
-      gate.observed !== undefined ||
-      gate.threshold !== undefined
-    ) {
-      throw new Error('Evaluation comparison G3 overclaims incomplete paired evidence.')
-    }
-    return
-  }
-  const [absoluteLower, absoluteUpper] = statistic.candidate_confidence_interval
-  const expectedVerdict =
-    absoluteUpper <= G3_ABSOLUTE_BOUND && statistic.verdict === 'pass'
-      ? 'pass'
-      : absoluteLower > G3_ABSOLUTE_BOUND || statistic.verdict === 'fail'
-        ? 'fail'
-        : 'unavailable'
   if (
-    gate.verdict !== expectedVerdict ||
-    gate.observed !== absoluteUpper ||
-    gate.threshold?.operator !== '<=' ||
-    gate.threshold.value !== G3_ABSOLUTE_BOUND ||
-    gate.threshold.unit !== 'fraction' ||
-    gate.sample_count !== statistic.sample_count
+    gate.verdict !== 'unavailable' ||
+    gate.observed !== undefined ||
+    gate.threshold !== undefined ||
+    (gate.sample_count !== undefined &&
+      (!statistic || gate.sample_count !== statistic.sample_count))
   ) {
-    throw new Error('Evaluation comparison G3 contradicts its server reduction.')
+    throw new Error('Evaluation comparison G3 overclaims its E0 diagnostic reduction.')
   }
 }
 
