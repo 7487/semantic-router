@@ -299,6 +299,56 @@ describe('evaluation current-contract codec', () => {
     ).toThrow(/Mixture snapshot for live or MoM cohort execution/i)
   })
 
+  it('requires live, role-correct lineage for every controlled-pair ledger member', () => {
+    const pairID = '22222222-2222-4222-8222-222222222222'
+    const baselineID = '33333333-3333-4333-8333-333333333333'
+    const candidateID = '44444444-4444-4444-8444-444444444444'
+    const liveMember = {
+      ...run,
+      id: baselineID,
+      client_request_id: baselineID,
+      mode: 'live' as const,
+      target_id: mixture.id,
+      suite_ids: ['live-mom-core'],
+      concurrency: 2,
+      mixture,
+      controlled_pair: { pair_id: pairID, role: 'baseline' as const },
+    }
+    const candidate = {
+      ...liveMember,
+      id: candidateID,
+      client_request_id: candidateID,
+      baseline_run_id: baselineID,
+      controlled_pair: { pair_id: pairID, role: 'candidate' as const },
+    }
+
+    expect(decodeEvaluationRun(liveMember, baselineID)).toEqual(liveMember)
+    expect(decodeEvaluationRun(candidate, candidateID)).toEqual(candidate)
+    expect(() => decodeEvaluationRun({ ...liveMember, mode: 'replay' }, baselineID)).toThrow(
+      /only valid for live execution/i,
+    )
+    expect(() =>
+      decodeEvaluationRun({ ...liveMember, baseline_run_id: candidateID }, baselineID),
+    ).toThrow(/baseline member cannot declare a baseline run/i)
+    expect(() =>
+      decodeEvaluationRun({ ...candidate, baseline_run_id: undefined }, candidateID),
+    ).toThrow(/candidate member must reference a distinct canonical baseline run/i)
+    expect(() =>
+      decodeEvaluationRun({ ...candidate, baseline_run_id: candidateID }, candidateID),
+    ).toThrow(/candidate member must reference a distinct canonical baseline run/i)
+
+    expect(() =>
+      decodeEvaluationRunLedger({
+        schema_version: 'evaluation.v1',
+        runs: [{ ...liveMember, mode: 'replay' }],
+        total_runs: 1,
+        ledger_complete: true,
+        warning_count: 0,
+        warnings: [],
+      }),
+    ).toThrow(/ledger response is invalid or incomplete/i)
+  })
+
   it('keeps ledger warning evidence identities opaque and non-navigable', () => {
     const ledger = {
       schema_version: 'evaluation.v1',

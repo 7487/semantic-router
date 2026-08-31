@@ -26,7 +26,10 @@ import type {
   EvaluationMetric,
   EvaluationReport,
 } from '../../src/types/evaluationReport'
-import type { CreateEvaluationControlledPairPayload } from '../../src/types/evaluationControlledPair'
+import type {
+  CreateEvaluationControlledPairPayload,
+  EvaluationControlledPairState,
+} from '../../src/types/evaluationControlledPair'
 import {
   EVALUATION_ATTESTATION_REVISION,
   EVALUATION_TRACK_IDS,
@@ -1243,8 +1246,10 @@ interface MockEvaluationPlaneOptions {
   catalog?: EvaluationCatalog
   mutationDelayMs?: number
   campaignGetDelayMs?: number
+  controlledPairGetDelayMs?: number
   catalogDelayMs?: number
   ledgerDelayMs?: number
+  runDelayMs?: number
   runPageSize?: number
   reportDelayMs?: number
   reportMetricCount?: number
@@ -1253,6 +1258,10 @@ interface MockEvaluationPlaneOptions {
   failFirstLoadMore?: boolean
   failFirstCancel?: boolean
   failFirstControlledPair?: boolean
+  failFirstControlledPairCancel?: boolean
+  failFirstControlledPairGet?: boolean
+  failControlledPairGetAt?: number
+  abortControlledPairCreateResponseAfterAccept?: boolean
   eventStreamCloseOnce?: boolean
   completeRunOnEventStream?: string
   reportFailureIDs?: string[]
@@ -1409,7 +1418,20 @@ export async function mockEvaluationPlane(
   let firstLoadMorePending = options.failFirstLoadMore === true
   let firstCancelPending = options.failFirstCancel === true
   let firstControlledPairPending = options.failFirstControlledPair === true
+  let firstControlledPairCancelPending = options.failFirstControlledPairCancel === true
+  let firstControlledPairGetPending = options.failFirstControlledPairGet === true
+  let abortControlledPairCreateResponsePending =
+    options.abortControlledPairCreateResponseAfterAccept === true
   const controlledPairRunIDs = new Set<string>()
+  const controlledPairStates = new Map<string, EvaluationControlledPairState>()
+  const controlledPairAggregatePolls = new Map<string, number>()
+  const controlledPairSources = new Map<
+    string,
+    { baselineSourceRunID: string; candidateSourceRunID: string }
+  >()
+  const controlledPairCancelRequests: string[] = []
+  const controlledPairDeleteRequests: string[] = []
+  const controlledPairGetRequests: string[] = []
   let ledgerRequestCount = 0
   const mutationDelay = () =>
     new Promise<void>((resolve) => setTimeout(resolve, options.mutationDelayMs || 0))
@@ -1480,6 +1502,7 @@ export async function mockEvaluationPlane(
       description: 'Server-owned abba-interleaved.v1 execution',
       status: 'running',
       baseline_run_id: undefined,
+      controlled_pair: { pair_id: request.client_request_id, role: 'baseline' },
       progress: controlledProgress,
       created_at: '2026-08-31T01:00:00Z',
       started_at: '2026-08-31T01:00:01Z',
@@ -1493,6 +1516,7 @@ export async function mockEvaluationPlane(
       description: 'Server-owned abba-interleaved.v1 execution',
       status: 'running',
       baseline_run_id: baselineRun.id,
+      controlled_pair: { pair_id: request.client_request_id, role: 'candidate' },
       progress: controlledProgress,
       created_at: '2026-08-31T01:00:00Z',
       started_at: '2026-08-31T01:00:01Z',
@@ -1500,7 +1524,18 @@ export async function mockEvaluationPlane(
     }
     controlledPairRunIDs.add(baselineRun.id)
     controlledPairRunIDs.add(candidateRun.id)
+    controlledPairSources.set(request.client_request_id, {
+      baselineSourceRunID: request.baseline_source_run_id,
+      candidateSourceRunID: request.candidate_source_run_id,
+    })
+    controlledPairStates.set(request.client_request_id, 'running')
+    controlledPairAggregatePolls.set(request.client_request_id, 0)
     runs = [candidateRun, baselineRun, ...runs]
+    if (abortControlledPairCreateResponsePending) {
+      abortControlledPairCreateResponsePending = false
+      await route.abort('failed')
+      return
+    }
     await fulfillJSON(route, 201, {
       schema_version: 'evaluation.v1',
       contract_version: 'evaluation-controlled-pair.v1',
@@ -1510,8 +1545,193 @@ export async function mockEvaluationPlane(
       candidate_source_run_id: request.candidate_source_run_id,
       baseline_run: baselineRun,
       candidate_run: candidateRun,
+      state: 'running',
+      capabilities: { can_cancel: true, can_delete: false },
     })
   })
+  await page.route(
+    /\/api\/evaluation\/v1\/controlled-pairs\/[^/?]+(?:\/cancel)?(?:\?.*)?$/,
+    async (route) => {
+      const url = new URL(route.request().url())
+      const parts = url.pathname.split('/').filter(Boolean)
+      const pairIndex = parts.indexOf('controlled-pairs')
+      const pairID = decodeURIComponent(parts[pairIndex + 1] || '')
+      const action = parts[pairIndex + 2] || ''
+      const members = runs.filter((run) => run.controlled_pair?.pair_id === pairID)
+      const baseline = members.find((run) => run.controlled_pair?.role === 'baseline')
+      const candidate = members.find((run) => run.controlled_pair?.role === 'candidate')
+      if (!baseline || !candidate) {
+        await fulfillError(route, 404, 'not found: controlled pair')
+        return
+      }
+      const sources = controlledPairSources.get(pairID) || {
+        baselineSourceRunID: EVALUATION_RUN_IDS.baseline,
+        candidateSourceRunID: EVALUATION_RUN_IDS.candidate,
+      }
+      if (route.request().method() === 'GET' && action === '') {
+        controlledPairGetRequests.push(url.pathname)
+        const pairGetAttempt = controlledPairGetRequests.filter(
+          (path) => path === url.pathname,
+        ).length
+        await new Promise<void>((resolve) =>
+          setTimeout(resolve, options.controlledPairGetDelayMs || 0),
+        )
+        if (firstControlledPairGetPending || pairGetAttempt === options.failControlledPairGetAt) {
+          firstControlledPairGetPending = false
+          await fulfillError(route, 503, 'temporary controlled-pair state failure')
+          return
+        }
+        // Concurrent aggregate requests may finish after another request advances the
+        // pair. Re-read the ledger so state and member snapshots remain coherent.
+        const latestBaseline = runs.find((run) => run.id === baseline.id) || baseline
+        const latestCandidate = runs.find((run) => run.id === candidate.id) || candidate
+        let responseBaseline = latestBaseline
+        let responseCandidate = latestCandidate
+        let state = controlledPairStates.get(pairID)
+        if (
+          controlledPairRunIDs.has(latestBaseline.id) &&
+          controlledPairRunIDs.has(latestCandidate.id)
+        ) {
+          const pollCount = (controlledPairAggregatePolls.get(pairID) || 0) + 1
+          controlledPairAggregatePolls.set(pairID, pollCount)
+          const completedAt = '2026-08-31T01:05:00Z'
+          responseBaseline = {
+            ...latestBaseline,
+            status: 'completed',
+            progress: {
+              percent: 100,
+              completed: latestBaseline.track_ids.length,
+              total: latestBaseline.track_ids.length,
+              message: 'Controlled AB/BA evidence complete',
+            },
+            completed_at: completedAt,
+          }
+          responseCandidate = {
+            ...latestCandidate,
+            status: 'completed',
+            progress: {
+              percent: 100,
+              completed: latestCandidate.track_ids.length,
+              total: latestCandidate.track_ids.length,
+              message: 'Controlled AB/BA evidence complete',
+            },
+            completed_at: completedAt,
+          }
+          runs = runs.map((run) =>
+            run.id === responseBaseline.id
+              ? responseBaseline
+              : run.id === responseCandidate.id
+                ? responseCandidate
+                : run,
+          )
+          if (pollCount >= 2) {
+            state = 'terminal'
+            controlledPairStates.set(pairID, state)
+            controlledPairRunIDs.delete(baseline.id)
+            controlledPairRunIDs.delete(candidate.id)
+          }
+        }
+        if (!state) {
+          const statuses = [responseBaseline.status, responseCandidate.status]
+          state = statuses.every((status) => status === 'pending')
+            ? 'pending'
+            : statuses.every((status) => ['completed', 'failed', 'cancelled'].includes(status))
+              ? 'terminal'
+              : 'running'
+        }
+        const response = {
+          schema_version: 'evaluation.v1',
+          contract_version: 'evaluation-controlled-pair.v1',
+          id: pairID,
+          protocol: 'abba-interleaved.v1',
+          baseline_source_run_id: sources.baselineSourceRunID,
+          candidate_source_run_id: sources.candidateSourceRunID,
+          baseline_run: responseBaseline,
+          candidate_run: responseCandidate,
+          state,
+          capabilities:
+            state === 'running'
+              ? { can_cancel: true, can_delete: false }
+              : { can_cancel: false, can_delete: true },
+        }
+        await fulfillJSON(route, 200, response)
+        return
+      }
+      if (route.request().method() === 'POST' && action === 'cancel') {
+        controlledPairCancelRequests.push(url.pathname)
+        if (firstControlledPairCancelPending) {
+          firstControlledPairCancelPending = false
+          await fulfillError(route, 503, 'temporary controlled-pair cancellation failure')
+          return
+        }
+        const aggregateState =
+          controlledPairStates.get(pairID) ||
+          ([baseline.status, candidate.status].every((status) => status === 'pending')
+            ? 'pending'
+            : [baseline.status, candidate.status].every((status) =>
+                  ['completed', 'failed', 'cancelled'].includes(status),
+                )
+              ? 'terminal'
+              : 'running')
+        if (aggregateState !== 'running') {
+          await fulfillError(route, 409, 'conflict: controlled pair is not running')
+          return
+        }
+        await mutationDelay()
+        const completedAt = '2026-08-31T01:04:00Z'
+        runs = runs.map((run) =>
+          run.controlled_pair?.pair_id === pairID
+            ? {
+                ...run,
+                status: 'cancelled' as const,
+                completed_at: completedAt,
+                progress: { ...run.progress, message: 'Controlled pair cancelled' },
+              }
+            : run,
+        )
+        controlledPairRunIDs.delete(baseline.id)
+        controlledPairRunIDs.delete(candidate.id)
+        controlledPairStates.set(pairID, 'terminal')
+        const cancelledBaseline = runs.find((run) => run.id === baseline.id)!
+        const cancelledCandidate = runs.find((run) => run.id === candidate.id)!
+        await fulfillJSON(route, 200, {
+          schema_version: 'evaluation.v1',
+          contract_version: 'evaluation-controlled-pair.v1',
+          id: pairID,
+          protocol: 'abba-interleaved.v1',
+          baseline_source_run_id: sources.baselineSourceRunID,
+          candidate_source_run_id: sources.candidateSourceRunID,
+          baseline_run: cancelledBaseline,
+          candidate_run: cancelledCandidate,
+          state: 'terminal',
+          capabilities: { can_cancel: false, can_delete: true },
+        })
+        return
+      }
+      if (route.request().method() === 'DELETE' && action === '') {
+        controlledPairDeleteRequests.push(url.pathname)
+        const aggregateState = controlledPairStates.get(pairID)
+        if (
+          aggregateState === 'running' ||
+          (!aggregateState &&
+            [baseline.status, candidate.status].some((status) =>
+              ['running', 'sealing'].includes(status),
+            ))
+        ) {
+          await fulfillError(route, 409, 'conflict: controlled pair is still running')
+          return
+        }
+        await mutationDelay()
+        runs = runs.filter((run) => run.controlled_pair?.pair_id !== pairID)
+        controlledPairSources.delete(pairID)
+        controlledPairStates.delete(pairID)
+        controlledPairAggregatePolls.delete(pairID)
+        await route.fulfill({ status: 204 })
+        return
+      }
+      await fulfillError(route, 405, 'method not allowed')
+    },
+  )
   await page.route(
     /\/api\/evaluation\/v1\/campaigns(?:\/[^/?]+(?:\/decision)?)?(?:\?.*)?$/,
     async (route) => {
@@ -1871,6 +2091,10 @@ export async function mockEvaluationPlane(
       await fulfillError(route, 404, 'not found: evaluation run')
       return
     }
+    if (current.controlled_pair) {
+      await fulfillError(route, 409, 'conflict: controlled pair requires aggregate cancellation')
+      return
+    }
     if (current.status !== 'running') {
       await fulfillError(route, 409, `conflict: run cannot be cancelled from ${current.status}`)
       return
@@ -1899,6 +2123,10 @@ export async function mockEvaluationPlane(
       await fulfillError(route, 404, 'not found: evaluation run')
       return
     }
+    if (current.controlled_pair) {
+      await fulfillError(route, 409, 'conflict: controlled pair members cannot be started directly')
+      return
+    }
     if (current.status !== 'pending') {
       await fulfillError(route, 409, `conflict: run cannot be started from ${current.status}`)
       return
@@ -1924,27 +2152,16 @@ export async function mockEvaluationPlane(
     }
     if (route.request().method() === 'GET') {
       runRequests.push(id)
-      const response = controlledPairRunIDs.has(id)
-        ? {
-            ...current,
-            status: 'completed' as const,
-            progress: {
-              percent: 100,
-              completed: current.track_ids.length,
-              total: current.track_ids.length,
-              message: 'Controlled AB/BA evidence complete',
-            },
-            completed_at: '2026-08-31T01:05:00Z',
-          }
-        : current
-      if (controlledPairRunIDs.has(id)) {
-        runs = runs.map((run) => (run.id === id ? response : run))
-      }
-      await fulfillJSON(route, 200, response)
+      await new Promise<void>((resolve) => setTimeout(resolve, options.runDelayMs || 0))
+      await fulfillJSON(route, 200, current)
       return
     }
     if (route.request().method() !== 'DELETE') {
       await fulfillError(route, 405, 'method not allowed')
+      return
+    }
+    if (current.controlled_pair) {
+      await fulfillError(route, 409, 'conflict: controlled pair requires aggregate deletion')
       return
     }
     if (current.status === 'running' || current.status === 'sealing') {
@@ -2159,6 +2376,9 @@ export async function mockEvaluationPlane(
     comparisonRequests,
     campaignRequests,
     controlledPairRequests,
+    controlledPairGetRequests,
+    controlledPairCancelRequests,
+    controlledPairDeleteRequests,
     campaignGetRequests,
     runRequests,
     reportRequests,

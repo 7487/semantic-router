@@ -86,12 +86,16 @@ export default function EvaluationCompareWorkspace({
     baselineID: string | null,
     candidateID: string | null,
     campaignID: string | null,
+    controlledPairID = route.controlledPairID,
+    controlledPairProfileID = route.controlledPairProfileID,
   ) => {
     onRouteChange({
       view: 'compare',
       baselineRunID: baselineID,
       candidateRunID: candidateID,
       campaignID,
+      controlledPairID,
+      controlledPairProfileID,
     })
   }
 
@@ -110,8 +114,19 @@ export default function EvaluationCompareWorkspace({
       campaign={campaign}
       campaignLoading={campaignState.loading && !campaign}
       campaignError={campaignState.error}
+      activeControlledPairID={route.controlledPairID}
+      activeControlledPairProfileID={route.controlledPairProfileID}
       onLoadAllRuns={() => (hasMoreRuns ? onLoadAllRuns() : onRefreshRuns())}
       onRefreshRuns={onRefreshRuns}
+      onControlledPairIdentityChange={(controlledPairID, controlledPairProfileID) =>
+        updateRoute(
+          baselineRunID || null,
+          candidateRunID || null,
+          route.campaignID,
+          controlledPairID,
+          controlledPairProfileID,
+        )
+      }
       onCreate={async (request) => {
         const created = await campaignCreateState.create(request)
         if (created) updateRoute(baselineRunID || null, candidateRunID || null, created.id)

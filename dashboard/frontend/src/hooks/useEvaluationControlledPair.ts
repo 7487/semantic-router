@@ -1,10 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import type { EvaluationControlledPairExecution } from '../types/evaluationControlledPair'
-import { createEvaluationControlledPair, getEvaluationRun } from '../utils/evaluationPlaneApi'
+import {
+  createEvaluationControlledPair,
+  EvaluationRequestError,
+  getEvaluationControlledPair,
+} from '../utils/evaluationPlaneApi'
 import { buildCreateEvaluationControlledPairPayload } from '../utils/evaluationControlledPairContract'
 
-type ControlledPairStatus = 'idle' | 'creating' | 'running' | 'assigning' | 'ready' | 'error'
+type ControlledPairStatus =
+  | 'idle'
+  | 'creating'
+  | 'recovering'
+  | 'running'
+  | 'assigning'
+  | 'ready'
+  | 'error'
 
 interface ControlledPairState {
   status: ControlledPairStatus
@@ -24,12 +35,25 @@ function message(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback
 }
 
+export type EvaluationControlledPairReadyGuard = () => boolean
+type EvaluationControlledPairReadyHandler = (
+  execution: EvaluationControlledPairExecution,
+  isCurrent: EvaluationControlledPairReadyGuard,
+) => void | Promise<void>
+
+interface EvaluationControlledPairWorkflow {
+  activePairID: string | null
+  onPairIdentity: (pairID: string | null) => void | Promise<void>
+}
+
 export async function handoffEvaluationControlledPair(
   execution: EvaluationControlledPairExecution,
-  onReady: (execution: EvaluationControlledPairExecution) => void | Promise<void>,
+  onReady: EvaluationControlledPairReadyHandler,
+  isCurrent: EvaluationControlledPairReadyGuard = () => true,
 ): Promise<string | null> {
+  if (!isCurrent()) return null
   try {
-    await onReady(execution)
+    await onReady(execution, isCurrent)
     return null
   } catch (error) {
     return message(
@@ -40,6 +64,7 @@ export async function handoffEvaluationControlledPair(
 }
 
 function terminalFailure(execution: EvaluationControlledPairExecution): string | null {
+  if (execution.state !== 'terminal') return null
   for (const [label, run] of [
     ['Baseline', execution.baseline_run],
     ['Candidate', execution.candidate_run],
@@ -53,37 +78,61 @@ function terminalFailure(execution: EvaluationControlledPairExecution): string |
 
 function isReady(execution: EvaluationControlledPairExecution): boolean {
   return (
-    execution.baseline_run.status === 'completed' && execution.candidate_run.status === 'completed'
+    execution.state === 'terminal' &&
+    execution.baseline_run.status === 'completed' &&
+    execution.candidate_run.status === 'completed'
   )
 }
 
 export function useEvaluationControlledPair(
-  onReady: (execution: EvaluationControlledPairExecution) => void | Promise<void>,
+  onReady: EvaluationControlledPairReadyHandler,
+  workflow: EvaluationControlledPairWorkflow,
 ) {
   const [state, setState] = useState<ControlledPairState>(INITIAL_STATE)
   const requestVersion = useRef(0)
+  const mounted = useRef(false)
   const onReadyRef = useRef(onReady)
-  const executionRef = useRef<EvaluationControlledPairExecution | null>(null)
+  const onPairIdentityRef = useRef(workflow.onPairIdentity)
+  const creatingPairID = useRef<string | null>(null)
+  const reconciledRoutePairID = useRef<string | null>(null)
   const deliveredExecutionID = useRef<string | null>(null)
   onReadyRef.current = onReady
-  executionRef.current = state.execution
+  onPairIdentityRef.current = workflow.onPairIdentity
 
-  const deliverReady = useCallback(async (execution: EvaluationControlledPairExecution) => {
-    if (deliveredExecutionID.current === execution.id) return
-    setState((current) => ({ ...current, status: 'assigning', execution, error: null }))
-    const handoffError = await handoffEvaluationControlledPair(execution, onReadyRef.current)
-    if (handoffError) {
-      setState((current) => ({
-        ...current,
-        status: 'error',
-        execution,
-        error: handoffError,
-      }))
-      return
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+      requestVersion.current += 1
+      reconciledRoutePairID.current = null
     }
-    deliveredExecutionID.current = execution.id
-    setState((current) => ({ ...current, status: 'ready', execution, error: null }))
   }, [])
+
+  const deliverReady = useCallback(
+    async (execution: EvaluationControlledPairExecution, generation: number) => {
+      const isCurrent = () => mounted.current && generation === requestVersion.current
+      if (!isCurrent() || deliveredExecutionID.current === execution.id) return
+      setState((current) => ({ ...current, status: 'assigning', execution, error: null }))
+      const handoffError = await handoffEvaluationControlledPair(
+        execution,
+        onReadyRef.current,
+        isCurrent,
+      )
+      if (!isCurrent()) return
+      if (handoffError) {
+        setState((current) => ({
+          ...current,
+          status: 'error',
+          execution,
+          error: handoffError,
+        }))
+        return
+      }
+      deliveredExecutionID.current = execution.id
+      setState((current) => ({ ...current, status: 'ready', execution, error: null }))
+    },
+    [],
+  )
 
   const create = useCallback(
     async (baselineSourceRunID: string, candidateSourceRunID: string) => {
@@ -100,8 +149,12 @@ export function useEvaluationControlledPair(
           baselineSourceRunID,
           candidateSourceRunID,
         )
+        creatingPairID.current = request.client_request_id
+        await onPairIdentityRef.current(request.client_request_id)
+        if (!mounted.current || version !== requestVersion.current) return null
         const execution = await createEvaluationControlledPair(request)
-        if (version !== requestVersion.current) return null
+        if (!mounted.current || version !== requestVersion.current) return null
+        creatingPairID.current = null
         const failure = terminalFailure(execution)
         if (failure) {
           setState({
@@ -119,7 +172,8 @@ export function useEvaluationControlledPair(
             error: null,
             sourceIDs: { baseline: baselineSourceRunID, candidate: candidateSourceRunID },
           })
-          await deliverReady(execution)
+          await deliverReady(execution, version)
+          if (!mounted.current || version !== requestVersion.current) return null
         } else {
           setState({
             status: 'running',
@@ -130,7 +184,12 @@ export function useEvaluationControlledPair(
         }
         return execution
       } catch (error) {
-        if (version !== requestVersion.current) return null
+        if (!mounted.current || version !== requestVersion.current) return null
+        creatingPairID.current = null
+        if (error instanceof EvaluationRequestError && error.status >= 400 && error.status < 500) {
+          await onPairIdentityRef.current(null)
+          if (!mounted.current || version !== requestVersion.current) return null
+        }
         setState({
           status: 'error',
           execution: null,
@@ -143,14 +202,71 @@ export function useEvaluationControlledPair(
     [deliverReady],
   )
 
-  const baselineRunID = state.execution?.baseline_run.id
-  const candidateRunID = state.execution?.candidate_run.id
+  const reconcile = useCallback(
+    async (pairID: string) => {
+      const version = ++requestVersion.current
+      deliveredExecutionID.current = null
+      setState((current) => ({
+        status: 'recovering',
+        execution: current.execution?.id === pairID ? current.execution : null,
+        error: null,
+        sourceIDs: current.execution?.id === pairID ? current.sourceIDs : null,
+      }))
+      try {
+        const execution = await getEvaluationControlledPair(pairID)
+        if (!mounted.current || version !== requestVersion.current) return null
+        const failure = terminalFailure(execution)
+        if (failure) {
+          setState((current) => ({ ...current, status: 'error', execution, error: failure }))
+          return null
+        }
+        if (isReady(execution)) {
+          await deliverReady(execution, version)
+          if (!mounted.current || version !== requestVersion.current) return null
+        } else {
+          setState((current) => ({
+            ...current,
+            status: 'running',
+            execution,
+            error: null,
+          }))
+        }
+        return execution
+      } catch (error) {
+        if (!mounted.current || version !== requestVersion.current) return null
+        setState((current) => ({
+          ...current,
+          status: 'error',
+          execution: null,
+          error: message(
+            error,
+            'The saved controlled-pair workflow could not be reconciled with the server.',
+          ),
+        }))
+        return null
+      }
+    },
+    [deliverReady],
+  )
 
   useEffect(() => {
-    const currentExecution = executionRef.current
-    if (state.status !== 'running' || !currentExecution) return
+    const activePairID = workflow.activePairID
+    if (!activePairID) {
+      reconciledRoutePairID.current = null
+      return
+    }
+    if (state.status === 'creating' && creatingPairID.current === activePairID) return
+    if (state.execution?.id === activePairID || reconciledRoutePairID.current === activePairID)
+      return
+    reconciledRoutePairID.current = activePairID
+    void reconcile(activePairID)
+  }, [reconcile, state.execution?.id, state.status, workflow.activePairID])
+
+  const pairID = state.execution?.id
+
+  useEffect(() => {
+    if (state.status !== 'running' || !pairID) return
     const version = requestVersion.current
-    const execution = currentExecution
     let stopped = false
     let timer: number | undefined
     let controller: AbortController | null = null
@@ -159,25 +275,27 @@ export function useEvaluationControlledPair(
       controller?.abort()
       controller = new AbortController()
       try {
-        const [baselineRun, candidateRun] = await Promise.all([
-          getEvaluationRun(execution.baseline_run.id, controller.signal),
-          getEvaluationRun(execution.candidate_run.id, controller.signal),
-        ])
-        if (stopped || version !== requestVersion.current) return
-        const next = { ...execution, baseline_run: baselineRun, candidate_run: candidateRun }
+        const next = await getEvaluationControlledPair(pairID, controller.signal)
+        if (stopped || !mounted.current || version !== requestVersion.current) return
         const failure = terminalFailure(next)
         if (failure) {
           setState((current) => ({ ...current, status: 'error', execution: next, error: failure }))
           return
         }
         if (isReady(next)) {
-          await deliverReady(next)
+          await deliverReady(next, version)
           return
         }
         setState((current) => ({ ...current, execution: next, error: null }))
         timer = window.setTimeout(() => void poll(), 2_000)
       } catch (error) {
-        if (stopped || controller.signal.aborted || version !== requestVersion.current) return
+        if (
+          stopped ||
+          controller.signal.aborted ||
+          !mounted.current ||
+          version !== requestVersion.current
+        )
+          return
         setState((current) => ({
           ...current,
           status: 'error',
@@ -192,26 +310,33 @@ export function useEvaluationControlledPair(
       controller?.abort()
       if (timer !== undefined) window.clearTimeout(timer)
     }
-  }, [baselineRunID, candidateRunID, deliverReady, state.status])
+  }, [deliverReady, pairID, state.status])
 
   const retry = useCallback(() => {
-    if (!state.sourceIDs) return
     const terminal = state.execution ? terminalFailure(state.execution) : null
     if (state.execution && isReady(state.execution) && !terminal) {
-      void deliverReady(state.execution)
+      const generation = ++requestVersion.current
+      void deliverReady(state.execution, generation)
       return
     }
+    if (workflow.activePairID) {
+      void reconcile(workflow.activePairID)
+      return
+    }
+    if (!state.sourceIDs) return
     if (!state.execution || terminal) {
       void create(state.sourceIDs.baseline, state.sourceIDs.candidate)
       return
     }
     requestVersion.current += 1
     setState((current) => ({ ...current, status: 'running', error: null }))
-  }, [create, deliverReady, state.execution, state.sourceIDs])
+  }, [create, deliverReady, reconcile, state.execution, state.sourceIDs, workflow.activePairID])
 
   const reset = useCallback(() => {
     requestVersion.current += 1
     deliveredExecutionID.current = null
+    creatingPairID.current = null
+    reconciledRoutePairID.current = null
     setState(INITIAL_STATE)
   }, [])
 

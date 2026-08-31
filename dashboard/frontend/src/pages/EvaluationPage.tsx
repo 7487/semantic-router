@@ -14,6 +14,7 @@ import { EvaluationActionButton } from '../components/evaluation-plane/Evaluatio
 import { defaultComparisonPair } from '../components/evaluation-plane/evaluationRunSupport'
 import { useAuth } from '../contexts/AuthContext'
 import { useReadonly } from '../contexts/ReadonlyContext'
+import { useEvaluationControlledPairResource } from '../hooks/useEvaluationControlledPairResource'
 import { useEvaluationPlane } from '../hooks/useEvaluationPlane'
 import { useEvaluationReport } from '../hooks/useEvaluationReport'
 import { useEvaluationRun } from '../hooks/useEvaluationRun'
@@ -72,25 +73,33 @@ export function EvaluationPage() {
   const loadedSelectedRun = plane.runs.find((run) => run.id === selectedRunID) || null
   const selectedRunState = useEvaluationRun(selectedRunID, loadedSelectedRun)
   const selectedRun = selectedRunState.run
+  const selectedPairID = selectedRun?.controlled_pair?.pair_id || null
+  const selectedPairState = useEvaluationControlledPairResource(selectedPairID)
   const refreshSelectedRunResource = selectedRunState.refresh
+  const refreshSelectedPairResource = selectedPairState.refresh
   const refreshRunLedger = plane.refreshRuns
   const refreshSelectedRun = useCallback(() => {
     void refreshSelectedRunResource()
+    void refreshSelectedPairResource()
     void refreshRunLedger()
-  }, [refreshRunLedger, refreshSelectedRunResource])
+  }, [refreshRunLedger, refreshSelectedPairResource, refreshSelectedRunResource])
   const eventState = useEvaluationRunEvents(selectedRun, refreshSelectedRun)
 
   const navigate = useCallback(
     (view: EvaluationView) => {
+      const workflow = {
+        controlledPairID: route.controlledPairID,
+        controlledPairProfileID: route.controlledPairProfileID,
+      }
       switch (view) {
         case 'new':
-          setRoute({ view, entrypoint: null })
+          setRoute({ view, entrypoint: null, ...workflow })
           break
         case 'runs':
-          setRoute({ view, runID: null })
+          setRoute({ view, runID: null, ...workflow })
           break
         case 'reports':
-          setRoute({ view, reportRunID: latestCompletedID })
+          setRoute({ view, reportRunID: latestCompletedID, ...workflow })
           break
         case 'compare':
           setRoute({
@@ -98,13 +107,20 @@ export function EvaluationPage() {
             baselineRunID: defaultPair?.baselineID || null,
             candidateRunID: defaultPair?.candidateID || null,
             campaignID: null,
+            ...workflow,
           })
           break
         default:
-          setRoute({ view: 'overview' })
+          setRoute({ view: 'overview', ...workflow })
       }
     },
-    [defaultPair, latestCompletedID, setRoute],
+    [
+      defaultPair,
+      latestCompletedID,
+      route.controlledPairID,
+      route.controlledPairProfileID,
+      setRoute,
+    ],
   )
 
   useEffect(() => {
@@ -125,37 +141,78 @@ export function EvaluationPage() {
       const { autoStart, ...request } = intent
       const pendingRun = await plane.createRun(request)
       if (!pendingRun) return false
-      setRoute({ view: 'runs', runID: pendingRun.id })
+      setRoute({
+        view: 'runs',
+        runID: pendingRun.id,
+        controlledPairID: route.controlledPairID,
+        controlledPairProfileID: route.controlledPairProfileID,
+      })
       if (!autoStart) return true
       const startedRun = await plane.startRun(pendingRun.id)
       return Boolean(startedRun)
     },
-    [canRun, canWrite, plane, setRoute],
+    [canRun, canWrite, plane, route.controlledPairID, route.controlledPairProfileID, setRoute],
   )
 
   const openReport = useCallback(
     (run: EvaluationRun) => {
       if (run.status !== 'completed') return
-      setRoute({ view: 'reports', reportRunID: run.id })
+      setRoute({
+        view: 'reports',
+        reportRunID: run.id,
+        controlledPairID: route.controlledPairID,
+        controlledPairProfileID: route.controlledPairProfileID,
+      })
     },
-    [setRoute],
+    [route.controlledPairID, route.controlledPairProfileID, setRoute],
   )
 
   const confirmCancel = useCallback(async () => {
     if (!cancelTarget || !canRun) return
-    const run = await plane.cancelRun(cancelTarget.id)
-    if (run) {
+    const pairExecution = cancelTarget.controlled_pair
+      ? await plane.cancelControlledPair(cancelTarget.controlled_pair.pair_id)
+      : null
+    const succeeded = cancelTarget.controlled_pair
+      ? Boolean(pairExecution)
+      : Boolean(await plane.cancelRun(cancelTarget.id))
+    if (succeeded) {
+      if (pairExecution) selectedPairState.adopt(pairExecution)
       setCancelTarget(null)
-      setRoute({ view: 'runs', runID: run.id }, true)
+      setRoute(
+        {
+          view: 'runs',
+          runID: cancelTarget.id,
+          controlledPairID: route.controlledPairID,
+          controlledPairProfileID: route.controlledPairProfileID,
+        },
+        true,
+      )
     }
-  }, [canRun, cancelTarget, plane, setRoute])
+  }, [
+    canRun,
+    cancelTarget,
+    plane,
+    route.controlledPairID,
+    route.controlledPairProfileID,
+    selectedPairState,
+    setRoute,
+  ])
 
   const confirmDelete = useCallback(async () => {
     if (!deleteTarget || !canWrite) return
-    if (await plane.deleteRun(deleteTarget.id)) {
+    const deleted = deleteTarget.controlled_pair
+      ? await plane.deleteControlledPair(deleteTarget.controlled_pair.pair_id)
+      : await plane.deleteRun(deleteTarget.id)
+    if (deleted) {
       const deletedID = deleteTarget.id
+      const nextRoute = removeEvaluationRun(route, deletedID)
       setDeleteTarget(null)
-      setRoute(removeEvaluationRun(route, deletedID), true)
+      setRoute(
+        deleteTarget.controlled_pair?.pair_id === route.controlledPairID
+          ? { ...nextRoute, controlledPairID: null, controlledPairProfileID: null }
+          : nextRoute,
+        true,
+      )
       requestAnimationFrame(() => panelRef.current?.focus())
     }
   }, [canWrite, deleteTarget, plane, route, setRoute])
@@ -241,7 +298,14 @@ export function EvaluationPage() {
                 onRetryReport={() => void latestReportState.refresh()}
                 onLoadMoreRuns={() => void plane.loadMoreRuns()}
                 onNavigate={navigate}
-                onOpenReport={(id) => setRoute({ view: 'reports', reportRunID: id })}
+                onOpenReport={(id) =>
+                  setRoute({
+                    view: 'reports',
+                    reportRunID: id,
+                    controlledPairID: route.controlledPairID,
+                    controlledPairProfileID: route.controlledPairProfileID,
+                  })
+                }
               />
             ) : null}
             {activeView === 'new' ? (
@@ -269,6 +333,11 @@ export function EvaluationPage() {
                 selectedRunLoading={selectedRunState.loading}
                 selectedRunError={selectedRunState.error}
                 onRetrySelectedRun={() => void selectedRunState.refresh()}
+                selectedPair={selectedPairState.execution}
+                selectedPairLoading={selectedPairState.loading}
+                selectedPairRefreshing={selectedPairState.refreshing}
+                selectedPairError={selectedPairState.error}
+                onRetrySelectedPair={() => void selectedPairState.refresh()}
                 events={eventState.events}
                 eventsConnected={eventState.connected}
                 eventsError={eventState.error}
@@ -283,7 +352,17 @@ export function EvaluationPage() {
                 hasMoreRuns={plane.hasMoreRuns}
                 lastUpdatedAt={plane.lastUpdatedAt}
                 mutationKey={plane.mutationKey}
-                onSelect={(run) => setRoute({ view: 'runs', runID: run.id }, true)}
+                onSelect={(run) =>
+                  setRoute(
+                    {
+                      view: 'runs',
+                      runID: run.id,
+                      controlledPairID: route.controlledPairID,
+                      controlledPairProfileID: route.controlledPairProfileID,
+                    },
+                    true,
+                  )
+                }
                 onStart={(run) => void plane.startRun(run.id)}
                 onCancel={setCancelTarget}
                 onDelete={setDeleteTarget}
@@ -303,7 +382,17 @@ export function EvaluationPage() {
                 hasMoreRuns={plane.hasMoreRuns}
                 loadingMoreRuns={plane.loadingMoreRuns}
                 error={reportState.error}
-                onSelect={(id) => setRoute({ view: 'reports', reportRunID: id }, true)}
+                onSelect={(id) =>
+                  setRoute(
+                    {
+                      view: 'reports',
+                      reportRunID: id,
+                      controlledPairID: route.controlledPairID,
+                      controlledPairProfileID: route.controlledPairProfileID,
+                    },
+                    true,
+                  )
+                }
                 onRetry={() => void reportState.refresh()}
                 onLoadMoreRuns={() => void plane.loadMoreRuns()}
               />

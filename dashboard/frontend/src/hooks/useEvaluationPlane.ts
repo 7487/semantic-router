@@ -6,9 +6,12 @@ import type {
   EvaluationRun,
   EvaluationRunLedgerWarning,
 } from '../types/evaluationPlane'
+import type { EvaluationControlledPairExecution } from '../types/evaluationControlledPair'
 import {
+  cancelEvaluationControlledPair,
   cancelEvaluationRun,
   createEvaluationRun,
+  deleteEvaluationControlledPair,
   deleteEvaluationRun,
   getEvaluationCatalog,
   listEvaluationRuns,
@@ -53,6 +56,7 @@ export function useEvaluationPlane() {
   const runsRequestVersion = useRef(0)
   const catalogController = useRef<AbortController | null>(null)
   const runsController = useRef<AbortController | null>(null)
+  const runsRefreshPromise = useRef<Promise<boolean> | null>(null)
   const mutationLock = useRef(false)
   const loadedPageCount = useRef(0)
   const loadingMoreRequest = useRef(false)
@@ -82,6 +86,7 @@ export function useEvaluationPlane() {
       const runsVersion = ++runsRequestVersion.current
       catalogController.current?.abort()
       runsController.current?.abort()
+      runsRefreshPromise.current = null
       loadingMoreRequest.current = false
       setLoadingMoreRuns(false)
       setLoadingAllRuns(false)
@@ -138,7 +143,8 @@ export function useEvaluationPlane() {
     [applyRunLedger],
   )
 
-  const refreshRuns = useCallback(async () => {
+  const refreshRuns = useCallback(() => {
+    if (runsRefreshPromise.current) return runsRefreshPromise.current
     const version = ++runsRequestVersion.current
     runsController.current?.abort()
     loadingMoreRequest.current = false
@@ -147,21 +153,28 @@ export function useEvaluationPlane() {
     const controller = new AbortController()
     runsController.current = controller
     setRefreshing(true)
-    try {
-      const ledger = await listEvaluationRuns({ signal: controller.signal })
-      if (controller.signal.aborted || version !== runsRequestVersion.current) return false
-      applyRunLedger(ledger, false)
-      return true
-    } catch (refreshError) {
-      if (controller.signal.aborted || version !== runsRequestVersion.current) return false
-      setRunsError(messageFrom(refreshError, 'Failed to refresh evaluation runs.'))
-      return false
-    } finally {
-      if (version === runsRequestVersion.current) {
-        setLoadPending((current) => ({ ...current, runs: false }))
-        setRefreshing(false)
+    const pending = (async () => {
+      try {
+        const ledger = await listEvaluationRuns({ signal: controller.signal })
+        if (controller.signal.aborted || version !== runsRequestVersion.current) return false
+        applyRunLedger(ledger, false)
+        return true
+      } catch (refreshError) {
+        if (controller.signal.aborted || version !== runsRequestVersion.current) return false
+        setRunsError(messageFrom(refreshError, 'Failed to refresh evaluation runs.'))
+        return false
+      } finally {
+        if (version === runsRequestVersion.current) {
+          setLoadPending((current) => ({ ...current, runs: false }))
+          setRefreshing(false)
+        }
       }
-    }
+    })()
+    runsRefreshPromise.current = pending
+    void pending.finally(() => {
+      if (runsRefreshPromise.current === pending) runsRefreshPromise.current = null
+    })
+    return pending
   }, [applyRunLedger])
 
   const loadMoreRuns = useCallback(async () => {
@@ -169,6 +182,7 @@ export function useEvaluationPlane() {
     if (!cursor || refreshing || loadingMoreRuns) return
     const version = ++runsRequestVersion.current
     runsController.current?.abort()
+    runsRefreshPromise.current = null
     const controller = new AbortController()
     runsController.current = controller
     loadingMoreRequest.current = true
@@ -193,6 +207,7 @@ export function useEvaluationPlane() {
     if (!cursor || refreshing || loadingMoreRuns) return
     const version = ++runsRequestVersion.current
     runsController.current?.abort()
+    runsRefreshPromise.current = null
     const controller = new AbortController()
     runsController.current = controller
     loadingMoreRequest.current = true
@@ -257,17 +272,21 @@ export function useEvaluationPlane() {
       runsRequestVersion.current += 1
       catalogController.current?.abort()
       runsController.current?.abort()
+      runsRefreshPromise.current = null
       loadingMoreRequest.current = false
       window.clearInterval(interval)
       document.removeEventListener('visibilitychange', handleVisibility)
     }
   }, [refresh, refreshRuns])
 
-  const replaceRun = useCallback((nextRun: EvaluationRun) => {
+  const replaceRuns = useCallback((nextRuns: EvaluationRun[]) => {
+    const nextIDs = new Set(nextRuns.map((run) => run.id))
     setRuns((current) =>
-      sortRuns([nextRun, ...current.filter((candidate) => candidate.id !== nextRun.id)]),
+      sortRuns([...nextRuns, ...current.filter((candidate) => !nextIDs.has(candidate.id))]),
     )
   }, [])
+
+  const replaceRun = useCallback((nextRun: EvaluationRun) => replaceRuns([nextRun]), [replaceRuns])
 
   const mutateRun = useCallback(
     async (key: string, operation: () => Promise<EvaluationRun>, fallback: string) => {
@@ -280,6 +299,7 @@ export function useEvaluationPlane() {
         const run = await operation()
         runsRequestVersion.current += 1
         runsController.current?.abort()
+        runsRefreshPromise.current = null
         loadingMoreRequest.current = false
         setRefreshing(false)
         setLoadingMoreRuns(false)
@@ -334,6 +354,51 @@ export function useEvaluationPlane() {
     [mutateRun],
   )
 
+  const mutateControlledPair = useCallback(
+    async (
+      key: string,
+      operation: () => Promise<EvaluationControlledPairExecution>,
+      fallback: string,
+    ) => {
+      if (mutationLock.current) return null
+      mutationLock.current = true
+      setMutationPending(true)
+      setMutationKey(key)
+      setMutationError(null)
+      try {
+        const execution = await operation()
+        runsRequestVersion.current += 1
+        runsController.current?.abort()
+        runsRefreshPromise.current = null
+        loadingMoreRequest.current = false
+        setRefreshing(false)
+        setLoadingMoreRuns(false)
+        setLoadingAllRuns(false)
+        replaceRuns([execution.baseline_run, execution.candidate_run])
+        setLastUpdatedAt(new Date())
+        return execution
+      } catch (mutationFailure) {
+        setMutationError(messageFrom(mutationFailure, fallback))
+        return null
+      } finally {
+        mutationLock.current = false
+        setMutationPending(false)
+        setMutationKey(null)
+      }
+    },
+    [replaceRuns],
+  )
+
+  const cancelControlledPair = useCallback(
+    (id: string) =>
+      mutateControlledPair(
+        `cancel-pair:${id}`,
+        () => cancelEvaluationControlledPair(id),
+        'Failed to cancel the controlled pair.',
+      ),
+    [mutateControlledPair],
+  )
+
   const deleteRun = useCallback(async (id: string) => {
     if (mutationLock.current) return false
     mutationLock.current = true
@@ -344,6 +409,7 @@ export function useEvaluationPlane() {
       await deleteEvaluationRun(id)
       runsRequestVersion.current += 1
       runsController.current?.abort()
+      runsRefreshPromise.current = null
       loadingMoreRequest.current = false
       setRefreshing(false)
       setLoadingMoreRuns(false)
@@ -364,6 +430,42 @@ export function useEvaluationPlane() {
       setMutationKey(null)
     }
   }, [])
+
+  const deleteControlledPair = useCallback(
+    async (id: string) => {
+      if (mutationLock.current) return false
+      mutationLock.current = true
+      setMutationPending(true)
+      setMutationKey(`delete-pair:${id}`)
+      setMutationError(null)
+      try {
+        await deleteEvaluationControlledPair(id)
+        runsRequestVersion.current += 1
+        runsController.current?.abort()
+        runsRefreshPromise.current = null
+        loadingMoreRequest.current = false
+        setRefreshing(false)
+        setLoadingMoreRuns(false)
+        setLoadingAllRuns(false)
+        setRuns((current) => current.filter((run) => run.controlled_pair?.pair_id !== id))
+        setRunPage((current) => ({
+          ...current,
+          totalRuns: Math.max(0, current.totalRuns - 2),
+        }))
+        setLastUpdatedAt(new Date())
+        await refreshRuns()
+        return true
+      } catch (mutationFailure) {
+        setMutationError(messageFrom(mutationFailure, 'Failed to delete the controlled pair.'))
+        return false
+      } finally {
+        mutationLock.current = false
+        setMutationPending(false)
+        setMutationKey(null)
+      }
+    },
+    [refreshRuns],
+  )
 
   return {
     catalog,
@@ -394,6 +496,8 @@ export function useEvaluationPlane() {
     createRun,
     startRun,
     cancelRun,
+    cancelControlledPair,
     deleteRun,
+    deleteControlledPair,
   }
 }

@@ -164,6 +164,7 @@ export function decodeEvaluationRun(payload: unknown, expectedID?: string): Eval
       'capacity_load_protocol',
       'seed',
       'baseline_run_id',
+      'controlled_pair',
       'progress',
       'created_at',
       'started_at',
@@ -199,6 +200,12 @@ export function decodeEvaluationRun(payload: unknown, expectedID?: string): Eval
     !isOptionalText(payload.completed_at) ||
     (payload.baseline_run_id !== undefined &&
       !isCanonicalEvaluationRunID(payload.baseline_run_id)) ||
+    (payload.controlled_pair !== undefined &&
+      (!isEvaluationRecord(payload.controlled_pair) ||
+        !hasOnlyEvaluationFields(payload.controlled_pair, ['pair_id', 'role']) ||
+        !isCanonicalEvaluationRunID(payload.controlled_pair.pair_id) ||
+        (payload.controlled_pair.role !== 'baseline' &&
+          payload.controlled_pair.role !== 'candidate'))) ||
     !isOptionalText(payload.error)
   ) {
     throw new Error('Evaluation run response is incomplete.')
@@ -212,6 +219,22 @@ export function decodeEvaluationRun(payload: unknown, expectedID?: string): Eval
   }
   if (payload.client_request_id !== payload.id) {
     throw new Error('Evaluation run identity does not match the current contract.')
+  }
+  if (payload.controlled_pair !== undefined) {
+    if (payload.mode !== 'live') {
+      throw new Error('Controlled-pair run membership is only valid for live execution.')
+    }
+    if (payload.controlled_pair.role === 'baseline' && payload.baseline_run_id !== undefined) {
+      throw new Error('Controlled-pair baseline member cannot declare a baseline run.')
+    }
+    if (
+      payload.controlled_pair.role === 'candidate' &&
+      (payload.baseline_run_id === undefined || payload.baseline_run_id === payload.id)
+    ) {
+      throw new Error(
+        'Controlled-pair candidate member must reference a distinct canonical baseline run.',
+      )
+    }
   }
   const capacityRequired = requiresCapacitySLO(
     payload.mode as EvaluationRun['mode'],

@@ -11,14 +11,17 @@ import type { CreateEvaluationCampaignPayload } from '../types/evaluationCampaig
 import type { CreateEvaluationControlledPairPayload } from '../types/evaluationControlledPair'
 import {
   buildCreateRunPayload,
+  cancelEvaluationControlledPair,
   cancelEvaluationRun,
   compareEvaluationRuns,
   createEvaluationCampaign,
   createEvaluationControlledPair,
   createEvaluationRun,
+  deleteEvaluationControlledPair,
   deleteEvaluationRun,
   getEvaluationCatalog,
   getEvaluationCampaign,
+  getEvaluationControlledPair,
   getEvaluationArtifactURL,
   getEvaluationReport,
   getEvaluationRun,
@@ -421,6 +424,28 @@ describe('Evaluation Plane API', () => {
       'candidate_run_id',
       'candidate_source_run_id',
       'client_request_id',
+    ])
+  })
+
+  it('uses the authoritative aggregate resource and lifecycle endpoints for controlled pairs', async () => {
+    const pairID = '88888888-8888-4888-8888-888888888888'
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(jsonResponse({}))
+      .mockResolvedValueOnce(jsonResponse({}))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+    vi.stubGlobal('fetch', fetch)
+
+    await expect(getEvaluationControlledPair(pairID)).rejects.toThrow(/controlled pair response/i)
+    await expect(cancelEvaluationControlledPair(pairID)).rejects.toThrow(
+      /controlled pair response/i,
+    )
+    await expect(deleteEvaluationControlledPair(pairID)).resolves.toBeUndefined()
+
+    expect(fetch.mock.calls).toEqual([
+      [`/api/evaluation/v1/controlled-pairs/${pairID}`, { signal: undefined }],
+      [`/api/evaluation/v1/controlled-pairs/${pairID}/cancel`, { method: 'POST' }],
+      [`/api/evaluation/v1/controlled-pairs/${pairID}`, { method: 'DELETE' }],
     ])
   })
 

@@ -77,6 +77,12 @@
   flex: 0 0 auto;
 }
 
+.errorActions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 0.35rem;
+}
+
 .progress {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -144,6 +150,11 @@
 
   .pairAction,
   .error {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .errorActions {
     align-items: stretch;
     flex-direction: column;
   }

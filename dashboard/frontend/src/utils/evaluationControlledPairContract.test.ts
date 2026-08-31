@@ -10,7 +10,12 @@ import { isCanonicalEvaluationRunID } from './evaluationRunContract'
 const BASELINE_SOURCE = '11111111-1111-4111-8111-111111111111'
 const CANDIDATE_SOURCE = '22222222-2222-4222-8222-222222222222'
 
-function liveRun(id: string, baselineRunID?: string): EvaluationRun {
+function liveRun(
+  id: string,
+  pairID: string,
+  role: 'baseline' | 'candidate',
+  baselineRunID?: string,
+): EvaluationRun {
   return {
     schema_version: 'evaluation.v1',
     id,
@@ -53,6 +58,7 @@ function liveRun(id: string, baselineRunID?: string): EvaluationRun {
     concurrency: 2,
     seed: 42,
     ...(baselineRunID ? { baseline_run_id: baselineRunID } : {}),
+    controlled_pair: { pair_id: pairID, role },
     progress: { percent: 10, completed: 6, total: 64, message: 'AB block 1' },
     created_at: '2026-08-31T00:00:00Z',
     started_at: '2026-08-31T00:00:01Z',
@@ -83,21 +89,31 @@ describe('controlled pair contract', () => {
       protocol: 'abba-interleaved.v1',
       baseline_source_run_id: request.baseline_source_run_id,
       candidate_source_run_id: request.candidate_source_run_id,
-      baseline_run: liveRun(request.baseline_run_id),
-      candidate_run: liveRun(request.candidate_run_id, request.baseline_run_id),
+      baseline_run: liveRun(request.baseline_run_id, request.client_request_id, 'baseline'),
+      candidate_run: liveRun(
+        request.candidate_run_id,
+        request.client_request_id,
+        'candidate',
+        request.baseline_run_id,
+      ),
+      state: 'running',
+      capabilities: { can_cancel: true, can_delete: false },
     }
-    expect(decodeEvaluationControlledPairExecution(response, request).candidate_run.id).toBe(
-      request.candidate_run_id,
-    )
+    expect(
+      decodeEvaluationControlledPairExecution(response, request.client_request_id, request)
+        .candidate_run.id,
+    ).toBe(request.candidate_run_id)
     expect(() =>
       decodeEvaluationControlledPairExecution(
         { ...response, endpoint: 'https://client.invalid' },
+        request.client_request_id,
         request,
       ),
     ).toThrow('Controlled pair response is incomplete.')
     expect(() =>
       decodeEvaluationControlledPairExecution(
         { ...response, protocol: 'post-hoc-independent.v1' },
+        request.client_request_id,
         request,
       ),
     ).toThrow('Controlled pair response is incomplete.')
@@ -105,10 +121,191 @@ describe('controlled pair contract', () => {
       decodeEvaluationControlledPairExecution(
         {
           ...response,
-          candidate_run: liveRun(request.candidate_run_id, CANDIDATE_SOURCE),
+          candidate_run: liveRun(
+            request.candidate_run_id,
+            request.client_request_id,
+            'candidate',
+            CANDIDATE_SOURCE,
+          ),
         },
+        request.client_request_id,
         request,
       ),
     ).toThrow('Controlled pair response does not match the requested AB/BA execution.')
+    expect(() =>
+      decodeEvaluationControlledPairExecution(
+        { ...response, capabilities: { can_cancel: false, can_delete: true } },
+        request.client_request_id,
+        request,
+      ),
+    ).toThrow('Controlled pair response is incomplete.')
+    expect(() =>
+      decodeEvaluationControlledPairExecution(
+        {
+          ...response,
+          candidate_run: {
+            ...response.candidate_run,
+            controlled_pair: { pair_id: request.client_request_id, role: 'baseline' },
+          },
+        },
+        request.client_request_id,
+        request,
+      ),
+    ).toThrow(/Controlled-pair baseline member|does not match the requested AB\/BA execution/)
+
+    for (const collision of [
+      { ...response, baseline_source_run_id: request.client_request_id },
+      { ...response, candidate_source_run_id: request.baseline_source_run_id },
+      {
+        ...response,
+        baseline_run: {
+          ...response.baseline_run,
+          id: request.baseline_source_run_id,
+          client_request_id: request.baseline_source_run_id,
+        },
+      },
+      {
+        ...response,
+        candidate_run: {
+          ...response.candidate_run,
+          id: request.baseline_run_id,
+          client_request_id: request.baseline_run_id,
+        },
+      },
+    ]) {
+      expect(() =>
+        decodeEvaluationControlledPairExecution(collision, request.client_request_id),
+      ).toThrow(/candidate member|does not match the requested AB\/BA execution/)
+    }
+  })
+
+  it('accepts a terminal member while the authoritative pair remains running', () => {
+    const request = buildCreateEvaluationControlledPairPayload(BASELINE_SOURCE, CANDIDATE_SOURCE)
+    const baselineRun = {
+      ...liveRun(request.baseline_run_id, request.client_request_id, 'baseline'),
+      status: 'completed' as const,
+      completed_at: '2026-08-31T00:05:00Z',
+    }
+    const candidateRun = liveRun(
+      request.candidate_run_id,
+      request.client_request_id,
+      'candidate',
+      request.baseline_run_id,
+    )
+    const response = {
+      schema_version: 'evaluation.v1',
+      contract_version: 'evaluation-controlled-pair.v1',
+      id: request.client_request_id,
+      protocol: 'abba-interleaved.v1',
+      baseline_source_run_id: request.baseline_source_run_id,
+      candidate_source_run_id: request.candidate_source_run_id,
+      baseline_run: baselineRun,
+      candidate_run: candidateRun,
+      state: 'running',
+      capabilities: { can_cancel: true, can_delete: false },
+    }
+
+    expect(
+      decodeEvaluationControlledPairExecution(response, request.client_request_id).capabilities,
+    ).toEqual({ can_cancel: true, can_delete: false })
+    expect(
+      decodeEvaluationControlledPairExecution(
+        {
+          ...response,
+          candidate_run: {
+            ...candidateRun,
+            status: 'completed',
+            completed_at: '2026-08-31T00:05:01Z',
+          },
+        },
+        request.client_request_id,
+      ).state,
+    ).toBe('running')
+    expect(() =>
+      decodeEvaluationControlledPairExecution(
+        {
+          ...response,
+          candidate_run: { ...candidateRun, status: 'pending', started_at: undefined },
+        },
+        request.client_request_id,
+      ),
+    ).toThrow('Controlled pair response does not match the requested AB/BA execution.')
+    expect(() =>
+      decodeEvaluationControlledPairExecution(
+        {
+          ...response,
+          state: 'terminal',
+          capabilities: { can_cancel: false, can_delete: true },
+        },
+        request.client_request_id,
+      ),
+    ).toThrow('Controlled pair response does not match the requested AB/BA execution.')
+  })
+
+  it('accepts conservative false capabilities while rejecting impossible true capabilities', () => {
+    const request = buildCreateEvaluationControlledPairPayload(BASELINE_SOURCE, CANDIDATE_SOURCE)
+    const baseline = liveRun(request.baseline_run_id, request.client_request_id, 'baseline')
+    const candidate = liveRun(
+      request.candidate_run_id,
+      request.client_request_id,
+      'candidate',
+      request.baseline_run_id,
+    )
+    const response = {
+      schema_version: 'evaluation.v1',
+      contract_version: 'evaluation-controlled-pair.v1',
+      id: request.client_request_id,
+      protocol: 'abba-interleaved.v1',
+      baseline_source_run_id: request.baseline_source_run_id,
+      candidate_source_run_id: request.candidate_source_run_id,
+      baseline_run: baseline,
+      candidate_run: candidate,
+      state: 'running',
+      capabilities: { can_cancel: false, can_delete: false },
+    }
+
+    expect(
+      decodeEvaluationControlledPairExecution(response, request.client_request_id).capabilities,
+    ).toEqual({ can_cancel: false, can_delete: false })
+    expect(
+      decodeEvaluationControlledPairExecution(
+        {
+          ...response,
+          state: 'pending',
+          baseline_run: { ...baseline, status: 'pending', started_at: undefined },
+          candidate_run: { ...candidate, status: 'pending', started_at: undefined },
+        },
+        request.client_request_id,
+      ).capabilities,
+    ).toEqual({ can_cancel: false, can_delete: false })
+    expect(
+      decodeEvaluationControlledPairExecution(
+        {
+          ...response,
+          state: 'terminal',
+          baseline_run: {
+            ...baseline,
+            status: 'cancelled',
+            completed_at: '2026-08-31T00:06:00Z',
+          },
+          candidate_run: {
+            ...candidate,
+            status: 'cancelled',
+            completed_at: '2026-08-31T00:06:00Z',
+          },
+        },
+        request.client_request_id,
+      ).capabilities,
+    ).toEqual({ can_cancel: false, can_delete: false })
+
+    for (const invalid of [
+      { ...response, state: 'pending', capabilities: { can_cancel: true, can_delete: false } },
+      { ...response, capabilities: { can_cancel: false, can_delete: true } },
+      { ...response, state: 'terminal', capabilities: { can_cancel: true, can_delete: false } },
+    ]) {
+      expect(() =>
+        decodeEvaluationControlledPairExecution(invalid, request.client_request_id),
+      ).toThrow('Controlled pair response is incomplete.')
+    }
   })
 })

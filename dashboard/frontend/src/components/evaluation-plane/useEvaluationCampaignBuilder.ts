@@ -18,12 +18,16 @@ import {
 
 const EMPTY_CAMPAIGN_SLOTS: EvaluationCatalogCampaignSlot[] = []
 
-function initialDraft(catalog: EvaluationCatalog): EvaluationCampaignDraft {
+function initialDraft(
+  catalog: EvaluationCatalog,
+  lockedChangeProfile?: EvaluationChangeProfileId | null,
+): EvaluationCampaignDraft {
   return {
     clientRequestID: newEvaluationCampaignClientRequestID(),
     name: '',
     description: '',
     changeProfile:
+      catalog.change_profiles.find((profile) => profile.id === lockedChangeProfile)?.id ||
       catalog.change_profiles.find((profile) => profile.id === 'recipe')?.id ||
       catalog.change_profiles[0]?.id ||
       'schema_adapter',
@@ -37,6 +41,7 @@ interface UseEvaluationCampaignBuilderProps {
   runLedgerAvailable: boolean
   runLedgerComplete: boolean
   allRunsLoaded: boolean
+  lockedChangeProfile?: EvaluationChangeProfileId | null
   onClearCreateError: () => void
 }
 
@@ -46,9 +51,17 @@ export default function useEvaluationCampaignBuilder({
   runLedgerAvailable,
   runLedgerComplete,
   allRunsLoaded,
+  lockedChangeProfile,
   onClearCreateError,
 }: UseEvaluationCampaignBuilderProps) {
-  const [draft, setDraft] = useState<EvaluationCampaignDraft>(() => initialDraft(catalog))
+  const [storedDraft, setDraft] = useState<EvaluationCampaignDraft>(() =>
+    initialDraft(catalog, lockedChangeProfile),
+  )
+  const alignDraft = (draft: EvaluationCampaignDraft): EvaluationCampaignDraft =>
+    lockedChangeProfile && draft.changeProfile !== lockedChangeProfile
+      ? { ...draft, changeProfile: lockedChangeProfile, gateBindings: {} }
+      : draft
+  const draft = alignDraft(storedDraft)
   const profile =
     catalog.change_profiles.find((candidate) => candidate.id === draft.changeProfile) ||
     catalog.change_profiles[0]
@@ -93,12 +106,13 @@ export default function useEvaluationCampaignBuilder({
   const revise = (change: (current: EvaluationCampaignDraft) => EvaluationCampaignDraft) => {
     onClearCreateError()
     setDraft((current) => ({
-      ...change(current),
+      ...change(alignDraft(current)),
       clientRequestID: newEvaluationCampaignClientRequestID(),
     }))
   }
 
   const changeProfile = (changeProfile: EvaluationChangeProfileId) => {
+    if (lockedChangeProfile) return
     revise((current) => ({ ...current, changeProfile, gateBindings: {} }))
   }
 
@@ -176,7 +190,7 @@ export default function useEvaluationCampaignBuilder({
     changeFidelityReference,
     changeFidelityLive,
     applyControlledPair,
-    reset: () => setDraft(initialDraft(catalog)),
+    reset: () => setDraft(initialDraft(catalog, lockedChangeProfile)),
   }
 }
 

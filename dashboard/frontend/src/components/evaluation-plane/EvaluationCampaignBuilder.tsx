@@ -1,3 +1,5 @@
+import { useState } from 'react'
+
 import type {
   CreateEvaluationCampaignPayload,
   EvaluationCampaign,
@@ -6,6 +8,7 @@ import type {
   EvaluationCampaignGateID,
   EvaluationCatalog,
   EvaluationCatalogCampaignSlot,
+  EvaluationChangeProfileId,
   EvaluationRun,
 } from '../../types/evaluationPlane'
 import { buildEvaluationCampaignRequest, campaignSlotRunIDs } from './evaluationCampaignSupport'
@@ -142,9 +145,14 @@ interface EvaluationCampaignBuilderProps {
   canCreate: boolean
   createPending: boolean
   createError: string | null
+  activeControlledPairID: string | null
   model: EvaluationCampaignBuilderModel
   onLoadAllRuns: () => void
   onRefreshRuns: () => boolean | Promise<boolean>
+  onControlledPairIdentityChange: (
+    pairID: string | null,
+    profileID: EvaluationChangeProfileId | null,
+  ) => void
   onCreate: (request: CreateEvaluationCampaignPayload) => Promise<EvaluationCampaign | null>
   onClearCreateError: () => void
 }
@@ -160,12 +168,26 @@ export default function EvaluationCampaignBuilder({
   canCreate,
   createPending,
   createError,
+  activeControlledPairID,
   model,
   onLoadAllRuns,
   onRefreshRuns,
+  onControlledPairIdentityChange,
   onCreate,
   onClearCreateError,
 }: EvaluationCampaignBuilderProps) {
+  const [controlledPairProfileLocked, setControlledPairProfileLocked] = useState(false)
+  const resumablePairs = new Map<string, EvaluationChangeProfileId>()
+  for (const run of runs) {
+    if (run.controlled_pair && ['pending', 'running', 'sealing'].includes(run.status)) {
+      resumablePairs.set(run.controlled_pair.pair_id, run.change_profile)
+    }
+  }
+  const resumablePair =
+    !activeControlledPairID && resumablePairs.size === 1
+      ? [...resumablePairs].map(([id, profileID]) => ({ id, profileID }))[0] || null
+      : null
+  const profileLocked = Boolean(activeControlledPairID) || controlledPairProfileLocked
   const g3 = model.slots.find((slot) => slot.gate_id === 'G3')
   const inputDisabled = createPending || !allRunsLoaded || !runLedgerComplete
   const requiredSlots = model.slots.filter((slot) => slot.disposition === 'required')
@@ -213,7 +235,7 @@ export default function EvaluationCampaignBuilder({
           <select
             aria-label="Campaign change profile"
             value={model.draft.changeProfile}
-            disabled={createPending}
+            disabled={createPending || profileLocked}
             onChange={(event) =>
               model.changeProfile(event.target.value as typeof model.draft.changeProfile)
             }
@@ -224,7 +246,11 @@ export default function EvaluationCampaignBuilder({
               </option>
             ))}
           </select>
-          <small>{model.profile?.description || 'Current server campaign profile'}</small>
+          <small>
+            {profileLocked
+              ? 'Change profile is locked while this controlled pair is active or being assigned.'
+              : model.profile?.description || 'Current server campaign profile'}
+          </small>
         </label>
         <dl className={styles.profileSummary} aria-label="Promotion readiness summary">
           <div>
@@ -273,12 +299,27 @@ export default function EvaluationCampaignBuilder({
               slot={g3}
               canCreate={canCreate}
               disabled={inputDisabled}
-              onReady={async (execution) => {
-                if (!(await onRefreshRuns())) {
+              activePairID={activeControlledPairID}
+              resumablePair={resumablePair}
+              onProfileLockChange={setControlledPairProfileLocked}
+              onPairIdentityChange={onControlledPairIdentityChange}
+              onReady={async (execution, isCurrent) => {
+                if (
+                  execution.baseline_run.change_profile !== model.draft.changeProfile ||
+                  execution.candidate_run.change_profile !== model.draft.changeProfile
+                ) {
+                  throw new Error(
+                    'The recovered controlled pair belongs to a different campaign change profile.',
+                  )
+                }
+                const refreshed = await onRefreshRuns()
+                if (!isCurrent()) return
+                if (!refreshed) {
                   throw new Error(
                     'Controlled pair completed, but the durable run ledger could not be refreshed.',
                   )
                 }
+                if (!isCurrent()) return
                 model.applyControlledPair(execution.baseline_run.id, execution.candidate_run.id)
               }}
             />

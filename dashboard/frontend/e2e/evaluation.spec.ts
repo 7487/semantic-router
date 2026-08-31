@@ -1,5 +1,7 @@
 import { expect, type Locator, type Page, test } from '@playwright/test'
 
+import type { EvaluationChangeProfileId } from '../src/types/evaluationPlane'
+import { decodeEvaluationRun } from '../src/utils/evaluationRunContract'
 import { mockAuthenticatedAppShell } from './support/auth'
 import {
   defaultEvaluationRuns,
@@ -26,6 +28,62 @@ const evalUser = {
     'logs.read',
     'topology.read',
   ],
+}
+
+function controlledPairSourceRuns(changeProfile: EvaluationChangeProfileId = 'recipe') {
+  const trackIDs = ['routing', 'model_pool', 'joint'] as const
+  const suiteIDs = ['live-mom-core']
+  const shared = {
+    mode: 'live' as const,
+    suite_ids: suiteIDs,
+    track_ids: [...trackIDs],
+    evidence_level: 'E3' as const,
+    track_evidence_levels: { routing: 'E3', model_pool: 'E4', joint: 'E5' } as const,
+    sample_limit: 64,
+    mixture: EVALUATION_MOM,
+  }
+  return {
+    baseline: evaluationRun(
+      EVALUATION_RUN_IDS.baselineLive,
+      'Recipe live control',
+      'completed',
+      '2026-08-29T01:00:00Z',
+      changeProfile,
+      {
+        ...shared,
+        target_id: EVALUATION_BASELINE_MOM_TARGET_ID,
+        completed_at: '2026-08-29T01:10:00Z',
+      },
+    ),
+    candidate: evaluationRun(
+      EVALUATION_RUN_IDS.candidateLive,
+      'Recipe live treatment',
+      'completed',
+      '2026-08-29T02:00:00Z',
+      changeProfile,
+      {
+        ...shared,
+        target_id: EVALUATION_MOM_TARGET_ID,
+        completed_at: '2026-08-29T02:10:00Z',
+      },
+    ),
+  }
+}
+
+async function launchCampaignControlledPair(page: Page) {
+  const disclosure = page.locator('details').filter({
+    has: page.getByText('Review / customize evidence', { exact: true }),
+  })
+  if (!(await disclosure.evaluate((element) => element.hasAttribute('open')))) {
+    await disclosure.locator('summary').click()
+  }
+  await page
+    .getByLabel('Controlled pair baseline source')
+    .selectOption(EVALUATION_RUN_IDS.baselineLive)
+  await page
+    .getByLabel('Controlled pair candidate source')
+    .selectOption(EVALUATION_RUN_IDS.candidateLive)
+  await page.getByRole('button', { name: 'Launch controlled pair' }).click()
 }
 
 async function captureEvaluationSurface(page: Page, name: string) {
@@ -97,7 +155,7 @@ async function expectEvaluationBottomGutter(page: Page) {
       contentGap: lastRect ? panelRect.bottom - lastRect.bottom : 0,
     }
   })
-  expect(geometry.paddingBottom).toBeGreaterThanOrEqual(31)
+  expect(geometry.paddingBottom).toBeGreaterThanOrEqual(47)
   expect(geometry.contentGap).toBeGreaterThanOrEqual(geometry.paddingBottom - 1)
 }
 
@@ -448,7 +506,23 @@ test.describe('Evaluation Plane', () => {
       has: page.getByText('Review / customize evidence', { exact: true }),
     })
     const summary = disclosure.locator('summary')
+    const primarySelects = page.locator('#evaluation-panel select:visible')
+    await expect(primarySelects).toHaveCount(2)
+    const primarySelectStyles = await primarySelects.evaluateAll((elements) =>
+      elements.map((element) => {
+        const style = getComputedStyle(element)
+        return {
+          backgroundColor: style.backgroundColor,
+          borderRadius: style.borderRadius,
+          height: element.getBoundingClientRect().height,
+        }
+      }),
+    )
+    expect(new Set(primarySelectStyles.map((style) => style.backgroundColor)).size).toBe(1)
+    expect(new Set(primarySelectStyles.map((style) => style.borderRadius)).size).toBe(1)
+    expect(new Set(primarySelectStyles.map((style) => style.height)).size).toBe(1)
     await expect(disclosure).not.toHaveAttribute('open', '')
+    await expect(disclosure.locator('select:visible')).toHaveCount(0)
     await expect
       .poll(() => summary.evaluate((element) => getComputedStyle(element, '::after').content))
       .not.toBe('none')
@@ -628,7 +702,7 @@ test.describe('Evaluation Plane', () => {
   test('keeps completed evidence identity honest while the newest report is loading', async ({
     page,
   }) => {
-    await mockEvaluationPlane(page, defaultEvaluationRuns, { reportDelayMs: 750 })
+    await mockEvaluationPlane(page, defaultEvaluationRuns, { reportDelayMs: 2_000 })
     await page.goto('/evaluation')
 
     await expect(page.getByText('Loading report summary…', { exact: true })).toBeVisible()
@@ -1151,44 +1225,7 @@ test.describe('Evaluation Plane', () => {
   }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
-    const campaignCoreTracks = ['routing', 'model_pool', 'joint'] as const
-    const campaignCoreSuite = ['live-mom-core']
-    const baselineLive = evaluationRun(
-      EVALUATION_RUN_IDS.baselineLive,
-      'Recipe live control',
-      'completed',
-      '2026-08-29T01:00:00Z',
-      'recipe',
-      {
-        mode: 'live',
-        suite_ids: campaignCoreSuite,
-        track_ids: [...campaignCoreTracks],
-        evidence_level: 'E3',
-        track_evidence_levels: { routing: 'E3', model_pool: 'E4', joint: 'E5' },
-        sample_limit: 64,
-        target_id: EVALUATION_BASELINE_MOM_TARGET_ID,
-        mixture: EVALUATION_MOM,
-        completed_at: '2026-08-29T01:10:00Z',
-      },
-    )
-    const candidateLive = evaluationRun(
-      EVALUATION_RUN_IDS.candidateLive,
-      'Recipe live treatment',
-      'completed',
-      '2026-08-29T02:00:00Z',
-      'recipe',
-      {
-        mode: 'live',
-        suite_ids: campaignCoreSuite,
-        track_ids: [...campaignCoreTracks],
-        evidence_level: 'E3',
-        track_evidence_levels: { routing: 'E3', model_pool: 'E4', joint: 'E5' },
-        sample_limit: 64,
-        target_id: EVALUATION_MOM_TARGET_ID,
-        mixture: EVALUATION_MOM,
-        completed_at: '2026-08-29T02:10:00Z',
-      },
-    )
+    const { baseline: baselineLive, candidate: candidateLive } = controlledPairSourceRuns()
     const hardPolicy = evaluationRun(
       EVALUATION_RUN_IDS.campaignG2,
       'Hard-policy qualification',
@@ -1286,7 +1323,7 @@ test.describe('Evaluation Plane', () => {
         baselineLive,
         ...defaultEvaluationRuns,
       ],
-      { campaignGetDelayMs: 250, failFirstControlledPair: true },
+      { campaignGetDelayMs: 250, failFirstControlledPair: true, ledgerDelayMs: 750 },
     )
     await page.goto('/evaluation?view=compare')
 
@@ -1328,9 +1365,48 @@ test.describe('Evaluation Plane', () => {
       baseline_source_run_id: EVALUATION_RUN_IDS.baselineLive,
       candidate_source_run_id: EVALUATION_RUN_IDS.candidateLive,
     })
+    await expect
+      .poll(() => new URL(page.url()).searchParams.get('controlled_pair'))
+      .toBe(controlledPairRequest.client_request_id)
+    await expect
+      .poll(() => new URL(page.url()).searchParams.get('controlled_pair_profile'))
+      .toBe('recipe')
+    const profileSelect = page.getByLabel('Campaign change profile')
+    await expect(profileSelect).toBeDisabled()
+    await expect(
+      page.getByText(/change profile is locked while this controlled pair/i),
+    ).toBeVisible()
+    const aggregatePath = `/api/evaluation/v1/controlled-pairs/${controlledPairRequest.client_request_id}`
+    await expect
+      .poll(() => state.controlledPairGetRequests.filter((path) => path === aggregatePath).length)
+      .toBeGreaterThanOrEqual(1)
+    await expect(
+      page.getByText('Fresh baseline and candidate runs completed and were bound to G3.'),
+    ).toHaveCount(0)
+    expect(state.runRequests).not.toContain(controlledPairRequest.baseline_run_id)
+    expect(state.runRequests).not.toContain(controlledPairRequest.candidate_run_id)
+    await expect
+      .poll(() =>
+        state
+          .getRuns()
+          .filter((run) => run.controlled_pair?.pair_id === controlledPairRequest.client_request_id)
+          .map((run) => run.status),
+      )
+      .toEqual(['completed', 'completed'])
+    expect(() => state.getRuns().forEach((run) => decodeEvaluationRun(run))).not.toThrow()
+    await expect(profileSelect).toBeDisabled()
     await expect(
       page.getByText('Fresh baseline and candidate runs completed and were bound to G3.'),
     ).toBeVisible()
+    await expect
+      .poll(() => state.controlledPairGetRequests.filter((path) => path === aggregatePath).length)
+      .toBeGreaterThanOrEqual(2)
+    expect(state.runRequests).not.toContain(controlledPairRequest.baseline_run_id)
+    expect(state.runRequests).not.toContain(controlledPairRequest.candidate_run_id)
+    await expect.poll(() => new URL(page.url()).searchParams.get('controlled_pair')).toBeNull()
+    await expect
+      .poll(() => new URL(page.url()).searchParams.get('controlled_pair_profile'))
+      .toBeNull()
     await expect(page.getByLabel('G3 controlled pair evidence')).toContainText(
       'Controlled baseline AB/BA → Controlled candidate AB/BA',
     )
@@ -1506,6 +1582,242 @@ test.describe('Evaluation Plane', () => {
     await expectNoHorizontalOverflow(page)
   })
 
+  test('recovers a server-accepted controlled pair after the create response and page are lost', async ({
+    page,
+  }) => {
+    const { baseline, candidate } = controlledPairSourceRuns()
+    const state = await mockEvaluationPlane(page, [candidate, baseline, ...defaultEvaluationRuns], {
+      abortControlledPairCreateResponseAfterAccept: true,
+      ledgerDelayMs: 300,
+    })
+    await page.goto('/evaluation?view=compare')
+    await launchCampaignControlledPair(page)
+
+    await expect.poll(() => state.controlledPairRequests.length).toBe(1)
+    const request = state.controlledPairRequests[0]
+    await expect
+      .poll(() => new URL(page.url()).searchParams.get('controlled_pair'))
+      .toBe(request.client_request_id)
+    await expect
+      .poll(() => new URL(page.url()).searchParams.get('controlled_pair_profile'))
+      .toBe('recipe')
+    await page.reload()
+
+    const disclosure = page.locator('details').filter({
+      has: page.getByText('Review / customize evidence', { exact: true }),
+    })
+    await disclosure.locator('summary').click()
+    await expect(
+      page.getByText('Fresh baseline and candidate runs completed and were bound to G3.'),
+    ).toBeVisible()
+    const aggregatePath = `/api/evaluation/v1/controlled-pairs/${request.client_request_id}`
+    await expect
+      .poll(() => state.controlledPairGetRequests.filter((path) => path === aggregatePath).length)
+      .toBeGreaterThanOrEqual(2)
+    expect(state.runRequests).not.toContain(request.baseline_run_id)
+    expect(state.runRequests).not.toContain(request.candidate_run_id)
+    await expect.poll(() => new URL(page.url()).searchParams.get('controlled_pair')).toBeNull()
+    await expect
+      .poll(() => new URL(page.url()).searchParams.get('controlled_pair_profile'))
+      .toBeNull()
+  })
+
+  test('preserves an active controlled pair while navigating away from Compare and back', async ({
+    page,
+  }) => {
+    const { baseline, candidate } = controlledPairSourceRuns()
+    const state = await mockEvaluationPlane(page, [candidate, baseline, ...defaultEvaluationRuns])
+    await page.goto('/evaluation?view=compare')
+    await launchCampaignControlledPair(page)
+
+    await expect.poll(() => state.controlledPairRequests.length).toBe(1)
+    const request = state.controlledPairRequests[0]
+    await expect
+      .poll(() => new URL(page.url()).searchParams.get('controlled_pair'))
+      .toBe(request.client_request_id)
+    await page.getByRole('tab', { name: 'Runs', exact: true }).click()
+    await expect
+      .poll(() => new URL(page.url()).searchParams.get('controlled_pair'))
+      .toBe(request.client_request_id)
+    await page.getByRole('tab', { name: 'Compare', exact: true }).click()
+    await expect
+      .poll(() => new URL(page.url()).searchParams.get('controlled_pair'))
+      .toBe(request.client_request_id)
+
+    const disclosure = page.locator('details').filter({
+      has: page.getByText('Review / customize evidence', { exact: true }),
+    })
+    if (!(await disclosure.evaluate((element) => element.hasAttribute('open')))) {
+      await disclosure.locator('summary').click()
+    }
+    await expect(
+      page.getByText('Fresh baseline and candidate runs completed and were bound to G3.'),
+    ).toBeVisible()
+    expect(state.runRequests).not.toContain(request.baseline_run_id)
+    expect(state.runRequests).not.toContain(request.candidate_run_id)
+    await expect.poll(() => new URL(page.url()).searchParams.get('controlled_pair')).toBeNull()
+  })
+
+  test('restores a non-default controlled-pair profile across reload and workspace navigation', async ({
+    page,
+  }) => {
+    const { baseline, candidate } = controlledPairSourceRuns('model_pool')
+    const state = await mockEvaluationPlane(page, [candidate, baseline, ...defaultEvaluationRuns], {
+      controlledPairGetDelayMs: 2_000,
+      ledgerDelayMs: 250,
+    })
+    await page.goto('/evaluation?view=compare')
+    await page.getByLabel('Campaign change profile').selectOption('model_pool')
+    await launchCampaignControlledPair(page)
+
+    await expect.poll(() => state.controlledPairRequests.length).toBe(1)
+    const request = state.controlledPairRequests[0]
+    await expect
+      .poll(() => new URL(page.url()).searchParams.get('controlled_pair'))
+      .toBe(request.client_request_id)
+    await expect
+      .poll(() => new URL(page.url()).searchParams.get('controlled_pair_profile'))
+      .toBe('model_pool')
+
+    await page.reload()
+    const profile = page.getByLabel('Campaign change profile')
+    await expect(profile).toHaveValue('model_pool')
+    await expect(profile).toBeDisabled()
+    await page.getByRole('tab', { name: 'Runs', exact: true }).click()
+    await expect
+      .poll(() => new URL(page.url()).searchParams.get('controlled_pair_profile'))
+      .toBe('model_pool')
+    await page.getByRole('tab', { name: 'Compare', exact: true }).click()
+    await expect(profile).toHaveValue('model_pool')
+    await expect(profile).toBeDisabled()
+
+    const disclosure = page.locator('details').filter({
+      has: page.getByText('Review / customize evidence', { exact: true }),
+    })
+    if (!(await disclosure.evaluate((element) => element.hasAttribute('open')))) {
+      await disclosure.locator('summary').click()
+    }
+    await expect(
+      page.getByText('Fresh baseline and candidate runs completed and were bound to G3.'),
+    ).toBeVisible()
+    await expect(page.getByLabel('G3 controlled pair evidence')).toContainText(
+      'Controlled baseline AB/BA → Controlled candidate AB/BA',
+    )
+    await expect.poll(() => new URL(page.url()).searchParams.get('controlled_pair')).toBeNull()
+    await expect
+      .poll(() => new URL(page.url()).searchParams.get('controlled_pair_profile'))
+      .toBeNull()
+  })
+
+  test('restarts authoritative reconciliation after recovered pair polling fails', async ({
+    page,
+  }) => {
+    const pairID = evaluationRunID(940)
+    const baselineID = evaluationRunID(941)
+    const candidateID = evaluationRunID(942)
+    const createdAt = '2026-08-31T03:00:00Z'
+    const baseline = evaluationRun(
+      baselineID,
+      'Recovered pair baseline',
+      'running',
+      createdAt,
+      'model_pool',
+      { controlled_pair: { pair_id: pairID, role: 'baseline' } },
+    )
+    const candidate = evaluationRun(
+      candidateID,
+      'Recovered pair candidate',
+      'running',
+      createdAt,
+      'model_pool',
+      {
+        baseline_run_id: baselineID,
+        controlled_pair: { pair_id: pairID, role: 'candidate' },
+      },
+    )
+    const state = await mockEvaluationPlane(page, [candidate, baseline, ...defaultEvaluationRuns], {
+      controlledPairGetDelayMs: 300,
+      failControlledPairGetAt: 2,
+    })
+    await page.goto(
+      `/evaluation?view=compare&controlled_pair=${pairID}&controlled_pair_profile=model_pool`,
+    )
+
+    const profile = page.getByLabel('Campaign change profile')
+    await expect(profile).toHaveValue('model_pool')
+    await expect(profile).toBeDisabled()
+    await page
+      .locator('details')
+      .filter({ has: page.getByText('Review / customize evidence', { exact: true }) })
+      .locator('summary')
+      .click()
+    await expect(page.getByRole('alert')).toContainText('temporary controlled-pair state failure')
+    await expect(profile).toBeDisabled()
+    await expect.poll(() => state.controlledPairGetRequests.length).toBeGreaterThanOrEqual(2)
+
+    await page.getByRole('button', { name: 'Retry controlled pair' }).click()
+    await expect.poll(() => state.controlledPairGetRequests.length).toBeGreaterThanOrEqual(3)
+    await expect(page.getByRole('alert')).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Controlled pair running…' })).toBeDisabled()
+    await expect(profile).toBeDisabled()
+  })
+
+  test('rejects stale assignment when the profile changes during asynchronous handoff', async ({
+    page,
+  }) => {
+    const { baseline, candidate } = controlledPairSourceRuns()
+    await mockEvaluationPlane(page, [candidate, baseline, ...defaultEvaluationRuns], {
+      ledgerDelayMs: 1_000,
+    })
+    await page.goto('/evaluation?view=compare')
+    await launchCampaignControlledPair(page)
+
+    const profile = page.getByLabel('Campaign change profile')
+    await expect(
+      page.getByText('Both runs completed. Refreshing the durable ledger before binding G3.'),
+    ).toBeVisible()
+    await expect(profile).toBeDisabled()
+    await profile.evaluate((element) => {
+      const select = element as HTMLSelectElement
+      select.removeAttribute('disabled')
+      const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set
+      setter?.call(select, 'model_pool')
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    await expect(profile).toHaveValue('recipe')
+    await expect(page.getByLabel('G3 controlled pair evidence')).toContainText(
+      'Controlled baseline AB/BA → Controlled candidate AB/BA',
+    )
+    await expect.poll(() => new URL(page.url()).searchParams.get('controlled_pair')).toBeNull()
+  })
+
+  test('fails closed for invalid or stale controlled-pair route identities', async ({ page }) => {
+    const state = await mockEvaluationPlane(page)
+    await page.goto(
+      '/evaluation?view=compare&controlled_pair=not-a-canonical-id&controlled_pair_profile=recipe',
+    )
+    await expect(page.getByRole('heading', { name: 'Promotion campaign' })).toBeVisible()
+    expect(state.controlledPairGetRequests).toHaveLength(0)
+
+    const stalePairID = evaluationRunID(990)
+    await page.goto(
+      `/evaluation?view=compare&controlled_pair=${stalePairID}&controlled_pair_profile=recipe`,
+    )
+    await page
+      .locator('details')
+      .filter({ has: page.getByText('Review / customize evidence', { exact: true }) })
+      .locator('summary')
+      .click()
+    await expect(page.getByRole('alert')).toContainText('not found: controlled pair')
+    await expect(page.getByLabel('G3 controlled pair evidence')).not.toContainText(stalePairID)
+    await page.getByRole('button', { name: 'Clear saved pair' }).click()
+    await expect.poll(() => new URL(page.url()).searchParams.get('controlled_pair')).toBeNull()
+    await expect
+      .poll(() => new URL(page.url()).searchParams.get('controlled_pair_profile'))
+      .toBeNull()
+  })
+
   test('keeps quarantined run evidence visible and blocks partial-ledger decisions', async ({
     page,
   }) => {
@@ -1583,6 +1895,287 @@ test.describe('Evaluation Plane', () => {
     await expect(inspector.getByText('Cancelled', { exact: true })).toBeVisible()
   })
 
+  test('does not let a delayed detail read roll back a started run', async ({ page }) => {
+    const pending = evaluationRun(
+      evaluationRunID(920),
+      'Delayed start fixture',
+      'pending',
+      '2026-08-31T02:00:00Z',
+    )
+    const state = await mockEvaluationPlane(page, [pending, ...defaultEvaluationRuns], {
+      runDelayMs: 800,
+      mutationDelayMs: 100,
+    })
+    await page.goto(`/evaluation?view=runs&run=${pending.id}`)
+
+    await page.getByRole('button', { name: 'Refresh evaluation runs' }).click()
+    await expect
+      .poll(() => state.runRequests.filter((id) => id === pending.id).length)
+      .toBeGreaterThanOrEqual(1)
+    await page.getByRole('button', { name: `Start ${pending.name}` }).click()
+    await expect.poll(state.getStartCount).toBe(1)
+    const cancel = page.getByRole('button', { name: `Cancel ${pending.name}` })
+    await expect(cancel).toBeVisible()
+
+    await page.waitForTimeout(900)
+    await expect(cancel).toBeVisible()
+    await expect(page.getByRole('button', { name: `Start ${pending.name}` })).toHaveCount(0)
+  })
+
+  test('does not let a delayed detail read roll back a cancelled run', async ({ page }) => {
+    const running = evaluationRun(
+      evaluationRunID(921),
+      'Delayed cancel fixture',
+      'running',
+      '2026-08-31T02:10:00Z',
+    )
+    const state = await mockEvaluationPlane(page, [running, ...defaultEvaluationRuns], {
+      runDelayMs: 800,
+      mutationDelayMs: 100,
+    })
+    await page.goto(`/evaluation?view=runs&run=${running.id}`)
+
+    await page.getByRole('button', { name: 'Refresh evaluation runs' }).click()
+    await expect
+      .poll(() => state.runRequests.filter((id) => id === running.id).length)
+      .toBeGreaterThanOrEqual(1)
+    await page.getByRole('button', { name: `Cancel ${running.name}` }).click()
+    await page.getByRole('alertdialog').getByRole('button', { name: 'Cancel run' }).click()
+    await expect.poll(state.getCancelCount).toBe(1)
+    const deleteRun = page.getByRole('button', { name: `Delete ${running.name}` })
+    await expect(deleteRun).toBeVisible()
+
+    await page.waitForTimeout(900)
+    await expect(deleteRun).toBeVisible()
+    await expect(page.getByRole('button', { name: `Cancel ${running.name}` })).toHaveCount(0)
+  })
+
+  test('mutates controlled-pair members only through their aggregate lifecycle', async ({
+    page,
+  }) => {
+    const pairID = evaluationRunID(900)
+    const baselineID = evaluationRunID(901)
+    const candidateID = evaluationRunID(902)
+    const createdAt = '2026-08-31T01:00:00Z'
+    const baseline = evaluationRun(
+      baselineID,
+      'Controlled pair control',
+      'running',
+      createdAt,
+      'recipe',
+      { controlled_pair: { pair_id: pairID, role: 'baseline' } },
+    )
+    const candidate = evaluationRun(
+      candidateID,
+      'Controlled pair treatment',
+      'running',
+      createdAt,
+      'recipe',
+      {
+        baseline_run_id: baseline.id,
+        controlled_pair: { pair_id: pairID, role: 'candidate' },
+      },
+    )
+    const state = await mockEvaluationPlane(page, [candidate, baseline, ...defaultEvaluationRuns], {
+      mutationDelayMs: 300,
+      failFirstControlledPairCancel: true,
+    })
+    await page.goto(`/evaluation?view=runs&run=${candidate.id}`)
+
+    const cancelPair = page.getByRole('button', {
+      name: `Cancel controlled pair ${pairID}`,
+    })
+    await expect(cancelPair).toHaveText('Cancel pair')
+    await expect(page.getByRole('button', { name: `Cancel ${candidate.name}` })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: `Delete ${candidate.name}` })).toHaveCount(0)
+
+    await cancelPair.click()
+    let dialog = page.getByRole('alertdialog')
+    await expect(dialog.getByRole('heading', { name: 'Cancel controlled pair?' })).toBeVisible()
+    await expect(dialog).toContainText('Both derived runs stop as one controlled-pair transition.')
+    await expect(dialog).toContainText(pairID)
+    await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
+    await expect(dialog).toHaveCount(0)
+    expect(state.controlledPairCancelRequests).toHaveLength(0)
+
+    await cancelPair.click()
+    dialog = page.getByRole('alertdialog')
+    await dialog.getByRole('button', { name: 'Cancel pair', exact: true }).click()
+    await expect(dialog.getByRole('alert')).toContainText(
+      'temporary controlled-pair cancellation failure',
+    )
+    expect(state.controlledPairCancelRequests).toEqual([
+      `/api/evaluation/v1/controlled-pairs/${pairID}/cancel`,
+    ])
+
+    await dialog.getByRole('button', { name: 'Cancel pair', exact: true }).click()
+    await expect(dialog).toHaveAttribute('aria-busy', 'true')
+    await expect(dialog.getByRole('button', { name: 'Cancelling pair…' })).toBeDisabled()
+    await expect(dialog).toHaveCount(0)
+    expect(state.getCancelCount()).toBe(0)
+    await expect(page.getByRole('button', { name: `Inspect ${baseline.name}` })).toContainText(
+      'Controlled pair cancelled',
+    )
+    await expect(page.getByRole('button', { name: `Inspect ${candidate.name}` })).toContainText(
+      'Controlled pair cancelled',
+    )
+
+    const deletePair = page.getByRole('button', {
+      name: `Delete controlled pair ${pairID}`,
+    })
+    await expect(deletePair).toHaveText('Delete pair')
+    await deletePair.click()
+    dialog = page.getByRole('alertdialog')
+    await expect(dialog.getByRole('heading', { name: 'Delete controlled pair?' })).toBeVisible()
+    await expect(dialog).toContainText(
+      'This permanently removes both derived run bundles and their Dashboard history.',
+    )
+    await expect(dialog).toContainText(pairID)
+    const confirmation = dialog.getByRole('textbox', { name: new RegExp(pairID) })
+    await confirmation.fill(pairID)
+    const ledgerRequestsBeforeDelete = state.getLedgerRequestCount()
+    await dialog.getByRole('button', { name: 'Delete pair', exact: true }).click()
+    await expect(dialog).toHaveAttribute('aria-busy', 'true')
+    await expect(dialog.getByRole('button', { name: 'Deleting pair…' })).toBeDisabled()
+    await expect(dialog).toHaveCount(0)
+
+    expect(state.controlledPairDeleteRequests).toEqual([
+      `/api/evaluation/v1/controlled-pairs/${pairID}`,
+    ])
+    expect(state.getDeleteCount()).toBe(0)
+    await expect(page.getByRole('button', { name: `Inspect ${baseline.name}` })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: `Inspect ${candidate.name}` })).toHaveCount(0)
+    await expect.poll(state.getLedgerRequestCount).toBeGreaterThan(ledgerRequestsBeforeDelete)
+    await expect.poll(() => new URL(page.url()).searchParams.get('run')).toBeNull()
+  })
+
+  test('does not let a delayed member read roll back aggregate pair cancellation', async ({
+    page,
+  }) => {
+    const pairID = evaluationRunID(922)
+    const baselineID = evaluationRunID(923)
+    const candidateID = evaluationRunID(924)
+    const createdAt = '2026-08-31T02:20:00Z'
+    const baseline = evaluationRun(
+      baselineID,
+      'Delayed pair baseline',
+      'running',
+      createdAt,
+      'recipe',
+      { controlled_pair: { pair_id: pairID, role: 'baseline' } },
+    )
+    const candidate = evaluationRun(
+      candidateID,
+      'Delayed pair candidate',
+      'running',
+      createdAt,
+      'recipe',
+      {
+        baseline_run_id: baselineID,
+        controlled_pair: { pair_id: pairID, role: 'candidate' },
+      },
+    )
+    const state = await mockEvaluationPlane(page, [candidate, baseline, ...defaultEvaluationRuns], {
+      runDelayMs: 800,
+      mutationDelayMs: 100,
+    })
+    await page.goto(`/evaluation?view=runs&run=${candidate.id}`)
+    const cancelPair = page.getByRole('button', { name: `Cancel controlled pair ${pairID}` })
+    await expect(cancelPair).toBeVisible()
+
+    await page.getByRole('button', { name: 'Refresh evaluation runs' }).click()
+    await expect
+      .poll(() => state.runRequests.filter((id) => id === candidate.id).length)
+      .toBeGreaterThanOrEqual(1)
+    await cancelPair.click()
+    await page.getByRole('alertdialog').getByRole('button', { name: 'Cancel pair' }).click()
+    await expect.poll(() => state.controlledPairCancelRequests.length).toBe(1)
+    const deletePair = page.getByRole('button', {
+      name: `Delete controlled pair ${pairID}`,
+    })
+    await expect(deletePair).toBeVisible()
+
+    await page.waitForTimeout(900)
+    await expect(deletePair).toBeVisible()
+    await expect(cancelPair).toHaveCount(0)
+  })
+
+  test('uses aggregate capabilities when the selected pair member is already terminal', async ({
+    page,
+  }) => {
+    const pairID = evaluationRunID(910)
+    const baselineID = evaluationRunID(911)
+    const candidateID = evaluationRunID(912)
+    const createdAt = '2026-08-31T01:20:00Z'
+    const baseline = evaluationRun(
+      baselineID,
+      'Completed controlled baseline',
+      'completed',
+      createdAt,
+      'recipe',
+      {
+        mode: 'live',
+        controlled_pair: { pair_id: pairID, role: 'baseline' },
+      },
+    )
+    const candidate = evaluationRun(
+      candidateID,
+      'Running controlled candidate',
+      'running',
+      createdAt,
+      'recipe',
+      {
+        baseline_run_id: baseline.id,
+        controlled_pair: { pair_id: pairID, role: 'candidate' },
+      },
+    )
+    const state = await mockEvaluationPlane(page, [baseline, candidate, ...defaultEvaluationRuns], {
+      controlledPairGetDelayMs: 2_000,
+      failFirstControlledPairGet: true,
+    })
+    await page.goto(`/evaluation?view=runs&run=${baseline.id}`)
+
+    await expect(
+      page.getByRole('button', { name: `Open report for ${baseline.name}` }),
+    ).toBeVisible()
+    await expect(page.getByText('Loading pair controls…')).toBeVisible()
+    await expect(
+      page.getByRole('button', { name: `Cancel controlled pair ${pairID}` }),
+    ).toHaveCount(0)
+    await expect(
+      page.getByRole('button', { name: `Delete controlled pair ${pairID}` }),
+    ).toHaveCount(0)
+
+    const pairError = page.getByRole('alert').filter({
+      hasText: 'Controlled-pair controls are unavailable.',
+    })
+    await expect(pairError).toContainText('temporary controlled-pair state failure')
+    await expect(
+      page.getByRole('button', { name: `Delete controlled pair ${pairID}` }),
+    ).toHaveCount(0)
+    await pairError.getByRole('button', { name: 'Retry pair controls' }).click()
+
+    const cancelPair = page.getByRole('button', { name: `Cancel controlled pair ${pairID}` })
+    await expect(cancelPair).toHaveText('Cancel pair')
+    await expect(
+      page.getByRole('button', { name: `Delete controlled pair ${pairID}` }),
+    ).toHaveCount(0)
+    await expect
+      .poll(() => state.controlledPairGetRequests)
+      .toEqual([
+        `/api/evaluation/v1/controlled-pairs/${pairID}`,
+        `/api/evaluation/v1/controlled-pairs/${pairID}`,
+      ])
+
+    await page.getByRole('button', { name: 'Refresh evaluation runs' }).click()
+    await expect(page.getByText('Refreshing pair controls…')).toBeVisible()
+    await expect(cancelPair).toBeVisible()
+    await expect(cancelPair).toBeDisabled()
+    await expect(page.getByText('Loading evaluation run')).toHaveCount(0)
+    await expect(cancelPair).toBeEnabled()
+    await expect.poll(() => state.controlledPairGetRequests.length).toBeGreaterThanOrEqual(3)
+  })
+
   test('requires typed delete confirmation and preserves pending dialog state', async ({
     page,
   }) => {
@@ -1617,17 +2210,26 @@ test.describe('Evaluation Plane', () => {
   })
 
   test('keeps one SSE subscription and one event across a run refresh', async ({ page }) => {
-    const state = await mockEvaluationPlane(page)
+    const state = await mockEvaluationPlane(page, defaultEvaluationRuns, { runDelayMs: 750 })
     await page.goto(`/evaluation?view=runs&run=${EVALUATION_RUN_IDS.live}`)
 
     await expect.poll(state.getEventStreamCount).toBe(1)
     await expect(page.getByText('Executing routing track from SSE')).toHaveCount(1)
     await captureEvaluationSurface(page, 'runs-desktop')
+    const detailRequestsBeforeRefresh = state.runRequests.filter(
+      (id) => id === EVALUATION_RUN_IDS.live,
+    ).length
     await page.getByRole('button', { name: 'Refresh evaluation runs' }).click()
-    await page.waitForTimeout(250)
+    await expect
+      .poll(() => state.runRequests.filter((id) => id === EVALUATION_RUN_IDS.live).length)
+      .toBeGreaterThan(detailRequestsBeforeRefresh)
+    await expect(page.getByRole('heading', { name: 'Live AMD validation' })).toBeVisible()
+    await expect(page.getByText('Loading evaluation run', { exact: true })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Cancel Live AMD validation' })).toBeVisible()
 
     expect(state.getEventStreamCount()).toBe(1)
     await expect(page.getByText('Executing routing track from SSE')).toHaveCount(1)
+    await expect(page.getByText('Refreshing details…', { exact: true })).toHaveCount(0)
   })
 
   test('requires an explicit retry after a server-closed event stream', async ({ page }) => {

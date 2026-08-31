@@ -239,6 +239,13 @@ export interface EvaluationRunProgress {
   message?: string
 }
 
+export type EvaluationControlledPairRole = 'baseline' | 'candidate'
+
+export interface EvaluationControlledPairMembership {
+  pair_id: string
+  role: EvaluationControlledPairRole
+}
+
 export interface EvaluationRun {
   schema_version: EvaluationSchemaVersion
   id: string
@@ -260,6 +267,7 @@ export interface EvaluationRun {
   capacity_load_protocol?: EvaluationCapacityLoadProtocol
   seed: number
   baseline_run_id?: string
+  controlled_pair?: EvaluationControlledPairMembership
   progress: EvaluationRunProgress
   created_at: string
   started_at?: string

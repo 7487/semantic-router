@@ -1,4 +1,5 @@
 import type { EvaluationRun, EvaluationRunEvent } from '../../types/evaluationPlane'
+import type { EvaluationControlledPairExecution } from '../../types/evaluationControlledPair'
 import { formatDateTime } from '../../utils/dateTime'
 import { EvaluationActionButton } from './EvaluationPrimitives'
 import EvaluationRunInspector from './EvaluationRunInspector'
@@ -14,6 +15,11 @@ interface EvaluationRunsProps {
   selectedRunLoading: boolean
   selectedRunError: string | null
   onRetrySelectedRun: () => void
+  selectedPair: EvaluationControlledPairExecution | null
+  selectedPairLoading: boolean
+  selectedPairRefreshing: boolean
+  selectedPairError: string | null
+  onRetrySelectedPair: () => void
   events: EvaluationRunEvent[]
   eventsConnected: boolean
   eventsError: string | null
@@ -44,6 +50,11 @@ export default function EvaluationRuns({
   selectedRunLoading,
   selectedRunError,
   onRetrySelectedRun,
+  selectedPair,
+  selectedPairLoading,
+  selectedPairRefreshing,
+  selectedPairError,
+  onRetrySelectedPair,
   events,
   eventsConnected,
   eventsError,
@@ -92,6 +103,7 @@ export default function EvaluationRuns({
             <EvaluationActionButton
               type="button"
               compact
+              variant="quiet"
               disabled={refreshing || loadingMore}
               aria-busy={refreshing}
               onClick={onRefresh}
@@ -128,6 +140,10 @@ export default function EvaluationRuns({
             run={selectedRun}
             loading={selectedRunLoading}
             error={selectedRunError}
+            controlledPairExecution={selectedPair}
+            controlledPairLoading={selectedPairLoading}
+            controlledPairRefreshing={selectedPairRefreshing}
+            controlledPairError={selectedPairError}
             events={events}
             eventsConnected={eventsConnected}
             eventsError={eventsError}
@@ -135,6 +151,7 @@ export default function EvaluationRuns({
             canDelete={canDelete}
             mutationKey={mutationKey}
             onRetry={onRetrySelectedRun}
+            onRetryControlledPair={onRetrySelectedPair}
             onReconnectEvents={onReconnectEvents}
             onStart={onStart}
             onCancel={onCancel}

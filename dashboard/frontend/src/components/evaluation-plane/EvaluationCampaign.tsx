@@ -1,4 +1,8 @@
-import type { EvaluationCatalog, EvaluationRun } from '../../types/evaluationPlane'
+import type {
+  EvaluationCatalog,
+  EvaluationChangeProfileId,
+  EvaluationRun,
+} from '../../types/evaluationPlane'
 import type {
   CreateEvaluationCampaignPayload,
   EvaluationCampaign as EvaluationCampaignResource,
@@ -24,8 +28,14 @@ interface EvaluationCampaignProps {
   campaign: EvaluationCampaignResource | null
   campaignLoading: boolean
   campaignError: string | null
+  activeControlledPairID: string | null
+  activeControlledPairProfileID: EvaluationChangeProfileId | null
   onLoadAllRuns: () => void
   onRefreshRuns: () => boolean | Promise<boolean>
+  onControlledPairIdentityChange: (
+    pairID: string | null,
+    profileID: EvaluationChangeProfileId | null,
+  ) => void
   onCreate: (request: CreateEvaluationCampaignPayload) => Promise<EvaluationCampaignResource | null>
   onClearCreateError: () => void
   onRetryCampaign: () => void
@@ -46,8 +56,11 @@ export default function EvaluationCampaign({
   campaign,
   campaignLoading,
   campaignError,
+  activeControlledPairID,
+  activeControlledPairProfileID,
   onLoadAllRuns,
   onRefreshRuns,
+  onControlledPairIdentityChange,
   onCreate,
   onClearCreateError,
   onRetryCampaign,
@@ -59,6 +72,7 @@ export default function EvaluationCampaign({
     runLedgerAvailable,
     runLedgerComplete,
     allRunsLoaded,
+    lockedChangeProfile: activeControlledPairProfileID,
     onClearCreateError,
   })
 
@@ -119,9 +133,11 @@ export default function EvaluationCampaign({
           canCreate={canCreate}
           createPending={createPending}
           createError={createError}
+          activeControlledPairID={activeControlledPairID}
           model={builder}
           onLoadAllRuns={onLoadAllRuns}
           onRefreshRuns={onRefreshRuns}
+          onControlledPairIdentityChange={onControlledPairIdentityChange}
           onCreate={onCreate}
           onClearCreateError={onClearCreateError}
         />

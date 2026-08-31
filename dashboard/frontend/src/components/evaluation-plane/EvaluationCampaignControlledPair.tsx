@@ -1,13 +1,17 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import type { EvaluationControlledPairExecution } from '../../types/evaluationControlledPair'
 import type {
   EvaluationCatalog,
   EvaluationCatalogCampaignSlot,
   EvaluationCatalogChangeProfile,
+  EvaluationChangeProfileId,
   EvaluationRun,
 } from '../../types/evaluationPlane'
-import { useEvaluationControlledPair } from '../../hooks/useEvaluationControlledPair'
+import {
+  type EvaluationControlledPairReadyGuard,
+  useEvaluationControlledPair,
+} from '../../hooks/useEvaluationControlledPair'
 import {
   controlledPairBaselineSourceOptions,
   controlledPairCandidateSourceOptions,
@@ -22,7 +26,14 @@ interface EvaluationCampaignControlledPairProps {
   slot: EvaluationCatalogCampaignSlot
   canCreate: boolean
   disabled: boolean
-  onReady: (execution: EvaluationControlledPairExecution) => void | Promise<void>
+  activePairID: string | null
+  resumablePair: { id: string; profileID: EvaluationChangeProfileId } | null
+  onProfileLockChange: (locked: boolean) => void
+  onPairIdentityChange: (pairID: string | null, profileID: EvaluationChangeProfileId | null) => void
+  onReady: (
+    execution: EvaluationControlledPairExecution,
+    isCurrent: EvaluationControlledPairReadyGuard,
+  ) => void | Promise<void>
 }
 
 function runProgress(run: EvaluationRun): string {
@@ -36,11 +47,18 @@ export default function EvaluationCampaignControlledPair({
   slot,
   canCreate,
   disabled,
+  activePairID,
+  resumablePair,
+  onProfileLockChange,
+  onPairIdentityChange,
   onReady,
 }: EvaluationCampaignControlledPairProps) {
   const [baselineSourceID, setBaselineSourceID] = useState('')
   const [candidateSourceID, setCandidateSourceID] = useState('')
-  const pair = useEvaluationControlledPair(onReady)
+  const pair = useEvaluationControlledPair(onReady, {
+    activePairID,
+    onPairIdentity: (pairID) => onPairIdentityChange(pairID, pairID ? profile.id : null),
+  })
   const baselineOptions = useMemo(
     () => controlledPairBaselineSourceOptions(runs, catalog, profile, slot),
     [catalog, profile, runs, slot],
@@ -50,7 +68,27 @@ export default function EvaluationCampaignControlledPair({
     [baselineSourceID, catalog, profile, runs, slot],
   )
   const busy =
-    pair.status === 'creating' || pair.status === 'running' || pair.status === 'assigning'
+    pair.status === 'creating' ||
+    pair.status === 'recovering' ||
+    pair.status === 'running' ||
+    pair.status === 'assigning'
+  const profileLocked =
+    Boolean(activePairID) || busy || Boolean(pair.execution && pair.status !== 'ready')
+
+  useEffect(() => {
+    onProfileLockChange(profileLocked)
+  }, [onProfileLockChange, profileLocked])
+
+  useEffect(
+    () => () => {
+      onProfileLockChange(false)
+    },
+    [onProfileLockChange],
+  )
+
+  useEffect(() => {
+    if (pair.status === 'ready' && activePairID) onPairIdentityChange(null, null)
+  }, [activePairID, onPairIdentityChange, pair.status])
   const sourceReady = Boolean(baselineSourceID && candidateSourceID)
   const selectionRationale =
     baselineOptions.length === 0
@@ -139,14 +177,30 @@ export default function EvaluationCampaignControlledPair({
         {pair.error ? (
           <div className={styles.error} role="alert">
             <span>{pair.error}</span>
-            <EvaluationActionButton
-              type="button"
-              compact
-              disabled={!canCreate || busy}
-              onClick={pair.retry}
-            >
-              Retry controlled pair
-            </EvaluationActionButton>
+            <div className={styles.errorActions}>
+              <EvaluationActionButton
+                type="button"
+                compact
+                disabled={!canCreate || busy}
+                onClick={pair.retry}
+              >
+                Retry controlled pair
+              </EvaluationActionButton>
+              {activePairID ? (
+                <EvaluationActionButton
+                  type="button"
+                  compact
+                  variant="quiet"
+                  disabled={busy}
+                  onClick={() => {
+                    pair.reset()
+                    onPairIdentityChange(null, null)
+                  }}
+                >
+                  Clear saved pair
+                </EvaluationActionButton>
+              ) : null}
+            </div>
           </div>
         ) : null}
         {pair.status === 'ready' ? (
@@ -155,7 +209,9 @@ export default function EvaluationCampaignControlledPair({
           </div>
         ) : null}
 
-        {pair.status !== 'ready' && !pair.error ? (
+        {pair.status !== 'ready' &&
+        !pair.error &&
+        !(pair.status === 'idle' && !activePairID && resumablePair) ? (
           <div className={styles.pairAction}>
             <span>
               {pair.status === 'assigning'
@@ -173,11 +229,26 @@ export default function EvaluationCampaignControlledPair({
             >
               {pair.status === 'creating'
                 ? 'Starting controlled pair…'
-                : pair.status === 'assigning'
-                  ? 'Assigning completed pair…'
-                  : pair.status === 'running'
-                    ? 'Controlled pair running…'
-                    : 'Launch controlled pair'}
+                : pair.status === 'recovering'
+                  ? 'Recovering controlled pair…'
+                  : pair.status === 'assigning'
+                    ? 'Assigning completed pair…'
+                    : pair.status === 'running'
+                      ? 'Controlled pair running…'
+                      : 'Launch controlled pair'}
+            </EvaluationActionButton>
+          </div>
+        ) : null}
+        {!activePairID && pair.status === 'idle' && resumablePair ? (
+          <div className={styles.pairAction} role="status">
+            <span>The ledger contains one active controlled pair that is not linked here.</span>
+            <EvaluationActionButton
+              type="button"
+              compact
+              variant="quiet"
+              onClick={() => onPairIdentityChange(resumablePair.id, resumablePair.profileID)}
+            >
+              Resume controlled pair
             </EvaluationActionButton>
           </div>
         ) : null}

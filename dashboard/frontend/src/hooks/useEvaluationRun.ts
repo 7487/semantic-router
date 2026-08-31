@@ -63,6 +63,8 @@ export function useEvaluationRun(runID: string | null, loadedRun: EvaluationRun 
 
   useEffect(() => {
     if (!loadedRun || loadedRun.id !== runID) return
+    requestVersion.current += 1
+    controller.current?.abort()
     setState((current) =>
       current.key === key ? { key, run: loadedRun, loading: false, error: null } : current,
     )

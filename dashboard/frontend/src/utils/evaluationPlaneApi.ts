@@ -219,8 +219,37 @@ export async function createEvaluationControlledPair(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(request),
     }),
+    request.client_request_id,
     request,
   )
+}
+
+export async function cancelEvaluationControlledPair(
+  id: string,
+): Promise<EvaluationControlledPairExecution> {
+  requireCanonicalEvaluationRunID(id)
+  return decodeEvaluationControlledPairExecution(
+    await requestJson<unknown>(`/controlled-pairs/${encodeURIComponent(id)}/cancel`, {
+      method: 'POST',
+    }),
+    id,
+  )
+}
+
+export async function getEvaluationControlledPair(
+  id: string,
+  signal?: AbortSignal,
+): Promise<EvaluationControlledPairExecution> {
+  requireCanonicalEvaluationRunID(id)
+  return decodeEvaluationControlledPairExecution(
+    await requestJson<unknown>(`/controlled-pairs/${encodeURIComponent(id)}`, { signal }),
+    id,
+  )
+}
+
+export function deleteEvaluationControlledPair(id: string): Promise<void> {
+  requireCanonicalEvaluationRunID(id)
+  return requestJson(`/controlled-pairs/${encodeURIComponent(id)}`, { method: 'DELETE' })
 }
 
 export async function getEvaluationCampaign(
