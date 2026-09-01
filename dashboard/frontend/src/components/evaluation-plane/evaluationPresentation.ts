@@ -1,4 +1,5 @@
 import type {
+  EvidenceLevel,
   EvaluationRunStatus,
   EvaluationTrackStatus,
   GateVerdict,
@@ -12,7 +13,7 @@ import type {
 export const RUN_STATUS_LABELS: Record<EvaluationRunStatus, string> = {
   pending: 'Pending',
   running: 'Running',
-  sealing: 'Sealing evidence',
+  sealing: 'Finalizing report',
   completed: 'Completed',
   failed: 'Failed',
   cancelled: 'Cancelled',
@@ -24,12 +25,88 @@ export const TRACK_STATUS_LABELS: Record<EvaluationTrackStatus, string> = {
   skipped: 'Not selected',
 }
 
-export const GATE_VERDICT_LABELS: Record<GateVerdict, string> = {
-  pass: 'Passed',
-  fail: 'Blocked',
-  unavailable: 'Evidence needed',
-  waived: 'Waived',
-  not_applicable: 'Not required',
+interface EvaluationResultScopePresentation {
+  label: string
+  description: string
+}
+
+const EVALUATION_RESULT_SCOPE_PRESENTATION: Record<
+  EvidenceLevel,
+  EvaluationResultScopePresentation
+> = {
+  E0: {
+    label: 'Diagnostic',
+    description:
+      'Checks the evaluation setup, data identity, and execution path without making a release recommendation.',
+  },
+  E1: {
+    label: 'Signal validation',
+    description: 'Measures signal availability, discrimination, latency, and failure behavior.',
+  },
+  E2: {
+    label: 'Prediction validation',
+    description: 'Measures prediction coverage, calibration, stability, and downstream usefulness.',
+  },
+  E3: {
+    label: 'Routing validation',
+    description:
+      'Verifies routing decisions, fallback behavior, policy handling, and router latency.',
+  },
+  E4: {
+    label: 'Model-pool validation',
+    description:
+      'Measures model alternatives, realized utility, regret, robustness, and pool usage.',
+  },
+  E5: {
+    label: 'End-to-end validation',
+    description:
+      'Measures final task outcomes, live reliability, safety, complete cost, and capacity.',
+  },
+}
+
+export function evaluationResultScopeLabel(level: EvidenceLevel): string {
+  return EVALUATION_RESULT_SCOPE_PRESENTATION[level].label
+}
+
+export function evaluationResultScopeDescription(level: EvidenceLevel): string {
+  return EVALUATION_RESULT_SCOPE_PRESENTATION[level].description
+}
+
+const GATE_CAPABILITY_LABELS: Record<string, string> = {
+  G0: 'Reproducibility',
+  G1: 'Static correctness',
+  G2: 'Policy enforcement',
+  G3: 'Controlled value comparison',
+  G4: 'Shift robustness',
+  G5: 'Live fidelity',
+  G6: 'Fault recovery',
+  G7: 'Cost, latency, and capacity',
+  G8: 'Canary safety',
+  G9: 'Online preference',
+}
+
+export function evaluationGateCapabilityLabel(gateID: string): string {
+  return GATE_CAPABILITY_LABELS[gateID] || 'Release readiness'
+}
+
+const GATE_NEXT_ACTIONS: Record<string, string> = {
+  G0: 'Repeat the run with the same pinned workload and configuration to confirm reproducibility.',
+  G1: 'Validate the routing rules and signals on a labeled offline workload.',
+  G2: 'Run live policy-enforcement cases and record whether every required policy was applied.',
+  G3: 'Compare a baseline and candidate on the same assigned cohort.',
+  G4: 'Run the declared workload shifts and measure how much quality and reliability change.',
+  G5: 'Compare the saved candidate with a fresh live run of the unchanged system.',
+  G6: 'Inject the expected failures and verify fallback, retry, and recovery behavior.',
+  G7: 'Run repeated live load at the required service objective and measure available capacity.',
+  G8: 'Run a guarded shadow or canary with exposure, stop, and rollback monitoring.',
+  G9: 'Collect assigned online preference outcomes for the baseline and candidate.',
+}
+
+export function evaluationGateNextAction(gateID: string): string {
+  return (
+    GATE_NEXT_ACTIONS[gateID] ||
+    'Collect the missing results for this release check and repeat the evaluation.'
+  )
 }
 
 export type EvaluationTone = 'neutral' | 'positive' | 'warning' | 'negative'
@@ -44,37 +121,37 @@ export function gateVerdictPresentation(gate: Pick<EvaluationGate, 'disposition'
       return {
         label: 'Passed',
         tone: 'positive',
-        explanation: 'The recorded evidence satisfied this gate.',
+        explanation: 'The measured result satisfied this check.',
       }
     case 'fail':
       return {
         label: 'Blocked',
         tone: 'negative',
-        explanation: 'The observed evidence violated this gate.',
+        explanation: 'The measured result did not satisfy this check.',
       }
     case 'waived':
       return {
         label: 'Waived',
         tone: 'neutral',
-        explanation: 'The gate was explicitly waived with recorded rationale.',
+        explanation: 'This check was explicitly waived with a recorded reason.',
       }
     case 'not_applicable':
       return {
         label: 'Not required',
         tone: 'neutral',
-        explanation: 'This gate does not apply to the selected change profile.',
+        explanation: 'This check does not apply to the selected change type.',
       }
     case 'unavailable':
       return gate.disposition === 'required'
         ? {
-            label: 'Evidence needed',
+            label: 'Incomplete',
             tone: 'warning',
-            explanation: 'Required evidence was not produced, so this gate cannot pass.',
+            explanation: 'This required check does not yet have enough results to complete.',
           }
         : {
             label: 'Not measured',
             tone: 'neutral',
-            explanation: 'This advisory evidence was not produced by the run.',
+            explanation: 'This recommended measurement was not produced by the run.',
           }
   }
 }
@@ -88,10 +165,32 @@ export function formatPercent(value: number | null | undefined): string {
   return `${(value * 100).toFixed(1)}%`
 }
 
+function formatMetricNumber(value: number): string {
+  return new Intl.NumberFormat(undefined, { maximumFractionDigits: 4 }).format(value)
+}
+
+function formatMetricCount(value: number, singular: string, plural = `${singular}s`): string {
+  return `${new Intl.NumberFormat().format(value)} ${value === 1 ? singular : plural}`
+}
+
+const METRIC_THRESHOLD_OPERATORS: Readonly<Record<string, string>> = {
+  '<': '<',
+  '<=': '≤',
+  lt: '<',
+  lte: '≤',
+  '=': '=',
+  '==': '=',
+  eq: '=',
+  '>=': '≥',
+  gte: '≥',
+  '>': '>',
+  gt: '>',
+}
+
 export function formatMetric(metric: Pick<EvaluationMetric, 'value' | 'unit'>): string {
   if (metric.value === null || !Number.isFinite(metric.value)) return '\u2014'
-  const unit = metric.unit.trim()
-  switch (unit.toLowerCase()) {
+  const unit = metric.unit.trim().toLowerCase()
+  switch (unit) {
     case 'ratio':
     case 'fraction':
       return formatPercent(metric.value)
@@ -118,10 +217,34 @@ export function formatMetric(metric: Pick<EvaluationMetric, 'value' | 'unit'>): 
         maximumFractionDigits: metric.value > 0 && metric.value < 0.01 ? 8 : 2,
       }).format(metric.value)} / req`
     case 'count':
-    case 'cases':
-    case 'requests':
     case 'concurrency':
       return new Intl.NumberFormat().format(metric.value)
+    case 'arms':
+      return formatMetricCount(metric.value, 'model')
+    case 'assignments':
+      return formatMetricCount(metric.value, 'assignment')
+    case 'attempts':
+      return formatMetricCount(metric.value, 'attempt')
+    case 'cases':
+      return formatMetricCount(metric.value, 'case')
+    case 'errors':
+      return formatMetricCount(metric.value, 'error')
+    case 'observations':
+      return formatMetricCount(metric.value, 'observation')
+    case 'pairs':
+      return formatMetricCount(metric.value, 'pair')
+    case 'requests':
+      return formatMetricCount(metric.value, 'request')
+    case 'seeds':
+      return formatMetricCount(metric.value, 'trial')
+    case 'segments':
+      return formatMetricCount(metric.value, 'segment')
+    case 'steps':
+      return formatMetricCount(metric.value, 'step')
+    case 'tasks':
+      return formatMetricCount(metric.value, 'task')
+    case 'effective samples':
+      return formatMetricCount(metric.value, 'usable sample')
     case 'requests/s':
       return `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(metric.value)} req/s`
     case 'bits':
@@ -130,9 +253,35 @@ export function formatMetric(metric: Pick<EvaluationMetric, 'value' | 'unit'>): 
       return metric.value > 0 ? 'Yes' : 'No'
     case 'violations/case':
       return `${metric.value.toFixed(4)} / case`
+    case 'usd/success':
+      return `${new Intl.NumberFormat(undefined, {
+        style: 'currency',
+        currency: 'USD',
+        maximumFractionDigits: 4,
+      }).format(metric.value)} / success`
+    case 'exposures/attempt':
+      return `${formatMetricNumber(metric.value)} events / attempt`
+    case 'exposures/trajectory':
+      return `${formatMetricNumber(metric.value)} events / task`
+    case 'non-inferiority-headroom':
+    case 'p-value':
+    case 'quality':
+    case 'reward lift':
+    case 'score':
+      return formatMetricNumber(metric.value)
     default:
-      return `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 4 }).format(metric.value)}${unit ? ` ${unit}` : ''}`
+      return formatMetricNumber(metric.value)
   }
+}
+
+export function formatMetricThreshold(threshold: {
+  operator: string
+  value: number
+  unit?: string
+}): string {
+  const operator = METRIC_THRESHOLD_OPERATORS[threshold.operator]
+  const value = formatMetric({ value: threshold.value, unit: threshold.unit || '' })
+  return operator ? `${operator} ${value}` : `Target ${value}`
 }
 
 export function formatDelta(metric: Pick<EvaluationMetric, 'delta' | 'unit'>): string | null {

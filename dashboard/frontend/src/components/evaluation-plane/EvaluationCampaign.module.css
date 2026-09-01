@@ -4,19 +4,6 @@
   min-width: 0;
 }
 
-.layerHeader {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 1.25rem;
-  min-width: 0;
-  padding: 1rem 0;
-  border-top: 1px solid var(--border-subtle);
-  border-bottom: 1px solid var(--border-subtle);
-  background: transparent;
-}
-
-.layerIndex,
 .eyebrow {
   color: var(--text-muted);
   font-family: var(--font-mono);
@@ -24,21 +11,6 @@
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-}
-
-.layerHeader h2 {
-  margin: 0.25rem 0 0;
-  color: var(--text-primary);
-  font-size: clamp(1.2rem, 2vw, 1.5rem);
-  letter-spacing: -0.025em;
-}
-
-.layerHeader p {
-  max-width: 56rem;
-  margin: 0.35rem 0 0;
-  color: var(--text-secondary);
-  font-size: var(--text-xs);
-  line-height: 1.55;
 }
 
 .inlineError,
@@ -61,9 +33,14 @@
   color: var(--text-primary);
 }
 
-.inlineNotice > div {
+.inlineNotice > div,
+.inlineError > div {
   display: grid;
   gap: 0.15rem;
+}
+
+.inlineError strong {
+  color: #ffb0b3;
 }
 
 .inlineError {
@@ -87,17 +64,10 @@
 }
 
 @media (max-width: 760px) {
-  .layerHeader,
   .inlineError,
   .inlineNotice {
     align-items: stretch;
     grid-template-columns: 1fr;
     flex-direction: column;
-  }
-}
-
-@media (max-width: 480px) {
-  .layerHeader {
-    padding: 0.85rem 0;
   }
 }

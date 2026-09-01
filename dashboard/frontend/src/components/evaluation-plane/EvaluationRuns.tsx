@@ -43,117 +43,87 @@ interface EvaluationRunsProps {
   onLoadMore: () => void
 }
 
-export default function EvaluationRuns({
-  runs,
-  selectedRunID,
-  selectedRun,
-  selectedRunLoading,
-  selectedRunError,
-  onRetrySelectedRun,
-  selectedPair,
-  selectedPairLoading,
-  selectedPairRefreshing,
-  selectedPairError,
-  onRetrySelectedPair,
-  events,
-  eventsConnected,
-  eventsError,
-  onReconnectEvents,
-  canRun,
-  canDelete,
-  refreshing,
-  loadingMore,
-  runLedgerAvailable,
-  autoRefreshPaused,
-  totalRuns,
-  hasMoreRuns,
-  lastUpdatedAt,
-  mutationKey,
-  onSelect,
-  onStart,
-  onCancel,
-  onDelete,
-  onOpenReport,
-  onRefresh,
-  onLoadMore,
-}: EvaluationRunsProps) {
-  const ledger = useEvaluationRunLedger(runs)
+function EvaluationRunsHeader({ props }: { props: EvaluationRunsProps }) {
+  const refreshStatus = props.autoRefreshPaused
+    ? 'Multiple pages loaded · refresh manually'
+    : props.lastUpdatedAt
+      ? `Updated ${formatDateTime(props.lastUpdatedAt.toISOString())}`
+      : 'Not refreshed yet'
+  return (
+    <header className={styles.surfaceHeader}>
+      <div>
+        <span className={styles.eyebrow}>Run history</span>
+        <h2 id="evaluation-runs-title">Evaluation runs</h2>
+        <p>Find an evaluation, review its setup and outcome, then open its report when ready.</p>
+      </div>
+      <div className={runStyles.refreshCluster}>
+        <span>{refreshStatus}</span>
+        <EvaluationActionButton
+          type="button"
+          compact
+          variant="quiet"
+          disabled={props.refreshing || props.loadingMore}
+          aria-busy={props.refreshing}
+          onClick={props.onRefresh}
+          aria-label="Refresh evaluation runs"
+        >
+          {props.refreshing ? 'Refreshing…' : 'Refresh'}
+        </EvaluationActionButton>
+      </div>
+    </header>
+  )
+}
+
+export default function EvaluationRuns(props: EvaluationRunsProps) {
+  const ledger = useEvaluationRunLedger(props.runs)
   return (
     <div className={styles.sectionStack}>
       <section className={styles.surface} aria-labelledby="evaluation-runs-title">
-        <header className={styles.surfaceHeader}>
-          <div>
-            <span className={styles.eyebrow}>Execution ledger</span>
-            <h2 id="evaluation-runs-title">Evaluation runs</h2>
-            <p>
-              Search the immutable run ledger, then inspect one execution and its durable timeline.
-            </p>
-          </div>
-          <div className={runStyles.refreshCluster}>
-            <span>
-              {autoRefreshPaused
-                ? 'Multiple pages loaded · refresh manually'
-                : lastUpdatedAt
-                  ? `Updated ${formatDateTime(lastUpdatedAt.toISOString())}`
-                  : 'Not refreshed yet'}
-            </span>
-            <EvaluationActionButton
-              type="button"
-              compact
-              variant="quiet"
-              disabled={refreshing || loadingMore}
-              aria-busy={refreshing}
-              onClick={onRefresh}
-              aria-label="Refresh evaluation runs"
-            >
-              {refreshing ? 'Refreshing…' : 'Refresh'}
-            </EvaluationActionButton>
-          </div>
-        </header>
+        <EvaluationRunsHeader props={props} />
 
         <EvaluationRunLedgerFilters
           model={ledger}
-          runLedgerAvailable={runLedgerAvailable}
-          loadedRuns={runs.length}
-          totalRuns={totalRuns}
-          hasMoreRuns={hasMoreRuns}
+          runLedgerAvailable={props.runLedgerAvailable}
+          loadedRuns={props.runs.length}
+          totalRuns={props.totalRuns}
+          hasMoreRuns={props.hasMoreRuns}
         />
 
         <div className={runStyles.runWorkspace}>
           <EvaluationRunLedger
-            runs={runs}
-            selectedRunID={selectedRunID}
-            runLedgerAvailable={runLedgerAvailable}
-            totalRuns={totalRuns}
-            hasMoreRuns={hasMoreRuns}
-            loadingMore={loadingMore}
-            refreshing={refreshing}
+            runs={props.runs}
+            selectedRunID={props.selectedRunID}
+            runLedgerAvailable={props.runLedgerAvailable}
+            totalRuns={props.totalRuns}
+            hasMoreRuns={props.hasMoreRuns}
+            loadingMore={props.loadingMore}
+            refreshing={props.refreshing}
             model={ledger}
-            onSelect={onSelect}
-            onLoadMore={onLoadMore}
+            onSelect={props.onSelect}
+            onLoadMore={props.onLoadMore}
           />
           <EvaluationRunInspector
-            selectedRunID={selectedRunID}
-            run={selectedRun}
-            loading={selectedRunLoading}
-            error={selectedRunError}
-            controlledPairExecution={selectedPair}
-            controlledPairLoading={selectedPairLoading}
-            controlledPairRefreshing={selectedPairRefreshing}
-            controlledPairError={selectedPairError}
-            events={events}
-            eventsConnected={eventsConnected}
-            eventsError={eventsError}
-            canRun={canRun}
-            canDelete={canDelete}
-            mutationKey={mutationKey}
-            onRetry={onRetrySelectedRun}
-            onRetryControlledPair={onRetrySelectedPair}
-            onReconnectEvents={onReconnectEvents}
-            onStart={onStart}
-            onCancel={onCancel}
-            onDelete={onDelete}
-            onOpenReport={onOpenReport}
+            selectedRunID={props.selectedRunID}
+            run={props.selectedRun}
+            loading={props.selectedRunLoading}
+            error={props.selectedRunError}
+            controlledPairExecution={props.selectedPair}
+            controlledPairLoading={props.selectedPairLoading}
+            controlledPairRefreshing={props.selectedPairRefreshing}
+            controlledPairError={props.selectedPairError}
+            events={props.events}
+            eventsConnected={props.eventsConnected}
+            eventsError={props.eventsError}
+            canRun={props.canRun}
+            canDelete={props.canDelete}
+            mutationKey={props.mutationKey}
+            onRetry={props.onRetrySelectedRun}
+            onRetryControlledPair={props.onRetrySelectedPair}
+            onReconnectEvents={props.onReconnectEvents}
+            onStart={props.onStart}
+            onCancel={props.onCancel}
+            onDelete={props.onDelete}
+            onOpenReport={props.onOpenReport}
           />
         </div>
       </section>

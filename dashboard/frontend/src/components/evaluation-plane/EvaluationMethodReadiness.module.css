@@ -26,6 +26,64 @@
   font-family: var(--font-mono);
 }
 
+.methodDisclosure {
+  margin-top: 0.9rem;
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.methodDisclosure > summary {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  min-height: 58px;
+  padding: 0.7rem 0;
+  color: var(--text-primary);
+  cursor: pointer;
+  list-style: none;
+}
+
+.methodDisclosure > summary::-webkit-details-marker {
+  display: none;
+}
+
+.methodDisclosure > summary > span {
+  display: grid;
+  flex: 1;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.methodDisclosure > summary small {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
+.methodDisclosure > summary::after {
+  width: 0.5rem;
+  height: 0.5rem;
+  flex: 0 0 auto;
+  border-right: 1.5px solid var(--text-secondary);
+  border-bottom: 1.5px solid var(--text-secondary);
+  content: '';
+  transform: rotate(45deg) translate(-0.1rem, -0.1rem);
+  transition: transform var(--transition-fast);
+}
+
+.methodDisclosure[open] > summary::after {
+  transform: rotate(225deg) translate(-0.05rem, -0.05rem);
+}
+
+.methodDisclosure > summary:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -3px;
+}
+
+.methodCatalog {
+  padding: 0.2rem 0 1rem;
+}
+
 .methodFilters {
   display: grid;
   grid-template-columns: minmax(260px, 1fr) repeat(2, minmax(150px, 210px)) auto;
@@ -73,12 +131,25 @@
   width: 28%;
 }
 
-.methodReason {
+.methodReadiness {
+  display: grid;
+  min-width: 19rem;
+  gap: 0.4rem;
+}
+
+.methodReadiness > [data-evaluation-tag='true'] {
+  width: fit-content;
+}
+
+.methodGuidance {
   display: block;
-  max-width: 320px;
-  margin-top: 0.35rem;
+  max-width: 24rem;
   color: var(--text-muted);
   line-height: 1.4;
+}
+
+.methodTechnicalDetails {
+  width: 100%;
 }
 
 .methodEmpty {

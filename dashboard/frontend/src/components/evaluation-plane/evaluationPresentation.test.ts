@@ -5,9 +5,12 @@ import { EVALUATION_ATTESTATION_REVISION, EVALUATION_TRACK_IDS } from '../../typ
 import {
   clampFraction,
   evaluationPromotionVerdict,
+  evaluationResultScopeDescription,
+  evaluationResultScopeLabel,
   evidenceRank,
   formatDelta,
   formatMetric,
+  formatMetricThreshold,
   metricDeltaTone,
   selectHeadlineMetrics,
 } from './evaluationPresentation'
@@ -33,8 +36,35 @@ describe('evaluation presentation', () => {
     expect(formatDelta({ delta: -28, unit: 'ms' })).toBe('−28 ms')
     expect(formatMetric({ value: 0, unit: 'usd/request' })).toBe('$0.00 / req')
     expect(formatMetric({ value: 12.25, unit: 'requests/s' })).toBe('12.25 req/s')
+    expect(formatMetric({ value: 3, unit: 'arms' })).toBe('3 models')
+    expect(formatMetric({ value: 0.02, unit: 'non-inferiority-headroom' })).toBe('0.02')
+    expect(formatMetric({ value: 4.2, unit: 'private-service-unit' })).toBe('4.2')
+    expect(
+      formatMetricThreshold({
+        operator: 'private-threshold-operator',
+        value: 0.01,
+        unit: 'private-service-unit',
+      }),
+    ).toBe('Target 0.01')
     expect(clampFraction(2)).toBe(1)
     expect(evidenceRank('E5')).toBeGreaterThan(evidenceRank('E2'))
+  })
+
+  it('presents evaluation depth as product capabilities instead of internal codes', () => {
+    expect((['E0', 'E1', 'E2', 'E3', 'E4', 'E5'] as const).map(evaluationResultScopeLabel)).toEqual(
+      [
+        'Diagnostic',
+        'Signal validation',
+        'Prediction validation',
+        'Routing validation',
+        'Model-pool validation',
+        'End-to-end validation',
+      ],
+    )
+    expect(evaluationResultScopeDescription('E0')).toContain(
+      'without making a release recommendation',
+    )
+    expect(evaluationResultScopeDescription('E5')).toContain('final task outcomes')
   })
 
   it('interprets deltas using the metric direction', () => {

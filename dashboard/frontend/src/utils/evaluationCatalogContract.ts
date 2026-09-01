@@ -1,5 +1,5 @@
 import type { CreateEvaluationRunPayload, EvaluationCatalog } from '../types/evaluationPlane'
-import { EVALUATION_GATE_CONTRACT_VERSION } from '../types/evaluationPlane'
+import { EVALUATION_GATE_CONTRACT_VERSION, EVALUATION_TRACK_IDS } from '../types/evaluationPlane'
 import {
   assertCurrentEvaluationContract,
   EVALUATION_CHANGE_PROFILE_SET,
@@ -77,6 +77,16 @@ const METHOD_EVIDENCE_SOURCES = new Set([
   'live_production',
 ])
 const METHOD_STATUSES = new Set(['configured', 'data_required'])
+const BUILTIN_SUITE_IDS = [
+  'evaluation-smoke',
+  'live-mom-core',
+  'live-agent-tasks',
+  'live-fault-recovery',
+  'live-multimodal',
+  'live-hard-policy',
+  'live-production-experiment',
+  'live-capacity',
+] as const
 const CAMPAIGN_GATE_IDS = ['G2', 'G3', 'G4', 'G5', 'G6', 'G7', 'G8', 'G9'] as const
 const CAMPAIGN_GATE_DISPOSITIONS = new Set(['required', 'advisory', 'not_applicable', 'waived'])
 const CAMPAIGN_BINDING_KIND = new Map<string, string>([
@@ -97,6 +107,24 @@ const METHOD_GATE_TRACK = new Map<string, string>([
   ['G8', 'preference'],
   ['G9', 'preference'],
 ])
+
+function hasCanonicalTrackCatalog(value: unknown): value is EvaluationRecord[] {
+  if (!Array.isArray(value) || value.length !== EVALUATION_TRACK_IDS.length) return false
+  const trackIDs = value.map((track) => (isEvaluationRecord(track) ? track.id : undefined))
+  return (
+    new Set(trackIDs).size === EVALUATION_TRACK_IDS.length &&
+    EVALUATION_TRACK_IDS.every((trackID) => trackIDs.includes(trackID))
+  )
+}
+
+function hasCanonicalBuiltinSuites(value: unknown): value is EvaluationRecord[] {
+  if (!Array.isArray(value)) return false
+  const suiteIDs = value.map((suite) => (isEvaluationRecord(suite) ? suite.id : undefined))
+  return (
+    new Set(suiteIDs).size === suiteIDs.length &&
+    BUILTIN_SUITE_IDS.every((suiteID) => suiteIDs.includes(suiteID))
+  )
+}
 
 function isCatalogMethod(value: unknown): boolean {
   if (
@@ -270,7 +298,7 @@ export function decodeEvaluationCatalog(payload: unknown): EvaluationCatalog {
         typeof item.description !== 'string' ||
         !hasExactCampaignSlots(item.campaign_slots, item.id),
     ) ||
-    !Array.isArray(payload.tracks) ||
+    !hasCanonicalTrackCatalog(payload.tracks) ||
     payload.tracks.some(
       (item) =>
         !isEvaluationRecord(item) ||
@@ -289,7 +317,7 @@ export function decodeEvaluationCatalog(payload: unknown): EvaluationCatalog {
         !isTextArray(item.metrics) ||
         !isKnownValueArray(item.evidence_levels, EVALUATION_EVIDENCE_LEVEL_SET, false),
     ) ||
-    !Array.isArray(payload.suites) ||
+    !hasCanonicalBuiltinSuites(payload.suites) ||
     payload.suites.some(
       (item) =>
         !isEvaluationRecord(item) ||
@@ -345,28 +373,25 @@ export function decodeEvaluationCatalog(payload: unknown): EvaluationCatalog {
   return payload as unknown as EvaluationCatalog
 }
 
-export function buildCreateRunPayload(
-  request: CreateEvaluationRunPayload,
-  catalog: EvaluationCatalog,
-): CreateEvaluationRunPayload {
-  if (
-    !hasOnlyEvaluationFields(request as unknown as EvaluationRecord, [
-      'client_request_id',
-      'name',
-      'description',
-      'suite_ids',
-      'track_ids',
-      'mode',
-      'target_id',
-      'change_profile',
-      'sample_limit',
-      'concurrency',
-      'capacity_slo',
-      'capacity_load_protocol',
-      'seed',
-      'baseline_run_id',
-    ])
-  ) {
+const CREATE_RUN_FIELDS = [
+  'client_request_id',
+  'name',
+  'description',
+  'suite_ids',
+  'track_ids',
+  'mode',
+  'target_id',
+  'change_profile',
+  'sample_limit',
+  'concurrency',
+  'capacity_slo',
+  'capacity_load_protocol',
+  'seed',
+  'baseline_run_id',
+] as const
+
+function validateCreateRunFields(request: CreateEvaluationRunPayload) {
+  if (!hasOnlyEvaluationFields(request as unknown as EvaluationRecord, CREATE_RUN_FIELDS)) {
     throw new Error('Evaluation create intent contains non-contract fields.')
   }
   requireCanonicalEvaluationRunID(request.client_request_id)
@@ -396,44 +421,57 @@ export function buildCreateRunPayload(
   if (!Number.isInteger(request.seed) || request.seed < 0 || request.seed > 4_294_967_295) {
     throw new Error('Evaluation seed must be an integer between 0 and 4294967295.')
   }
+  return { name, description }
+}
+
+function createRunCapacity(request: CreateEvaluationRunPayload) {
   const capacityRequired = requiresCapacitySLO(request.mode, request.track_ids)
-  let capacitySLO
-  let capacityLoadProtocol
-  if (capacityRequired) {
-    if (request.concurrency < 2) {
-      throw new Error('Live capacity evaluation requires concurrency of at least 2.')
+  if (!capacityRequired) {
+    if (request.capacity_slo !== undefined || request.capacity_load_protocol !== undefined) {
+      throw new Error('Performance settings are available only for live performance evaluation.')
     }
-    if (request.capacity_slo === undefined || request.capacity_load_protocol === undefined) {
-      throw new Error('Live capacity evaluation requires an explicit SLO and load protocol.')
-    }
-    capacitySLO = decodeEvaluationCapacitySLO(request.capacity_slo)
-    if (capacitySLO.required_concurrency > request.concurrency) {
-      throw new Error('Capacity SLO concurrency cannot exceed the run concurrency.')
-    }
-    capacityLoadProtocol = decodeEvaluationCapacityLoadProtocol(
+    return {}
+  }
+  if (request.concurrency < 2) {
+    throw new Error('Live performance evaluation requires at least two parallel requests.')
+  }
+  if (request.capacity_slo === undefined || request.capacity_load_protocol === undefined) {
+    throw new Error('Live performance evaluation requires performance goals and a load pattern.')
+  }
+  const capacitySLO = decodeEvaluationCapacitySLO(request.capacity_slo)
+  if (capacitySLO.required_concurrency > request.concurrency) {
+    throw new Error('Required parallel load cannot exceed the run limit.')
+  }
+  return {
+    capacity_slo: capacitySLO,
+    capacity_load_protocol: decodeEvaluationCapacityLoadProtocol(
       request.capacity_load_protocol,
       request.concurrency,
-    )
-  } else if (request.capacity_slo !== undefined || request.capacity_load_protocol !== undefined) {
-    throw new Error('Capacity contracts are valid only for a live capacity evaluation.')
+    ),
   }
+}
+
+function createRunCatalogSelection(
+  request: CreateEvaluationRunPayload,
+  catalog: EvaluationCatalog,
+) {
   const changeProfile = catalog.change_profiles.find((item) => item.id === request.change_profile)
-  if (!changeProfile) throw new Error('Select a change profile from the server evaluation catalog.')
+  if (!changeProfile) throw new Error('Select the type of change being evaluated.')
   const target = catalog.targets.find((item) => item.id === request.target_id)
-  if (!target) throw new Error('Select a target from the server evaluation catalog.')
+  if (!target) throw new Error('Select an available evaluation source.')
   if (!target.modes.includes(request.mode) || target.healthy === false) {
-    throw new Error('The selected target cannot execute this evaluation mode.')
+    throw new Error('The selected evaluation source cannot run this evaluation.')
   }
   if (new Set(request.suite_ids).size !== request.suite_ids.length) {
-    throw new Error('Selected benchmark suites must not contain duplicate identities.')
+    throw new Error('Selected benchmarks must not contain duplicates.')
   }
   if (new Set(request.track_ids).size !== request.track_ids.length) {
-    throw new Error('Selected evaluation tracks must not contain duplicate identities.')
+    throw new Error('Selected evaluation areas must not contain duplicates.')
   }
   const suitesByID = new Map(catalog.suites.map((suite) => [suite.id, suite]))
   const suites = request.suite_ids.map((id) => suitesByID.get(id))
   if (suites.some((suite) => !suite)) {
-    throw new Error('One or more selected suites are no longer in the evaluation catalog.')
+    throw new Error('One or more selected benchmarks are no longer available.')
   }
   if (
     suites.some(
@@ -442,11 +480,11 @@ export function buildCreateRunPayload(
         !target.accepted_executors[request.mode]?.includes(suite.executors[request.mode] || ''),
     )
   ) {
-    throw new Error('Every selected suite must use a target-approved mode and executor.')
+    throw new Error('Every selected benchmark must support this source and run type.')
   }
   const executorIDs = new Set(suites.map((suite) => suite?.executors[request.mode]))
   if (executorIDs.size !== 1 || executorIDs.has(undefined)) {
-    throw new Error('Selected suites must use one target-approved execution strategy.')
+    throw new Error('The selected benchmarks cannot run together.')
   }
   const suiteTrackIDs = new Set(suites.flatMap((suite) => suite?.track_ids || []))
   if (
@@ -454,27 +492,38 @@ export function buildCreateRunPayload(
       (trackID) => !target.track_ids.includes(trackID) || !suiteTrackIDs.has(trackID),
     )
   ) {
-    throw new Error('Every selected track must be supported by the target and selected suites.')
+    throw new Error('Every evaluation area must be supported by the source and benchmarks.')
   }
-  const canonicalSuiteIDs = catalog.suites
-    .map((suite) => suite.id)
-    .filter((id) => request.suite_ids.includes(id))
-  const canonicalTrackIDs = catalog.tracks
-    .map((track) => track.id)
-    .filter((id) => request.track_ids.includes(id))
+  return {
+    changeProfileID: changeProfile.id,
+    suiteIDs: catalog.suites
+      .map((suite) => suite.id)
+      .filter((id) => request.suite_ids.includes(id)),
+    trackIDs: catalog.tracks
+      .map((track) => track.id)
+      .filter((id) => request.track_ids.includes(id)),
+  }
+}
+
+export function buildCreateRunPayload(
+  request: CreateEvaluationRunPayload,
+  catalog: EvaluationCatalog,
+): CreateEvaluationRunPayload {
+  const { name, description } = validateCreateRunFields(request)
+  const capacity = createRunCapacity(request)
+  const selection = createRunCatalogSelection(request, catalog)
   return {
     client_request_id: request.client_request_id,
     name,
     description,
-    suite_ids: canonicalSuiteIDs,
-    track_ids: canonicalTrackIDs,
+    suite_ids: selection.suiteIDs,
+    track_ids: selection.trackIDs,
     mode: request.mode,
     target_id: request.target_id,
-    change_profile: changeProfile.id,
+    change_profile: selection.changeProfileID,
     sample_limit: request.sample_limit,
     concurrency: request.concurrency,
-    ...(capacitySLO ? { capacity_slo: capacitySLO } : {}),
-    ...(capacityLoadProtocol ? { capacity_load_protocol: capacityLoadProtocol } : {}),
+    ...capacity,
     seed: request.seed,
     ...(request.baseline_run_id ? { baseline_run_id: request.baseline_run_id } : {}),
   }

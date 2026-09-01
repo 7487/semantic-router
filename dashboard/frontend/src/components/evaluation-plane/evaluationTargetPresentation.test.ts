@@ -20,20 +20,20 @@ describe('evaluation target presentation', () => {
     expect(labels.get(candidate.id)).toBe('Candidate · vllm-sr/auto')
   })
 
-  it('adds only the shortest stable target ID prefix when display names collide', () => {
+  it('keeps duplicate names stable without exposing internal target identifiers', () => {
     const blue = target('candidate-blue--mom-shared', 'Candidate · vllm-sr/auto')
     const green = target('candidate-green--mom-shared', 'Candidate · vllm-sr/auto')
     const forward = targetOptionLabels([blue, green])
     const reversed = targetOptionLabels([green, blue])
 
-    expect(forward.get(blue.id)).toBe('Candidate · vllm-sr/auto · #candidate-b')
-    expect(forward.get(green.id)).toBe('Candidate · vllm-sr/auto · #candidate-g')
+    expect(forward.get(blue.id)).toBe('Candidate · vllm-sr/auto · Option 1')
+    expect(forward.get(green.id)).toBe('Candidate · vllm-sr/auto · Option 2')
     expect(reversed.get(blue.id)).toBe(forward.get(blue.id))
     expect(reversed.get(green.id)).toBe(forward.get(green.id))
   })
 
   it('does not decorate a unique replay target', () => {
-    const fixture = target('fixture', 'Built-in replay fixture')
-    expect(targetOptionLabels([fixture]).get(fixture.id)).toBe('Built-in replay fixture')
+    const fixture = target('fixture', 'Built-in evaluation sample')
+    expect(targetOptionLabels([fixture]).get(fixture.id)).toBe('Built-in evaluation sample')
   })
 })

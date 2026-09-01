@@ -10,11 +10,8 @@ import type {
   EvidenceLevel,
 } from '../../types/evaluationPlane'
 import {
-  decodeEvaluationCapacityLoadProtocol,
-  decodeEvaluationCapacitySLO,
   equalEvaluationCapacityLoadProtocol,
   equalEvaluationCapacitySLO,
-  requiresCapacitySLO,
 } from '../../utils/evaluationCapacitySLOContract'
 
 export const EVALUATION_RUN_LIMITS = {
@@ -38,12 +35,6 @@ export interface EvaluationExactCohort {
   seed: number
 }
 
-export interface EvaluationDraft extends EvaluationExactCohort {
-  name: string
-  description: string
-  baselineRunID: string
-}
-
 const EVIDENCE_LEVELS: EvidenceLevel[] = ['E0', 'E1', 'E2', 'E3', 'E4', 'E5']
 
 function unique<T>(values: T[]): T[] {
@@ -59,14 +50,6 @@ function sameSet<T>(left: T[], right: T[]): boolean {
     normalizedLeft.size === normalizedRight.size &&
     [...normalizedLeft].every((value) => normalizedRight.has(value))
   )
-}
-
-function isBoundedInteger(value: number, minimum: number, maximum: number): boolean {
-  return Number.isSafeInteger(value) && value >= minimum && value <= maximum
-}
-
-function utf8Length(value: string): number {
-  return new TextEncoder().encode(value).length
 }
 
 export function supportedEvaluationTracks(
@@ -239,168 +222,4 @@ export function exactCohortMatchesRun(cohort: EvaluationExactCohort, run: Evalua
     sameSet(cohort.suiteIDs, run.suite_ids) &&
     sameSet(cohort.trackIDs, run.track_ids)
   )
-}
-
-export function baselineCohortIssue(catalog: EvaluationCatalog, run: EvaluationRun): string | null {
-  if (run.status !== 'completed') return 'Only completed runs can be used as a baseline.'
-  if (!catalog.change_profiles.some((profile) => profile.id === run.change_profile)) {
-    return 'Its change profile is no longer available in the server catalog.'
-  }
-  const target = catalog.targets.find((candidate) => candidate.id === run.target_id)
-  if (!target) return 'Its execution target is no longer available in the server catalog.'
-  if (target.healthy === false) return 'Its execution target is currently unavailable.'
-  if (!target.modes.includes(run.mode)) return 'Its execution target no longer supports its mode.'
-  if (!isBoundedInteger(run.sample_limit, 1, EVALUATION_RUN_LIMITS.sampleLimit)) {
-    return 'Its sample limit is outside the supported cohort bounds.'
-  }
-  if (!isBoundedInteger(run.concurrency, 1, EVALUATION_RUN_LIMITS.concurrency)) {
-    return 'Its concurrency is outside the supported cohort bounds.'
-  }
-  const capacityRequired = requiresCapacitySLO(run.mode, run.track_ids)
-  if (capacityRequired && run.concurrency < 2) {
-    return 'Its live capacity cohort has fewer than two concurrency levels.'
-  }
-  if (capacityRequired && (!run.capacity_slo || !run.capacity_load_protocol)) {
-    return 'Its live capacity cohort has no frozen SLO or load protocol.'
-  }
-  if (!capacityRequired && (run.capacity_slo || run.capacity_load_protocol)) {
-    return 'Its capacity contract is outside a live capacity cohort.'
-  }
-  if (run.capacity_slo) {
-    try {
-      const capacitySLO = decodeEvaluationCapacitySLO(run.capacity_slo)
-      if (capacitySLO.required_concurrency > run.concurrency) {
-        return 'Its Capacity SLO exceeds the run concurrency.'
-      }
-    } catch {
-      return 'Its frozen Capacity SLO is invalid.'
-    }
-  }
-  if (run.capacity_load_protocol) {
-    try {
-      decodeEvaluationCapacityLoadProtocol(run.capacity_load_protocol, run.concurrency)
-    } catch {
-      return 'Its frozen Capacity load protocol is invalid.'
-    }
-  }
-  if (!isBoundedInteger(run.seed, 0, EVALUATION_RUN_LIMITS.seed)) {
-    return 'Its seed is outside the supported cohort bounds.'
-  }
-  const reconciled = reconcileEvaluationScope(
-    catalog,
-    run.target_id,
-    run.mode,
-    run.suite_ids,
-    run.track_ids,
-  )
-  if (
-    run.suite_ids.length === 0 ||
-    run.track_ids.length === 0 ||
-    !sameSet(reconciled.suiteIDs, run.suite_ids) ||
-    !sameSet(reconciled.trackIDs, run.track_ids)
-  ) {
-    return 'Its suites or tracks are no longer exactly reproducible from the server catalog.'
-  }
-  return null
-}
-
-export function compatibleSuiteEmptyReason(
-  catalog: EvaluationCatalog,
-  targetID: string,
-  mode: EvaluationMode,
-): string {
-  const target = catalog.targets.find((candidate) => candidate.id === targetID)
-  if (!target) {
-    return `Select a healthy catalog target that supports ${mode}, or choose another mode.`
-  }
-  if (target.healthy === false)
-    return 'The selected target is unavailable. Choose a healthy target.'
-  if (!target.modes.includes(mode)) {
-    return `The selected target does not support ${mode} evaluation. Choose another target or mode.`
-  }
-  return `No benchmark suite is fully supported by ${target.name} in ${mode} mode.`
-}
-
-export function validateEvaluationDraft(
-  catalog: EvaluationCatalog,
-  runs: EvaluationRun[],
-  draft: EvaluationDraft,
-): string | null {
-  const name = draft.name.trim()
-  const description = draft.description.trim()
-  if (!name) return 'Experiment name is required.'
-  if (utf8Length(name) > EVALUATION_RUN_LIMITS.name) {
-    return `Experiment name must be at most ${EVALUATION_RUN_LIMITS.name} bytes.`
-  }
-  if (utf8Length(description) > EVALUATION_RUN_LIMITS.description) {
-    return `Description must be at most ${EVALUATION_RUN_LIMITS.description} bytes.`
-  }
-  if (!catalog.change_profiles.some((profile) => profile.id === draft.changeProfile)) {
-    return 'Select a change profile from the server catalog.'
-  }
-  const target = catalog.targets.find((candidate) => candidate.id === draft.targetID)
-  if (!target || target.healthy === false || !target.modes.includes(draft.mode)) {
-    return 'Select an available catalog target that supports this evaluation mode.'
-  }
-  if (draft.suiteIDs.length === 0) return 'Select at least one compatible benchmark suite.'
-  if (draft.trackIDs.length === 0) return 'Select at least one track provided by those suites.'
-  const reconciled = reconcileEvaluationScope(
-    catalog,
-    draft.targetID,
-    draft.mode,
-    draft.suiteIDs,
-    draft.trackIDs,
-  )
-  if (
-    !sameSet(reconciled.suiteIDs, draft.suiteIDs) ||
-    !sameSet(reconciled.trackIDs, draft.trackIDs)
-  ) {
-    return 'The selected suites and tracks are no longer compatible with the target and mode.'
-  }
-  if (!isBoundedInteger(draft.sampleLimit, 1, EVALUATION_RUN_LIMITS.sampleLimit)) {
-    return `Sample limit must be an integer between 1 and ${EVALUATION_RUN_LIMITS.sampleLimit}.`
-  }
-  if (!isBoundedInteger(draft.concurrency, 1, EVALUATION_RUN_LIMITS.concurrency)) {
-    return `Concurrency must be an integer between 1 and ${EVALUATION_RUN_LIMITS.concurrency}.`
-  }
-  const capacityRequired = requiresCapacitySLO(draft.mode, draft.trackIDs)
-  if (capacityRequired && draft.concurrency < 2) {
-    return 'Live capacity evaluation requires concurrency of at least 2.'
-  }
-  if (capacityRequired && (!draft.capacitySLO || !draft.capacityLoadProtocol)) {
-    return 'Define the Capacity SLO and load protocol before creating a live capacity run.'
-  }
-  if (!capacityRequired && (draft.capacitySLO || draft.capacityLoadProtocol)) {
-    return 'Capacity contracts are valid only when the live capacity track is selected.'
-  }
-  if (draft.capacitySLO) {
-    try {
-      const capacitySLO = decodeEvaluationCapacitySLO(draft.capacitySLO)
-      if (capacitySLO.required_concurrency > draft.concurrency) {
-        return 'Required SLO concurrency cannot exceed the run concurrency.'
-      }
-    } catch (error) {
-      return error instanceof Error ? error.message : 'Capacity SLO is invalid.'
-    }
-  }
-  if (draft.capacityLoadProtocol) {
-    try {
-      decodeEvaluationCapacityLoadProtocol(draft.capacityLoadProtocol, draft.concurrency)
-    } catch (error) {
-      return error instanceof Error ? error.message : 'Capacity load protocol is invalid.'
-    }
-  }
-  if (!isBoundedInteger(draft.seed, 0, EVALUATION_RUN_LIMITS.seed)) {
-    return `Seed must be an integer between 0 and ${EVALUATION_RUN_LIMITS.seed}.`
-  }
-  if (draft.baselineRunID) {
-    const baseline = runs.find((run) => run.id === draft.baselineRunID)
-    if (!baseline) return 'The selected baseline run is no longer available.'
-    const issue = baselineCohortIssue(catalog, baseline)
-    if (issue) return `The selected baseline cannot be reproduced. ${issue}`
-    if (!exactCohortMatchesRun(draft, baseline)) {
-      return 'The candidate cohort must exactly match the selected baseline.'
-    }
-  }
-  return null
 }

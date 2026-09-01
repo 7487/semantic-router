@@ -1,6 +1,7 @@
 import type { EvaluationCatalog } from '../../types/evaluationPlane'
-import { TRACK_PRESENTATION } from '../../types/evaluationPlane'
-import { compatibleSuiteEmptyReason } from './evaluationExperiment'
+import { compatibleSuiteEmptyReason } from './evaluationExperimentValidation'
+import { evaluationResultScopeLabel } from './evaluationPresentation'
+import { TRACK_PRESENTATION } from './evaluationTrackPresentation'
 import type { EvaluationExperimentFormModel } from './useEvaluationExperimentForm'
 import EvaluationExperimentSectionHeading from './EvaluationExperimentSectionHeading'
 import styles from './EvaluationExperimentBenchmarkScope.module.css'
@@ -21,11 +22,11 @@ export default function EvaluationExperimentBenchmarkScope({
       <section className={sectionStyles.formSection}>
         <EvaluationExperimentSectionHeading
           index="03"
-          title="Benchmark suites"
-          description="Select versioned workloads, then refine the tracks executed by this run."
+          title="Benchmarks"
+          description="Select versioned workloads, then choose what this run should measure."
         />
         {form.compatibleSuites.length ? (
-          <div className={styles.catalogGrid}>
+          <div className={styles.catalogGrid} role="group" aria-label="Benchmark selection">
             {form.compatibleSuites.map((suite) => (
               <label
                 key={suite.id}
@@ -41,9 +42,8 @@ export default function EvaluationExperimentBenchmarkScope({
                   <strong>{suite.name}</strong>
                   <small>{suite.description}</small>
                   <em>
-                    Catalog class {suite.evidence_level} · sealed per track after execution
+                    {evaluationResultScopeLabel(suite.evidence_level)}
                     {suite.case_count ? ` · ${suite.case_count} cases` : ''}
-                    {suite.revision ? ` · ${suite.revision}` : ''}
                   </em>
                 </span>
               </label>
@@ -59,17 +59,17 @@ export default function EvaluationExperimentBenchmarkScope({
       <section className={sectionStyles.formSection}>
         <EvaluationExperimentSectionHeading
           index="04"
-          title="Evaluation tracks"
-          description="Each track reports its own status, metrics, evidence, and gates."
+          title="Evaluation areas"
+          description="Each area reports its own status, measurements, coverage, and release checks."
         />
         {form.selectableTrackIDs.length === 0 ? (
           <div className={noticeStyles.contractWarning} role="status">
             {form.suiteIDs.length === 0
-              ? 'Select a compatible benchmark suite to make its tracks available.'
-              : 'The selected suites do not expose any executable tracks for this target and mode.'}
+              ? 'Select a compatible benchmark to see the areas it can measure.'
+              : 'The selected benchmarks cannot measure any area for this Mixture and run type.'}
           </div>
         ) : null}
-        <div className={styles.trackGrid}>
+        <div className={styles.trackGrid} role="group" aria-label="Evaluation area selection">
           {catalog.tracks.map((track) => {
             const targetSupportsTrack = form.availableTrackIDs.includes(track.id)
             const available = form.selectableTrackIDs.includes(track.id)
@@ -89,10 +89,10 @@ export default function EvaluationExperimentBenchmarkScope({
                   <small>{track.description}</small>
                   <em data-evaluation-unavailable-reason={!available ? 'true' : undefined}>
                     {available
-                      ? `${track.metrics.length} metrics`
+                      ? `${track.metrics.length} ${track.metrics.length === 1 ? 'measurement' : 'measurements'}`
                       : !targetSupportsTrack
                         ? `Not supported for ${form.mode} on this target`
-                        : 'Not included by the selected suites'}
+                        : 'Not included by the selected benchmarks'}
                   </em>
                 </span>
               </label>

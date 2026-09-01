@@ -167,7 +167,10 @@ describe('evaluation comparison lineage', () => {
       track_ids: ['joint', 'routing'],
     })
 
-    expect(cohortMismatches(baseline, candidate)).toEqual(['suites', 'tracks'])
+    expect(cohortMismatches(baseline, candidate)).toEqual([
+      'benchmark selection',
+      'evaluation areas',
+    ])
     expect(eligibleComparisonCandidates([candidate, baseline])).toEqual([])
   })
 
@@ -199,10 +202,7 @@ describe('evaluation comparison lineage', () => {
       capacity_load_protocol: { ...loadProtocol, concurrency_levels: [1, 8, 4] },
     })
 
-    expect(cohortMismatches(baseline, candidate)).toEqual([
-      'capacity SLO',
-      'capacity load protocol',
-    ])
+    expect(cohortMismatches(baseline, candidate)).toEqual(['performance goals', 'load pattern'])
     expect(eligibleComparisonCandidates([candidate, baseline])).toEqual([])
   })
 
@@ -214,6 +214,10 @@ describe('evaluation comparison lineage', () => {
       seed: 7,
       suite_ids: ['other-suite'],
     })
-    expect(cohortMismatches(baseline, candidate)).toEqual(['target', 'seed', 'suites'])
+    expect(cohortMismatches(baseline, candidate)).toEqual([
+      'tested Mixture',
+      'repeatability setting',
+      'benchmark selection',
+    ])
   })
 })

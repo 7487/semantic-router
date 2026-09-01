@@ -38,11 +38,81 @@
   font-weight: 650;
 }
 
-.planIdentity code {
+.reproducibilityDetails {
+  padding: 0.58rem 0.85rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.reproducibilityDetails summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  width: 100%;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  font-weight: 600;
+  list-style: none;
+}
+
+.reproducibilityDetails summary::-webkit-details-marker {
+  display: none;
+}
+
+.reproducibilityDetails summary::after {
+  width: 0.4rem;
+  height: 0.4rem;
+  flex: 0 0 auto;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  content: '';
+  transform: rotate(45deg) translate(-0.08rem, -0.08rem);
+  transition: transform var(--transition-fast);
+}
+
+.reproducibilityDetails summary:hover,
+.reproducibilityDetails summary:focus-visible,
+.reproducibilityDetails[open] summary {
+  color: var(--text-primary);
+}
+
+.reproducibilityDetails[open] summary::after {
+  transform: rotate(225deg) translate(-0.04rem, -0.04rem);
+}
+
+.reproducibilityDetails summary:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+
+.digestList {
+  display: grid;
+  gap: 0.42rem;
+  margin: 0.6rem 0 0;
+}
+
+.digestList > div {
+  display: grid;
+  grid-template-columns: minmax(9rem, 0.25fr) minmax(0, 1fr);
+  gap: 0.6rem;
+}
+
+.digestList dt {
+  color: var(--text-muted);
+  font-size: 0.66rem;
+}
+
+.digestList dd {
+  min-width: 0;
+  margin: 0;
+}
+
+.digestList code {
   display: block;
   overflow: hidden;
   color: var(--text-secondary);
-  font-size: 0.68rem;
+  font-size: 0.66rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -155,11 +225,6 @@
   max-width: 15rem;
   color: var(--text-primary);
   font-weight: 600;
-}
-
-.table code {
-  overflow-wrap: anywhere;
-  font-size: 0.67rem;
 }
 
 .table td > span,
@@ -275,5 +340,10 @@
   .rateLine > div:first-child,
   .outcomeLine > div:first-child {
     border-top: 0;
+  }
+
+  .digestList > div {
+    grid-template-columns: 1fr;
+    gap: 0.18rem;
   }
 }

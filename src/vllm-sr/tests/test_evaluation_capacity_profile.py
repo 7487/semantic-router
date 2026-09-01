@@ -5,10 +5,10 @@ from cli.evaluation.capacity_profile import CapacityProfile, build_capacity_prof
 from cli.evaluation.contracts import (
     CapacityLoadProtocol,
     CapacitySLO,
-    default_capacity_load_protocol,
 )
 from cli.evaluation.evidence import ExecutionRecord
 from cli.evaluation.evidence_level import run_evidence_level, track_evidence_level
+from evaluation_contract_test_support import default_capacity_load_protocol
 from pydantic import ValidationError
 
 

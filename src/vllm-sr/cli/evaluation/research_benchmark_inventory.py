@@ -78,10 +78,3 @@ RESEARCH_BENCHMARKS = _load_inventory()
 RESEARCH_BENCHMARKS_BY_ADAPTER = MappingProxyType(
     {item["adapter_id"]: MappingProxyType(item) for item in RESEARCH_BENCHMARKS}
 )
-
-
-def research_benchmark(adapter_id: str) -> MappingProxyType:
-    try:
-        return RESEARCH_BENCHMARKS_BY_ADAPTER[adapter_id]
-    except KeyError as exc:
-        raise ValueError(f"unknown research benchmark: {adapter_id}") from exc

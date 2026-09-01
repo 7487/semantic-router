@@ -117,6 +117,10 @@
   font-size: 0.65rem;
 }
 
+.progressDetails {
+  width: 100%;
+}
+
 .error {
   display: flex;
   align-items: center;
@@ -128,6 +132,12 @@
   color: #ffb0b3;
   font-size: 0.7rem;
   line-height: 1.45;
+}
+
+.errorCopy {
+  display: grid;
+  min-width: 0;
+  gap: 0.3rem;
 }
 
 .ready {

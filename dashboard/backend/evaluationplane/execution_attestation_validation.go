@@ -20,19 +20,6 @@ type gradingCaseEvidence struct {
 	Weight         float64  `json:"weight"`
 }
 
-func (s *Service) persistExecutionAttestation(
-	runID string,
-	transcript *brokerExecutionTranscript,
-) (string, error) {
-	var digest string
-	err := s.store.withEvidencePublication(func() error {
-		var persistErr error
-		digest, persistErr = s.persistExecutionAttestationDuringPublication(runID, transcript)
-		return persistErr
-	})
-	return digest, err
-}
-
 // persistExecutionAttestationDuringPublication validates and publishes the
 // server transcript while the caller owns the lifecycle/evidence transaction.
 func (s *Service) persistExecutionAttestationDuringPublication(

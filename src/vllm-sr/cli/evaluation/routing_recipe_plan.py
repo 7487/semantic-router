@@ -10,7 +10,6 @@ from typing_extensions import Self
 
 from cli.evaluation.manifest_identity import (
     routing_recipe_plan_digest,
-    routing_recipe_target_snapshot_digest,
 )
 
 ROUTING_RECIPE_PLAN_CONTRACT_VERSION = "routing-recipe-plan.v1"
@@ -170,43 +169,3 @@ def routing_recipe_top_k(arm_count: int) -> tuple[int, ...]:
     if arm_count <= 0:
         return ()
     return tuple(sorted({1, min(3, arm_count), min(5, arm_count)}))
-
-
-def build_routing_recipe_plan(
-    *,
-    recipe_digest: str,
-    pool_digest: str,
-    selector_policy_digest: str,
-    selector_digest: str,
-    adaptation_digest: str,
-    binding_digest: str,
-    arm_ids: tuple[str, ...],
-    fallback_arm_id: str | None,
-    signals: tuple[RoutingRecipeInputSpec, ...],
-    projections: tuple[RoutingRecipeProjectionSpec, ...],
-) -> RoutingRecipePlan:
-    """Build the canonical plan emitted by the server snapshotter."""
-
-    target_snapshot_digest = routing_recipe_target_snapshot_digest(
-        {
-            "recipe_digest": recipe_digest,
-            "pool_digest": pool_digest,
-            "selector_policy_digest": selector_policy_digest,
-            "selector_digest": selector_digest,
-            "adaptation_digest": adaptation_digest,
-            "binding_digest": binding_digest,
-        }
-    )
-    draft = {
-        "contract_version": ROUTING_RECIPE_PLAN_CONTRACT_VERSION,
-        "target_snapshot_digest": target_snapshot_digest,
-        "arm_ids": tuple(sorted(arm_ids)),
-        "fallback_arm_id": fallback_arm_id,
-        "signals": tuple(sorted(signals, key=lambda spec: spec.id)),
-        "projections": tuple(sorted(projections, key=lambda spec: spec.id)),
-        "top_k": routing_recipe_top_k(len(arm_ids)),
-    }
-    return RoutingRecipePlan(
-        **draft,
-        plan_digest=routing_recipe_plan_digest(draft),
-    )

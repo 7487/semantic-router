@@ -315,7 +315,7 @@ def mixture_target_contract(mixture: ManifestMixture) -> TargetContract:
         name=mixture.entrypoint_model,
         description=(
             mixture.recipe_description
-            or "Recipe-scoped Mixture-of-Models evaluation target."
+            or "Evaluate this routing recipe and its model pool together as one system."
         ),
         kind="mixture-of-models",
         track_requirements={
@@ -350,8 +350,11 @@ def builtin_target_contracts() -> tuple[TargetContract, ...]:
     return (
         TargetContract(
             id="fixture",
-            name="Built-in replay fixture",
-            description="Deterministic evidence for validating the complete evaluation plane.",
+            name="Built-in evaluation sample",
+            description=(
+                "A small deterministic replay for checking the full evaluation workflow "
+                "without calling a live system."
+            ),
             kind="builtin-fixture",
             track_requirements={track_id: frozenset() for track_id in TRACK_IDS},
             modes=("replay",),
@@ -364,10 +367,10 @@ def builtin_target_contracts() -> tuple[TargetContract, ...]:
         ),
         TargetContract(
             id="benchmark-source",
-            name="Installed benchmark observations",
+            name="Imported benchmark results",
             description=(
-                "Pinned source-policy observations from installed normalized benchmark "
-                "revisions. This target never represents the active runtime."
+                "Replay saved results from pinned benchmark revisions. This evaluates "
+                "imported observations, not the live system."
             ),
             kind="normalized-benchmark-source",
             track_requirements={track_id: frozenset() for track_id in TRACK_IDS},

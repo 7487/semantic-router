@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 
+import {
+  type EvaluationControlledPairReadyGuard,
+  useEvaluationControlledPair,
+} from '../../hooks/useEvaluationControlledPair'
 import type { EvaluationControlledPairExecution } from '../../types/evaluationControlledPair'
 import type {
   EvaluationCatalog,
@@ -9,16 +13,10 @@ import type {
   EvaluationRun,
 } from '../../types/evaluationPlane'
 import {
-  type EvaluationControlledPairReadyGuard,
-  useEvaluationControlledPair,
-} from '../../hooks/useEvaluationControlledPair'
-import {
   controlledPairBaselineSourceOptions,
   controlledPairCandidateSourceOptions,
 } from './evaluationCampaignSupport'
-import { EvaluationActionButton } from './EvaluationPrimitives'
-import { runOptionLabels } from './evaluationRunPresentation'
-import styles from './EvaluationCampaignControlledPair.module.css'
+import EvaluationCampaignControlledPairView from './EvaluationCampaignControlledPairView'
 
 interface EvaluationCampaignControlledPairProps {
   runs: EvaluationRun[]
@@ -37,225 +35,95 @@ interface EvaluationCampaignControlledPairProps {
   ) => void | Promise<void>
 }
 
-function runProgress(run: EvaluationRun): string {
-  return `${Math.round(run.progress.percent)}% · ${run.status}`
+function selectionGuidance(
+  baselineOptions: EvaluationRun[],
+  candidateOptions: EvaluationRun[],
+  baselineSourceID: string,
+): string {
+  if (!baselineOptions.length) {
+    return 'No completed live Mixture run is available for controlled value comparison. Run a compatible live evaluation first.'
+  }
+  if (!baselineSourceID) {
+    return 'Choose the completed live baseline for the fresh paired comparison.'
+  }
+  if (!candidateOptions.length)
+    return 'No completed live candidate matches this baseline evaluation setup.'
+  return 'Choose the matching candidate, then launch a fresh order-balanced comparison.'
 }
 
-export default function EvaluationCampaignControlledPair({
-  runs,
-  catalog,
-  profile,
-  slot,
-  canCreate,
-  disabled,
-  activePairID,
-  resumablePair,
-  onProfileLockChange,
-  onPairIdentityChange,
-  onReady,
-}: EvaluationCampaignControlledPairProps) {
+export default function EvaluationCampaignControlledPair(
+  props: EvaluationCampaignControlledPairProps,
+) {
+  const { activePairID, onPairIdentityChange, onProfileLockChange, profile } = props
   const [baselineSourceID, setBaselineSourceID] = useState('')
   const [candidateSourceID, setCandidateSourceID] = useState('')
-  const pair = useEvaluationControlledPair(onReady, {
+  const pair = useEvaluationControlledPair(props.onReady, {
     activePairID,
     onPairIdentity: (pairID) => onPairIdentityChange(pairID, pairID ? profile.id : null),
   })
   const baselineOptions = useMemo(
-    () => controlledPairBaselineSourceOptions(runs, catalog, profile, slot),
-    [catalog, profile, runs, slot],
+    () => controlledPairBaselineSourceOptions(props.runs, props.catalog, props.profile, props.slot),
+    [props.catalog, props.profile, props.runs, props.slot],
   )
   const candidateOptions = useMemo(
-    () => controlledPairCandidateSourceOptions(runs, catalog, profile, slot, baselineSourceID),
-    [baselineSourceID, catalog, profile, runs, slot],
+    () =>
+      controlledPairCandidateSourceOptions(
+        props.runs,
+        props.catalog,
+        props.profile,
+        props.slot,
+        baselineSourceID,
+      ),
+    [baselineSourceID, props.catalog, props.profile, props.runs, props.slot],
   )
-  const busy =
-    pair.status === 'creating' ||
-    pair.status === 'recovering' ||
-    pair.status === 'running' ||
-    pair.status === 'assigning'
+  const busy = ['creating', 'recovering', 'running', 'assigning'].includes(pair.status)
   const profileLocked =
     Boolean(activePairID) || busy || Boolean(pair.execution && pair.status !== 'ready')
-
   useEffect(() => {
     onProfileLockChange(profileLocked)
   }, [onProfileLockChange, profileLocked])
-
   useEffect(
     () => () => {
       onProfileLockChange(false)
     },
     [onProfileLockChange],
   )
-
   useEffect(() => {
     if (pair.status === 'ready' && activePairID) onPairIdentityChange(null, null)
   }, [activePairID, onPairIdentityChange, pair.status])
-  const sourceReady = Boolean(baselineSourceID && candidateSourceID)
-  const baselineLabels = runOptionLabels(baselineOptions)
-  const candidateLabels = runOptionLabels(candidateOptions)
-  const selectionRationale =
-    baselineOptions.length === 0
-      ? 'No completed, sealed live Mixture source is available for this G3 slot. Run a compatible live source evaluation first.'
-      : !baselineSourceID
-        ? 'Choose the completed live control source for the fresh paired execution.'
-        : candidateOptions.length === 0
-          ? 'No completed live treatment source matches this control cohort.'
-          : 'Choose the matching treatment source, then launch one fresh controlled execution.'
-
   return (
-    <section
-      className={styles.pairStep}
-      aria-labelledby="campaign-controlled-pair-title"
-      aria-busy={busy}
-    >
-      <div className={styles.pairIntro}>
-        <h4 id="campaign-controlled-pair-title">Controlled live pair</h4>
-        <p>
-          Choose two sealed source snapshots. The server launches fresh AB/BA-interleaved runs and
-          freezes credentials, workload, order, and cohort.
-        </p>
-      </div>
-      <div className={styles.pairWorkspace}>
-        <div className={styles.sourceGrid}>
-          <label>
-            Baseline source
-            <select
-              aria-label="Controlled pair baseline source"
-              value={baselineSourceID}
-              disabled={disabled || busy || pair.status === 'ready'}
-              onChange={(event) => {
-                setBaselineSourceID(event.target.value)
-                setCandidateSourceID('')
-                pair.reset()
-              }}
-            >
-              <option value="">Select completed live source</option>
-              {baselineOptions.map((run) => (
-                <option key={run.id} value={run.id}>
-                  {baselineLabels.get(run.id)}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Candidate source
-            <select
-              aria-label="Controlled pair candidate source"
-              value={candidateSourceID}
-              disabled={disabled || busy || pair.status === 'ready' || !baselineSourceID}
-              onChange={(event) => {
-                setCandidateSourceID(event.target.value)
-                pair.reset()
-              }}
-            >
-              <option value="">Select exact-cohort treatment source</option>
-              {candidateOptions.map((run) => (
-                <option key={run.id} value={run.id}>
-                  {candidateLabels.get(run.id)}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-
-        {pair.execution ? (
-          <dl className={styles.progress} aria-label="Controlled pair progress">
-            <div>
-              <dt>Baseline AB/BA</dt>
-              <dd>{runProgress(pair.execution.baseline_run)}</dd>
-              <small>
-                {pair.execution.baseline_run.progress.message || 'Server worker active'}
-              </small>
-            </div>
-            <div>
-              <dt>Candidate AB/BA</dt>
-              <dd>{runProgress(pair.execution.candidate_run)}</dd>
-              <small>
-                {pair.execution.candidate_run.progress.message || 'Server worker active'}
-              </small>
-            </div>
-          </dl>
-        ) : null}
-
-        {pair.error ? (
-          <div className={styles.error} role="alert">
-            <span>{pair.error}</span>
-            <div className={styles.errorActions}>
-              <EvaluationActionButton
-                type="button"
-                compact
-                disabled={!canCreate || busy}
-                onClick={pair.retry}
-              >
-                Retry controlled pair
-              </EvaluationActionButton>
-              {activePairID ? (
-                <EvaluationActionButton
-                  type="button"
-                  compact
-                  variant="quiet"
-                  disabled={busy}
-                  onClick={() => {
-                    pair.reset()
-                    onPairIdentityChange(null, null)
-                  }}
-                >
-                  Clear saved pair
-                </EvaluationActionButton>
-              ) : null}
-            </div>
-          </div>
-        ) : null}
-        {pair.status === 'ready' ? (
-          <div className={styles.ready} role="status">
-            Fresh baseline and candidate runs completed and were bound to G3.
-          </div>
-        ) : null}
-
-        {pair.status !== 'ready' &&
-        !pair.error &&
-        !(pair.status === 'idle' && !activePairID && resumablePair) ? (
-          <div className={styles.pairAction}>
-            <span>
-              {pair.status === 'assigning'
-                ? 'Both runs completed. Refreshing the durable ledger before binding G3.'
-                : busy
-                  ? 'Both workers must finish before their run identities enter the evidence matrix.'
-                  : selectionRationale}
-            </span>
-            <EvaluationActionButton
-              type="button"
-              compact
-              variant="primary"
-              disabled={!canCreate || disabled || busy || !sourceReady}
-              onClick={() => void pair.create(baselineSourceID, candidateSourceID)}
-            >
-              {pair.status === 'creating'
-                ? 'Starting controlled pair…'
-                : pair.status === 'recovering'
-                  ? 'Recovering controlled pair…'
-                  : pair.status === 'assigning'
-                    ? 'Assigning completed pair…'
-                    : pair.status === 'running'
-                      ? 'Controlled pair running…'
-                      : 'Launch controlled pair'}
-            </EvaluationActionButton>
-          </div>
-        ) : null}
-        {!activePairID && pair.status === 'idle' && resumablePair ? (
-          <div className={styles.pairAction} role="status">
-            <span>The ledger contains one active controlled pair that is not linked here.</span>
-            <EvaluationActionButton
-              type="button"
-              compact
-              variant="quiet"
-              onClick={() => onPairIdentityChange(resumablePair.id, resumablePair.profileID)}
-            >
-              Resume controlled pair
-            </EvaluationActionButton>
-          </div>
-        ) : null}
-      </div>
-    </section>
+    <EvaluationCampaignControlledPairView
+      slotGateID={props.slot.gate_id}
+      baselineSourceID={baselineSourceID}
+      candidateSourceID={candidateSourceID}
+      baselineOptions={baselineOptions}
+      candidateOptions={candidateOptions}
+      canCreate={props.canCreate}
+      disabled={props.disabled}
+      busy={busy}
+      activePairID={activePairID}
+      resumablePair={props.resumablePair}
+      sourceReady={Boolean(baselineSourceID && candidateSourceID)}
+      selectionRationale={selectionGuidance(baselineOptions, candidateOptions, baselineSourceID)}
+      pair={pair}
+      onBaselineSourceChange={(runID) => {
+        setBaselineSourceID(runID)
+        setCandidateSourceID('')
+        pair.reset()
+      }}
+      onCandidateSourceChange={(runID) => {
+        setCandidateSourceID(runID)
+        pair.reset()
+      }}
+      onClearSavedPair={() => {
+        pair.reset()
+        onPairIdentityChange(null, null)
+      }}
+      onResumePair={() => {
+        if (props.resumablePair) {
+          onPairIdentityChange(props.resumablePair.id, props.resumablePair.profileID)
+        }
+      }}
+    />
   )
 }

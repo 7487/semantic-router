@@ -116,6 +116,13 @@ function renderInspector(
   )
 }
 
+function visibleText(markup: string): string {
+  return markup
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 describe('EvaluationRunInspector refresh continuity', () => {
   it('keeps the durable run visible while a detail refresh is in flight', () => {
     const markup = renderInspector(run, true)
@@ -124,6 +131,35 @@ describe('EvaluationRunInspector refresh continuity', () => {
     expect(markup).toContain('Refreshing details…')
     expect(markup).toContain('Open report')
     expect(markup).not.toContain('Loading evaluation run')
+    expect(markup).toContain('<dt>Evaluation scope</dt><dd>Diagnostic</dd>')
+    expect(markup).toContain('aria-label="Selected evaluation run"')
+
+    const text = visibleText(markup)
+    expect(text).not.toMatch(/\bE[0-5]\b/)
+    expect(text).not.toMatch(/\bG[0-9]\b/)
+    expect(text).not.toContain(run.schema_version)
+  })
+
+  it('keeps raw run, baseline, and suite identifiers inside collapsed technical details', () => {
+    const baselineID = '66666666-6666-4666-8666-666666666666'
+    const linkedRun = { ...run, baseline_run_id: baselineID }
+    const markup = renderInspector(linkedRun, false)
+    const [summary, technicalDetails] = markup.split('<details')
+
+    expect(summary).toContain('<dt>Baseline</dt><dd>Linked baseline</dd>')
+    expect(summary).toContain('<dt>Benchmarks</dt><dd>1 selected</dd>')
+    expect(summary).toContain('<dt>Evaluation target</dt><dd>Built-in evaluation sample</dd>')
+    expect(summary).toContain('<dt>Workload</dt><dd>4 cases · 1 concurrent request</dd>')
+    expect(summary).not.toContain(linkedRun.id)
+    expect(summary).not.toContain(baselineID)
+    expect(summary).not.toContain(linkedRun.target_id)
+    expect(summary).not.toContain('evaluation-smoke')
+    expect(technicalDetails).toContain('>Technical details</summary>')
+    expect(technicalDetails).toContain(linkedRun.id)
+    expect(technicalDetails).toContain(baselineID)
+    expect(technicalDetails).toContain(linkedRun.target_id)
+    expect(technicalDetails).toContain('evaluation-smoke')
+    expect(technicalDetails).not.toMatch(/^ open(?:=|>)/)
   })
 
   it('uses the loading boundary only when no durable run is available', () => {
@@ -134,12 +170,16 @@ describe('EvaluationRunInspector refresh continuity', () => {
   })
 
   it('keeps stale evidence inspectable when the latest detail refresh fails', () => {
-    const markup = renderInspector(run, false, 'temporary detail failure')
+    const backendMessage = 'decoder://run-detail E5 temporary-private-chain'
+    const markup = renderInspector(run, false, backendMessage)
 
-    expect(markup).toContain('Showing the last durable ledger snapshot')
-    expect(markup).toContain('temporary detail failure')
+    expect(markup).toContain('Showing the last saved run details')
+    expect(markup).toContain(backendMessage)
     expect(markup).toContain('Retry details')
     expect(markup).toContain('Durable routing evidence')
+    expect(markup.indexOf(backendMessage)).toBeGreaterThan(
+      markup.indexOf('data-evaluation-technical-details="true"'),
+    )
   })
 
   it('uses aggregate capabilities when one member is terminal but the pair is running', () => {
@@ -151,10 +191,10 @@ describe('EvaluationRunInspector refresh continuity', () => {
     })
 
     expect(terminalMember).toContain('>Open report<')
-    expect(terminalMember).toContain(`aria-label="Cancel controlled pair ${pairID}"`)
-    expect(terminalMember).toContain('>Cancel pair<')
+    expect(terminalMember).toContain('aria-label="Cancel controlled comparison"')
+    expect(terminalMember).toContain('>Cancel comparison<')
     expect(terminalMember).not.toContain('>Start<')
-    expect(terminalMember).not.toContain('>Delete pair<')
+    expect(terminalMember).not.toContain('>Delete comparison<')
   })
 
   it('exposes only authoritative aggregate lifecycle actions for controlled-pair members', () => {
@@ -164,8 +204,8 @@ describe('EvaluationRunInspector refresh continuity', () => {
       controlledPairExecution: pairExecution(baseline, candidate, 'terminal'),
     })
     expect(terminal).toContain('>Open report<')
-    expect(terminal).toContain(`aria-label="Delete controlled pair ${pairID}"`)
-    expect(terminal).toContain('>Delete pair<')
+    expect(terminal).toContain('aria-label="Delete controlled comparison"')
+    expect(terminal).toContain('>Delete comparison<')
     expect(terminal).not.toContain('aria-label="Delete Controlled baseline"')
 
     const pendingBaseline = pairMember('baseline', 'pending')
@@ -173,7 +213,7 @@ describe('EvaluationRunInspector refresh continuity', () => {
     const queued = renderInspector(pendingBaseline, false, null, {
       controlledPairExecution: pairExecution(pendingBaseline, pendingCandidate, 'pending'),
     })
-    expect(queued).toContain('>Delete pair<')
+    expect(queued).toContain('>Delete comparison<')
     expect(queued).not.toContain('>Start<')
   })
 
@@ -186,30 +226,50 @@ describe('EvaluationRunInspector refresh continuity', () => {
       controlledPairExecution: execution,
     })
     expect(readonly).toContain('>Open report<')
-    expect(readonly).not.toContain('>Delete pair<')
+    expect(readonly).not.toContain('>Delete comparison<')
 
     const pending = renderInspector(pairedRun, false, null, {
       mutationKey: `delete-pair:${pairID}`,
       controlledPairExecution: execution,
     })
-    expect(pending).toContain('>Deleting pair…<')
+    expect(pending).toContain('>Deleting comparison…<')
     expect(pending).toContain('disabled=""')
   })
 
   it('withholds pair actions until the authoritative resource is available and owns its error', () => {
     const pairedRun = pairMember('baseline', 'completed')
     const loading = renderInspector(pairedRun, false, null, { controlledPairLoading: true })
-    expect(loading).toContain('Loading pair controls…')
-    expect(loading).not.toContain('>Cancel pair<')
-    expect(loading).not.toContain('>Delete pair<')
+    expect(loading).toContain('Loading comparison actions…')
+    expect(loading).not.toContain('>Cancel comparison<')
+    expect(loading).not.toContain('>Delete comparison<')
 
     const failed = renderInspector(pairedRun, false, null, {
-      controlledPairError: 'temporary pair read failure',
+      controlledPairError: 'worker://pair-read G8 temporary-private-chain',
     })
-    expect(failed).toContain('Controlled-pair controls are unavailable')
-    expect(failed).toContain('temporary pair read failure')
-    expect(failed).toContain('Retry pair controls')
-    expect(failed).not.toContain('>Cancel pair<')
-    expect(failed).not.toContain('>Delete pair<')
+    expect(failed).toContain('Comparison actions could not be loaded')
+    expect(failed).toContain('worker://pair-read G8 temporary-private-chain')
+    expect(failed).toContain('Retry comparison actions')
+    expect(failed).not.toContain('>Cancel comparison<')
+    expect(failed).not.toContain('>Delete comparison<')
+    expect(failed.indexOf('worker://pair-read G8 temporary-private-chain')).toBeGreaterThan(
+      failed.indexOf('data-evaluation-technical-details="true"'),
+    )
+  })
+
+  it('keeps terminal execution and empty-inspector request errors technical', () => {
+    const executionError = 'worker://executor E4 panic=private-stack'
+    const failedRun = renderInspector({ ...run, status: 'failed', error: executionError }, false)
+    expect(failedRun).toContain('This run stopped before a report was published')
+    expect(failedRun.indexOf(executionError)).toBeGreaterThan(
+      failedRun.lastIndexOf('data-evaluation-technical-details="true"'),
+    )
+
+    const requestError = 'decoder://run-request E3 field=internal_only'
+    const empty = renderInspector(null, false, requestError)
+    expect(empty).toContain('Retry to load the selected run and its saved evidence')
+    expect(empty.indexOf(requestError)).toBeGreaterThan(
+      empty.lastIndexOf('data-evaluation-technical-details="true"'),
+    )
+    expect(empty).not.toContain('<details open')
   })
 })

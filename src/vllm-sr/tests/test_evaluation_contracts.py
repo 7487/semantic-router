@@ -32,10 +32,10 @@ from cli.evaluation.reporting import EvaluationReport, WorkerEvent
 from cli.evaluation.routing_recipe_plan import (
     RoutingRecipeInputSpec,
     RoutingRecipeProjectionSpec,
-    build_routing_recipe_plan,
 )
 from cli.evaluation.schemas import contract_schemas
 from cli.evaluation.target_capabilities import DEFAULT_TARGET_REGISTRY
+from evaluation_contract_test_support import build_routing_recipe_plan
 from pydantic import ValidationError
 
 

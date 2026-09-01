@@ -20,7 +20,6 @@ from cli.evaluation.capacity_load_contract import (
     MIN_CAPACITY_REPETITIONS,
     MIN_CAPACITY_WARMUP_MULTIPLIER,
     capacity_concurrency_levels,
-    default_capacity_load_protocol_fields,
 )
 from cli.evaluation.constants import BUILTIN_SUITE_IDS, SCHEMA_VERSION, TRACK_IDS
 from cli.evaluation.contract_primitives import (
@@ -592,12 +591,6 @@ class CapacityLoadProtocol(StrictModel):
                 "capacity concurrency_levels must use the geometric platform ladder"
             )
         return self
-
-
-def default_capacity_load_protocol(maximum: int) -> CapacityLoadProtocol:
-    return CapacityLoadProtocol.model_validate(
-        default_capacity_load_protocol_fields(maximum)
-    )
 
 
 class RunManifest(StrictModel):

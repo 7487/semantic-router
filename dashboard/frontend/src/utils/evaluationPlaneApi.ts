@@ -17,7 +17,6 @@ import type {
 import {
   buildCreateEvaluationCampaignPayload,
   decodeEvaluationCampaign,
-  decodeEvaluationCampaignDecision,
 } from './evaluationCampaignContract'
 import { decodeEvaluationControlledPairExecution } from './evaluationControlledPairContract'
 import { buildCreateRunPayload, decodeEvaluationCatalog } from './evaluationCatalogContract'
@@ -32,7 +31,7 @@ import {
 
 export { buildCreateRunPayload } from './evaluationCatalogContract'
 
-export const EVALUATION_API_BASE = '/api/evaluation/v1'
+const EVALUATION_API_BASE = '/api/evaluation/v1'
 
 export class EvaluationRequestError extends Error {
   constructor(
@@ -260,19 +259,6 @@ export async function getEvaluationCampaign(
   return decodeEvaluationCampaign(
     await requestJson<unknown>(`/campaigns/${encodeURIComponent(id)}`, { signal }),
     id,
-  )
-}
-
-export async function getEvaluationCampaignDecision(
-  campaign: EvaluationCampaign,
-  signal?: AbortSignal,
-) {
-  requireCanonicalEvaluationRunID(campaign.id)
-  return decodeEvaluationCampaignDecision(
-    await requestJson<unknown>(`/campaigns/${encodeURIComponent(campaign.id)}/decision`, {
-      signal,
-    }),
-    campaign,
   )
 }
 

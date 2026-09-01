@@ -11,7 +11,7 @@ interface ControlledPairResourceState {
 }
 
 function resourceError(error: unknown): string {
-  return error instanceof Error ? error.message : 'Failed to load controlled-pair lifecycle state.'
+  return error instanceof Error ? error.message : 'Failed to load controlled comparison status.'
 }
 
 export function useEvaluationControlledPairResource(pairID: string | null) {

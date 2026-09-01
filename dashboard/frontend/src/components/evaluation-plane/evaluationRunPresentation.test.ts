@@ -3,8 +3,11 @@ import { describe, expect, it } from 'vitest'
 import type { EvaluationRun } from '../../types/evaluationPlane'
 import {
   changeProfileLabel,
+  comparisonRunOptionLabels,
   runCohortTargetLabel,
+  runEvaluationTargetLabel,
   runOptionLabels,
+  runWorkloadLabel,
 } from './evaluationRunPresentation'
 
 function run(id: string): EvaluationRun {
@@ -35,8 +38,10 @@ describe('evaluation run option labels', () => {
     const candidate = run('candidate-target')
     candidate.target_id = 'internal-candidate-deployment'
 
-    expect(changeProfileLabel('agent_multimodal')).toBe('Agent + multimodal')
+    expect(changeProfileLabel('agent_multimodal')).toBe('Agents and multimodal')
     expect(runCohortTargetLabel(candidate)).toBe('Frozen deployment snapshot')
+    expect(runEvaluationTargetLabel(candidate)).toBe('Saved evaluation target')
+    expect(runWorkloadLabel(candidate)).toBe('1 case · 1 concurrent request')
     expect(
       runCohortTargetLabel({
         ...candidate,
@@ -51,17 +56,23 @@ describe('evaluation run option labels', () => {
     const labels = runOptionLabels([first, second])
 
     expect(labels.get(first.id)).toBe(
-      'Candidate live capacity protocol · #00000001 · Model pool · Live · E5 · n=1',
+      'Candidate live capacity protocol · Option 1 · Model pool · Live · End-to-end validation · 1 case',
     )
+    expect(labels.get(first.id)).not.toContain('E5')
     expect(labels.get(second.id)).not.toBe(labels.get(first.id))
   })
 
-  it('expands the suffix only when the visible identities collide', () => {
+  it('disambiguates repeated names without exposing internal run identifiers', () => {
     const first = run('00000000-0000-4000-8000-000100000001')
     const second = run('00000000-0000-4000-8000-000200000001')
     const labels = runOptionLabels([first, second])
 
-    expect(labels.get(first.id)).toContain('#000100000001')
-    expect(labels.get(second.id)).toContain('#000200000001')
+    expect(labels.get(first.id)).toContain('Option 1')
+    expect(labels.get(second.id)).toContain('Option 2')
+    expect([...labels.values()].join(' ')).not.toContain('000100000001')
+
+    const comparisonLabels = comparisonRunOptionLabels([first, second])
+    expect(comparisonLabels.get(first.id)).toBe('Candidate live capacity protocol · Option 1')
+    expect(comparisonLabels.get(second.id)).toBe('Candidate live capacity protocol · Option 2')
   })
 })

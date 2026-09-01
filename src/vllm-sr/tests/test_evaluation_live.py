@@ -23,7 +23,6 @@ from cli.evaluation.contracts import (
     MixtureDecisionBinding,
     RunManifest,
     SupportModelIdentity,
-    default_capacity_load_protocol,
 )
 from cli.evaluation.execution_plan import (
     DEFAULT_SUITE_REGISTRY,
@@ -44,8 +43,11 @@ from cli.evaluation.manifest_identity import (
     selector_snapshot_digest,
 )
 from cli.evaluation.resolution import live_grading
-from cli.evaluation.routing_recipe_plan import build_routing_recipe_plan
 from cli.evaluation.store import LocalArtifactStore
+from evaluation_contract_test_support import (
+    build_routing_recipe_plan,
+    default_capacity_load_protocol,
+)
 
 _LIVE_TRACKS = ("routing", "model_pool", "joint", "multimodal", "capacity")
 _ANSWERS_BY_PROMPT_MARKER = (

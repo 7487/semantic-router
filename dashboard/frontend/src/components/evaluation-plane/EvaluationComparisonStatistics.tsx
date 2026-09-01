@@ -1,13 +1,33 @@
 import type { EvaluationComparisonStatistic } from '../../types/evaluationReport'
+import { TRACK_PRESENTATION } from './evaluationTrackPresentation'
 import { GateVerdictBadge } from './EvaluationPrimitives'
 import tableStyles from './EvaluationReportTable.module.css'
 import styles from './EvaluationComparisonStatistics.module.css'
 
 const ANALYSIS_UNIT_LABELS: Record<EvaluationComparisonStatistic['analysis_unit'], string> = {
-  case_mean: 'Case mean',
-  case_max: 'Case maximum',
-  case_oracle_regret: 'Case oracle regret',
-  case_normalized_regret: 'Case normalized regret',
+  case_mean: 'Average across matched cases',
+  case_max: 'Best available outcome per case',
+  case_oracle_regret: 'Gap to the best model per case',
+  case_normalized_regret: 'Normalized gap to the best model',
+}
+
+const STATISTIC_LABELS: Record<string, string> = {
+  'routing.accuracy': 'Routing accuracy',
+  'model_pool.oracle_quality': 'Best available model quality',
+  'joint.realized_quality': 'Routed response quality',
+  'joint.reliability': 'End-to-end reliability',
+  'joint.oracle_regret': 'Quality gap to the best model',
+  'joint.normalized_regret': 'Normalized quality gap',
+  'agentic.task_score': 'Agent task score',
+  'agentic.success_rate': 'Agent task success',
+  'multimodal.quality': 'Multimodal response quality',
+  'preference.agreement': 'Preference agreement',
+  'safety.violation_case_rate': 'Safety violation rate',
+  'capacity.success_rate': 'Request success under load',
+}
+
+function statisticLabel(statistic: EvaluationComparisonStatistic): string {
+  return STATISTIC_LABELS[statistic.id] || `${TRACK_PRESENTATION[statistic.track_id].label} outcome`
 }
 
 const number = new Intl.NumberFormat('en-US', {
@@ -51,34 +71,45 @@ export default function EvaluationComparisonStatistics({
   if (statistics.length === 0) {
     return (
       <div className={styles.empty} role="status">
-        No registered paired statistic was estimable from this run pair. G3 remains unavailable.
+        This run pair does not yet contain enough matched cases for a controlled value comparison.
       </div>
     )
   }
 
   return (
-    <div className={tableStyles.tableScroll} tabIndex={0} aria-label="Scroll scientific statistics">
+    <div
+      className={tableStyles.tableScroll}
+      role="region"
+      tabIndex={0}
+      aria-label="Scroll scientific statistics"
+    >
       <table className={`${tableStyles.table} ${styles.table}`}>
-        <caption>Server-reduced paired scientific statistics</caption>
+        <caption>Paired outcome comparison</caption>
         <thead>
           <tr>
             <th scope="col">Statistic</th>
             <th scope="col">Baseline</th>
             <th scope="col">Candidate</th>
-            <th scope="col">Paired delta · 95% CI</th>
-            <th scope="col">Candidate 95% CI</th>
-            <th scope="col">NI margin</th>
-            <th scope="col">N</th>
-            <th scope="col">Verdict</th>
+            <th scope="col">Paired difference · 95% confidence range</th>
+            <th scope="col">Candidate confidence range</th>
+            <th scope="col">Allowed regression</th>
+            <th scope="col">Cases</th>
+            <th scope="col">Result</th>
           </tr>
         </thead>
         <tbody>
           {statistics.map((statistic) => {
             const reason = unavailableReason(statistic)
             return (
-              <tr key={`${statistic.track_id}-${statistic.id}`}>
+              <tr
+                key={`${statistic.track_id}-${statistic.id}`}
+                data-estimator-id={statistic.estimator_id}
+                data-estimator-version={statistic.estimator_version}
+                data-statistic-id={statistic.id}
+              >
                 <th scope="row">
-                  <strong>{statistic.id}</strong>
+                  <strong>{statisticLabel(statistic)}</strong>
+                  <span>{TRACK_PRESENTATION[statistic.track_id].label}</span>
                   <span>{ANALYSIS_UNIT_LABELS[statistic.analysis_unit]}</span>
                   <small>
                     {statistic.direction === 'higher_is_better'

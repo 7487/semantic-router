@@ -262,7 +262,7 @@ function decodeDecision(
   }
 }
 
-export function decodeEvaluationCampaignDecision(
+function decodeEvaluationCampaignDecision(
   payload: unknown,
   campaign: Pick<EvaluationCampaign, 'id' | 'manifest_digest' | 'change_profile' | 'gate_bindings'>,
 ): EvaluationCampaignDecision {

@@ -18,7 +18,7 @@ from cli.evaluation.benchmark_normalization_io import (
 from cli.evaluation.benchmark_normalization_types import (
     BenchmarkNormalizerDescriptor,
 )
-from cli.evaluation.canonical import digest_value, sha256_digest
+from cli.evaluation.canonical import digest_value
 from cli.evaluation.case_plan import applicable_track_ids
 from cli.evaluation.contracts import CaseGrading, CaseVisible, Message
 
@@ -84,28 +84,6 @@ def text_case(
 
 def native_digest(value: Mapping[str, Any] | list[Any]) -> str:
     return digest_value(value)
-
-
-def checked_payload(
-    payload: object,
-    descriptor: BenchmarkNormalizerDescriptor,
-) -> None:
-    if not payload:
-        raise NormalizationError(
-            f"{descriptor.adapter_id} native export contains no normalized cases"
-        )
-
-
-def file_digest(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return "sha256:" + digest.hexdigest()
-
-
-def bytes_digest(data: bytes) -> str:
-    return sha256_digest(data)
 
 
 def messages(value: Any, label: str) -> tuple[Message, ...]:

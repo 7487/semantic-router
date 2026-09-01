@@ -1,8 +1,12 @@
 import type { EvaluationMetric, EvaluationReport } from '../../types/evaluationReport'
+import EvaluationIssueDetails from './EvaluationIssueDetails'
 import { formatMetric } from './evaluationPresentation'
 import { EvaluationTag } from './EvaluationPrimitives'
 import styles from './EvaluationMixtureReport.module.css'
 import layoutStyles from './EvaluationReportLayout.module.css'
+
+type EvaluationMixture = NonNullable<EvaluationReport['run']['mixture']>
+type EvaluationModelArm = EvaluationMixture['model_arms'][number]
 
 function metricByID(metrics: EvaluationMetric[], id: string): EvaluationMetric | undefined {
   return metrics.find((metric) => metric.id === id)
@@ -46,44 +50,51 @@ function OutcomeLayer({
   )
 }
 
-export default function EvaluationMixtureReport({ report }: { report: EvaluationReport }) {
-  const mixture = report.run.mixture
-  if (!mixture) return null
-
-  const metrics = report.metrics
+function decisionNamesByArm(mixture: EvaluationMixture): Map<string, string[]> {
   const decisionsByArm = new Map<string, string[]>()
-  const armsByID = new Map(mixture.model_arms.map((arm) => [arm.id, arm]))
-  for (const decision of mixture.decisions) {
+  mixture.decisions.forEach((decision, index) => {
     for (const armID of decision.arm_ids) {
-      decisionsByArm.set(armID, [...(decisionsByArm.get(armID) || []), decision.name])
+      decisionsByArm.set(armID, [...(decisionsByArm.get(armID) || []), `Decision ${index + 1}`])
     }
-  }
+  })
+  return decisionsByArm
+}
 
+function MixtureHeader({ mixture }: { mixture: EvaluationMixture }) {
   return (
-    <section className={layoutStyles.section} aria-labelledby="mixture-report-title">
-      <div className={layoutStyles.sectionHeader}>
-        <div>
-          <span className={layoutStyles.eyebrow}>Evaluated system boundary</span>
-          <h3 id="mixture-report-title">{mixture.entrypoint_model}</h3>
-          <p>
-            One frozen cohort measured recipe decisions, every reachable model arm, and the routed
-            system outcome. The snapshot below is the subject that actually ran—not the current
-            configuration.
-          </p>
-        </div>
-        <div className={styles.mixtureSubjectFacts}>
-          <EvaluationTag>
-            {mixture.model_arms.length} model {mixture.model_arms.length === 1 ? 'arm' : 'arms'}
-          </EvaluationTag>
-          <EvaluationTag>
-            {mixture.decisions.length} {mixture.decisions.length === 1 ? 'decision' : 'decisions'}
-          </EvaluationTag>
-          <EvaluationTag>
-            {mixture.aliases.length} entrypoint {mixture.aliases.length === 1 ? 'name' : 'names'}
-          </EvaluationTag>
-        </div>
+    <div className={layoutStyles.sectionHeader}>
+      <div>
+        <span className={layoutStyles.eyebrow}>Evaluated system boundary</span>
+        <h3 id="mixture-report-title">{mixture.entrypoint_model}</h3>
+        <p>
+          This run measured recipe decisions, every reachable model, and the routed system outcome.
+          The setup below is the one that actually ran—not the current configuration.
+        </p>
       </div>
+      <div className={styles.mixtureSubjectFacts}>
+        <EvaluationTag>
+          {mixture.model_arms.length} {mixture.model_arms.length === 1 ? 'model' : 'models'}
+        </EvaluationTag>
+        <EvaluationTag>
+          {mixture.decisions.length} {mixture.decisions.length === 1 ? 'decision' : 'decisions'}
+        </EvaluationTag>
+        <EvaluationTag>
+          {mixture.aliases.length} entrypoint {mixture.aliases.length === 1 ? 'name' : 'names'}
+        </EvaluationTag>
+      </div>
+    </div>
+  )
+}
 
+function MixtureOutcomes({
+  metrics,
+  mixture,
+}: {
+  metrics: EvaluationMetric[]
+  mixture: EvaluationMixture
+}) {
+  return (
+    <>
       <div className={styles.mixtureOutcomeGrid}>
         <OutcomeLayer
           eyebrow="01 · Routing recipe"
@@ -98,14 +109,20 @@ export default function EvaluationMixtureReport({ report }: { report: Evaluation
         <OutcomeLayer
           eyebrow="02 · Model pool"
           title="Capability frontier"
-          description="How good and complementary are the frozen arms before routing?"
+          description="How good and complementary are the saved models before routing?"
           readings={[
-            { label: 'Pool oracle', metric: metricByID(metrics, 'model_pool.oracle_quality') },
             {
-              label: 'Best single arm',
+              label: 'Best available model quality',
+              metric: metricByID(metrics, 'model_pool.oracle_quality'),
+            },
+            {
+              label: 'Best single model',
               metric: metricByID(metrics, 'model_pool.best_single_quality'),
             },
-            { label: 'Pool gain', metric: metricByID(metrics, 'model_pool.oracle_gain') },
+            {
+              label: 'Gain over the best single model',
+              metric: metricByID(metrics, 'model_pool.oracle_gain'),
+            },
           ]}
         />
         <OutcomeLayer
@@ -114,129 +131,220 @@ export default function EvaluationMixtureReport({ report }: { report: Evaluation
           description="How much of the pool frontier does the recipe capture in practice?"
           readings={[
             { label: 'Realized quality', metric: metricByID(metrics, 'joint.realized_quality') },
-            { label: 'Normalized regret', metric: metricByID(metrics, 'joint.normalized_regret') },
-            { label: 'Oracle capture', metric: metricByID(metrics, 'joint.oracle_capture_ratio') },
+            {
+              label: 'Normalized quality gap',
+              metric: metricByID(metrics, 'joint.normalized_regret'),
+            },
+            {
+              label: 'Share of best-available quality delivered',
+              metric: metricByID(metrics, 'joint.oracle_capture_ratio'),
+            },
           ]}
         />
       </div>
-
       <p className={styles.mixtureReadingGuide}>
-        Read left to right: the recipe chooses, the dense arm matrix establishes the pool ceiling,
+        Read left to right: the recipe chooses, the model comparison establishes the pool ceiling,
         and the routed call measures how much of that ceiling the system realizes. “Not measured”
-        means the selected cohort did not produce that aggregate; the dashboard never substitutes a
-        different target.
+        means the selected test setup did not produce that aggregate; the dashboard never
+        substitutes a different target.
       </p>
+    </>
+  )
+}
 
-      <div className={styles.mixtureDetailGrid}>
+function MixtureDecisionTopology({ mixture }: { mixture: EvaluationMixture }) {
+  const armsByID = new Map(mixture.model_arms.map((arm) => [arm.id, arm]))
+  return (
+    <div>
+      <div className={styles.mixtureSubheading}>
         <div>
-          <div className={styles.mixtureSubheading}>
-            <div>
-              <span>Recipe topology</span>
-              <strong>Decision → eligible arms</strong>
-            </div>
-            <code>{mixture.recipe_digest.slice(0, 18)}…</code>
-          </div>
-          <div className={styles.mixtureDecisionMap}>
-            {mixture.decisions.map((decision) => (
-              <article key={decision.name}>
-                <div>
-                  <strong>{decision.name}</strong>
-                  <code>{decision.algorithm}</code>
-                </div>
-                <span>
-                  {decision.arm_ids.map((armID) => armsByID.get(armID)?.model || armID).join(' · ')}
-                </span>
-              </article>
-            ))}
-          </div>
-          {mixture.support_models.length ? (
-            <p className={styles.mixtureSupportModels}>
-              <strong>Decision support models (not pool arms)</strong>
-              <span>{mixture.support_models.map((model) => model.model).join(' · ')}</span>
-            </p>
-          ) : null}
-        </div>
-
-        <div>
-          <div className={styles.mixtureSubheading}>
-            <div>
-              <span>Frozen model pool</span>
-              <strong>Per-arm outcome matrix</strong>
-            </div>
-            <code>{mixture.pool_digest.slice(0, 18)}…</code>
-          </div>
-          <div className={styles.mixtureArmMatrix}>
-            {mixture.model_arms.map((arm) => {
-              const quality = metricByID(metrics, `model_pool.arm.${arm.id}.quality`)
-              const success = metricByID(metrics, `model_pool.arm.${arm.id}.success_rate`)
-              const contribution = metricByID(
-                metrics,
-                `model_pool.arm.${arm.id}.marginal_contribution`,
-              )
-              return (
-                <article key={arm.id}>
-                  <header>
-                    <div>
-                      <strong>{arm.model}</strong>
-                      <span>
-                        Arm {arm.id} · {(arm.modalities || ['text']).join(' · ')}
-                      </span>
-                    </div>
-                    {mixture.fallback_arm_id === arm.id ? (
-                      <EvaluationTag tone="positive">Fallback</EvaluationTag>
-                    ) : null}
-                  </header>
-                  <dl>
-                    <div>
-                      <dt>Quality</dt>
-                      <dd>
-                        <MetricReading metric={quality} />
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>Success</dt>
-                      <dd>
-                        <MetricReading metric={success} />
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>Marginal gain</dt>
-                      <dd>
-                        <MetricReading metric={contribution} />
-                      </dd>
-                    </div>
-                  </dl>
-                  <footer>
-                    <span>{(decisionsByArm.get(arm.id) || []).join(' · ') || 'Pool-only arm'}</span>
-                    <span>
-                      ${arm.input_cost_per_million_tokens_usd.toLocaleString()}/M in · $
-                      {arm.output_cost_per_million_tokens_usd.toLocaleString()}/M out
-                    </span>
-                  </footer>
-                </article>
-              )
-            })}
-          </div>
+          <span>Recipe topology</span>
+          <strong>Decision → eligible models</strong>
         </div>
       </div>
+      <div className={styles.mixtureDecisionMap}>
+        {mixture.decisions.map((decision, index) => (
+          <MixtureDecision
+            key={decision.name}
+            label={`Decision ${index + 1}`}
+            decision={decision}
+            armsByID={armsByID}
+          />
+        ))}
+      </div>
+      {mixture.support_models.length ? (
+        <p className={styles.mixtureSupportModels}>
+          <strong>Decision support models (not evaluated pool models)</strong>
+          <span>{mixture.support_models.map((model) => model.model).join(' · ')}</span>
+        </p>
+      ) : null}
+    </div>
+  )
+}
 
+function MixtureDecision({
+  label,
+  decision,
+  armsByID,
+}: {
+  label: string
+  decision: EvaluationMixture['decisions'][number]
+  armsByID: Map<string, EvaluationModelArm>
+}) {
+  const unresolvedArmIDs = decision.arm_ids.filter((armID) => !armsByID.has(armID))
+  return (
+    <article>
+      <div>
+        <strong>{label}</strong>
+        <span>Routing strategy configured</span>
+      </div>
+      <span>
+        {decision.arm_ids
+          .map((armID) => armsByID.get(armID)?.model || 'Unresolved pool model')
+          .join(' · ')}
+      </span>
+      <EvaluationIssueDetails
+        issues={unresolvedArmIDs.map((armID) => ({
+          label: 'Unresolved model reference',
+          message: armID,
+        }))}
+      />
+    </article>
+  )
+}
+
+function MixtureArmCard({
+  arm,
+  metrics,
+  mixture,
+  decisions,
+}: {
+  arm: EvaluationModelArm
+  metrics: EvaluationMetric[]
+  mixture: EvaluationMixture
+  decisions: string[]
+}) {
+  const quality = metricByID(metrics, `model_pool.arm.${arm.id}.quality`)
+  const success = metricByID(metrics, `model_pool.arm.${arm.id}.success_rate`)
+  const contribution = metricByID(metrics, `model_pool.arm.${arm.id}.marginal_contribution`)
+  return (
+    <article>
+      <header>
+        <div>
+          <strong>{arm.model}</strong>
+          <span>{(arm.modalities || ['text']).join(' · ')}</span>
+        </div>
+        {mixture.fallback_arm_id === arm.id ? (
+          <EvaluationTag tone="positive">Fallback</EvaluationTag>
+        ) : null}
+      </header>
+      <dl>
+        <div>
+          <dt>Quality</dt>
+          <dd>
+            <MetricReading metric={quality} />
+          </dd>
+        </div>
+        <div>
+          <dt>Success</dt>
+          <dd>
+            <MetricReading metric={success} />
+          </dd>
+        </div>
+        <div>
+          <dt>Marginal gain</dt>
+          <dd>
+            <MetricReading metric={contribution} />
+          </dd>
+        </div>
+      </dl>
+      <footer>
+        <span>{decisions.join(' · ') || 'Pool-only model'}</span>
+        <span>
+          ${arm.input_cost_per_million_tokens_usd.toLocaleString()}/M in · $
+          {arm.output_cost_per_million_tokens_usd.toLocaleString()}/M out
+        </span>
+      </footer>
+    </article>
+  )
+}
+
+function MixtureArmMatrix({
+  mixture,
+  metrics,
+}: {
+  mixture: EvaluationMixture
+  metrics: EvaluationMetric[]
+}) {
+  const decisionsByArm = decisionNamesByArm(mixture)
+  return (
+    <div>
+      <div className={styles.mixtureSubheading}>
+        <div>
+          <span>Frozen model pool</span>
+          <strong>Per-model outcome matrix</strong>
+        </div>
+      </div>
+      <div className={styles.mixtureArmMatrix}>
+        {mixture.model_arms.map((arm) => (
+          <MixtureArmCard
+            key={arm.id}
+            arm={arm}
+            metrics={metrics}
+            mixture={mixture}
+            decisions={decisionsByArm.get(arm.id) || []}
+          />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function MixtureLineage({ mixture }: { mixture: EvaluationMixture }) {
+  return (
+    <details className={styles.mixtureLineageDetails}>
+      <summary>Reproducibility details</summary>
       <div className={styles.mixtureLineageStrip}>
         <span>
-          Recipe <code title={mixture.recipe_digest}>{mixture.recipe_digest}</code>
+          Recipe <code>{mixture.recipe_digest}</code>
         </span>
         <span>
-          Pool <code title={mixture.pool_digest}>{mixture.pool_digest}</code>
+          Pool <code>{mixture.pool_digest}</code>
         </span>
         <span>
-          Selector <code title={mixture.selector_digest}>{mixture.selector_digest}</code>
+          Selector <code>{mixture.selector_digest}</code>
         </span>
         <span>
-          Adaptation <code title={mixture.adaptation_digest}>{mixture.adaptation_digest}</code>
+          Adaptation <code>{mixture.adaptation_digest}</code>
         </span>
         <span>
-          Binding <code title={mixture.binding_digest}>{mixture.binding_digest}</code>
+          Binding <code>{mixture.binding_digest}</code>
+        </span>
+        <span>
+          Routing methods{' '}
+          <code>
+            {mixture.decisions
+              .map((decision) => `${decision.name}: ${decision.algorithm}`)
+              .join(' · ')}
+          </code>
         </span>
       </div>
+    </details>
+  )
+}
+
+export default function EvaluationMixtureReport({ report }: { report: EvaluationReport }) {
+  const mixture = report.run.mixture
+  if (!mixture) return null
+  return (
+    <section className={layoutStyles.section} aria-labelledby="mixture-report-title">
+      <MixtureHeader mixture={mixture} />
+      <MixtureOutcomes metrics={report.metrics} mixture={mixture} />
+      <div className={styles.mixtureDetailGrid}>
+        <MixtureDecisionTopology mixture={mixture} />
+        <MixtureArmMatrix mixture={mixture} metrics={report.metrics} />
+      </div>
+      <MixtureLineage mixture={mixture} />
     </section>
   )
 }

@@ -5,13 +5,10 @@ from cli.evaluation.evidence import ExecutionRecord
 from cli.evaluation.method_contract_v2 import (
     R2_COMPOUND_MODEL_BUDGET_PLUGIN,
     ActionRef,
-    CaseArmObservation,
     CompoundModelBudgetOutcome,
     SliceRef,
-    reduce_case_arm_observations,
     reduce_compound_model_budget,
 )
-from cli.evaluation.method_planner_v2 import runnable_gradeable_live_methods
 from cli.evaluation.method_registry_v2 import (
     METHOD_PLUGINS,
     method_plugin_for_benchmark,
@@ -110,19 +107,6 @@ def test_r2_compound_model_budget_fails_closed_on_missing_or_duplicate_cells() -
         reduce_compound_model_budget(rows[:-1])
     with pytest.raises(ValueError, match="duplicate case x action x budget"):
         reduce_compound_model_budget((*rows, rows[0]))
-
-
-def test_generic_reducer_fails_closed_on_duplicate_case_arm() -> None:
-    row = CaseArmObservation(case_id="case-a", action=ActionRef(id="small"), value=0.5)
-    with pytest.raises(ValueError, match="duplicate case x action"):
-        reduce_case_arm_observations((row, row))
-
-
-def test_v2_planner_exposes_only_complete_gradeable_live_methods() -> None:
-    with pytest.raises(ValueError, match="no runnable"):
-        runnable_gradeable_live_methods(
-            (R2_COMPOUND_MODEL_BUDGET_PLUGIN,), selected_tracks=("model_pool",)
-        )
 
 
 def test_r2_execution_records_reduce_without_generic_model_pool_semantics() -> None:

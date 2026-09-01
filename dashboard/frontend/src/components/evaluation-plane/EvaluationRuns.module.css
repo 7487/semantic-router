@@ -1,9 +1,9 @@
 .filters {
   display: grid;
-  grid-template-columns: minmax(240px, 1fr) minmax(140px, 0.28fr) minmax(140px, 0.28fr) auto;
+  grid-template-columns: minmax(280px, 1fr) repeat(2, minmax(160px, 0.3fr));
   align-items: end;
-  gap: 0.75rem;
-  margin-bottom: 0.9rem;
+  gap: 1rem;
+  margin-bottom: 0.55rem;
 }
 
 .filters label {
@@ -19,14 +19,20 @@
   min-height: var(--control-height);
 }
 
-.resultCount {
-  align-self: center;
-  padding-bottom: 0.25rem;
+.filterSummary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 1.1rem;
   color: var(--text-muted);
   font-size: 0.75rem;
   line-height: 1.35;
-  text-align: right;
-  white-space: nowrap;
+}
+
+.filterSummary strong {
+  color: var(--text-secondary);
+  font-weight: 650;
 }
 
 .refreshCluster {
@@ -42,8 +48,9 @@
 
 .runWorkspace {
   display: grid;
-  grid-template-columns: minmax(250px, 360px) minmax(0, 1fr);
-  gap: 0;
+  grid-template-columns: minmax(340px, 0.82fr) minmax(0, 1.68fr);
+  align-items: start;
+  gap: clamp(1.5rem, 2.5vw, 2.25rem);
   min-width: 0;
 }
 
@@ -51,13 +58,14 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
-  max-height: min(66vh, 650px);
+  max-height: min(72vh, 720px);
   overflow: hidden;
   border-top: 1px solid var(--border-subtle);
   border-bottom: 1px solid var(--border-subtle);
 }
 
 .runList {
+  flex: 1 1 auto;
   min-height: 0;
   margin: 0;
   padding: 0;
@@ -72,9 +80,9 @@
 .runSummary {
   display: grid;
   width: 100%;
-  min-height: 82px;
-  gap: 0.3rem;
-  padding: 0.8rem 0.65rem 0.8rem 0.75rem;
+  min-height: 94px;
+  gap: 0.4rem;
+  padding: 0.95rem 0.8rem 0.95rem 0.9rem;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -101,7 +109,7 @@
 
 .runRowTop {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 0.75rem;
 }
@@ -109,11 +117,13 @@
 .runRowTop strong {
   flex: 1 1 auto;
   min-width: 0;
-  overflow: hidden;
   color: var(--text-primary);
   font-size: var(--text-sm);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.35;
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 /* Keep terminal state legible on the narrow ledger: the run name, not its state, yields first. */
@@ -134,6 +144,24 @@
   color: var(--text-secondary);
 }
 
+.ledgerTechnicalDetails,
+.timelineTechnicalDetails {
+  flex: 0 1 auto;
+  width: 100%;
+  padding: 0.65rem 0.75rem;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.ledgerTechnicalDetails[open] {
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.timelineTechnicalDetails {
+  margin-top: 0.65rem;
+  padding-inline: 0;
+}
+
 .pagination {
   display: flex;
   align-items: center;
@@ -151,8 +179,7 @@
 
 .runInspector {
   min-width: 0;
-  padding: 0.15rem 0 1rem clamp(1rem, 2vw, 1.75rem);
-  border-left: 1px solid var(--border-subtle);
+  padding: 0.15rem 0 1rem;
 }
 
 .inspectorHeader {
@@ -167,16 +194,6 @@
   margin: 0.25rem 0 0;
   color: var(--text-primary);
   font-size: 1.15rem;
-}
-
-.inspectorHeader code {
-  display: block;
-  max-width: 100%;
-  margin-top: 0.2rem;
-  overflow: hidden;
-  color: var(--text-muted);
-  font-size: 0.72rem;
-  text-overflow: ellipsis;
 }
 
 .inspectorState {
@@ -210,23 +227,24 @@
   flex: 0 0 auto;
 }
 
+.inspectorNoticeCopy {
+  display: grid;
+  min-width: 0;
+  gap: 0.3rem;
+}
+
 .definitionGrid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  margin: 0.8rem 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem clamp(1.5rem, 3vw, 2.5rem);
+  margin: 1rem 0;
+  padding: 1rem 0;
   border-top: 1px solid var(--border-subtle);
   border-bottom: 1px solid var(--border-subtle);
 }
 
 .definitionGrid > div {
   min-width: 0;
-  padding: 0.65rem 0.7rem;
-  border-bottom: 1px solid var(--border-subtle);
-  border-left: 1px solid var(--border-subtle);
-}
-
-.definitionGrid > div:nth-child(3n + 1) {
-  border-left: 0;
 }
 
 .definitionGrid dt {
@@ -243,7 +261,78 @@
 
 .definitionWide {
   grid-column: 1 / -1;
-  border-left: 0 !important;
+}
+
+.runTechnicalDetails {
+  margin: 0 0 1rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.runTechnicalDetails > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 0;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-weight: 650;
+  cursor: pointer;
+  list-style: none;
+}
+
+.runTechnicalDetails > summary::-webkit-details-marker {
+  display: none;
+}
+
+.runTechnicalDetails > summary::after {
+  width: 0.45rem;
+  height: 0.45rem;
+  flex: 0 0 auto;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  content: '';
+  transform: rotate(45deg) translate(-0.1rem, -0.1rem);
+  transition: transform var(--transition-fast);
+}
+
+.runTechnicalDetails[open] > summary::after {
+  transform: rotate(225deg) translate(-0.05rem, -0.05rem);
+}
+
+.runTechnicalDetails > summary:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+
+.runTechnicalGrid {
+  display: grid;
+  gap: 0.65rem;
+  margin: 0;
+  padding: 0 0 0.9rem;
+}
+
+.runTechnicalGrid > div {
+  display: grid;
+  grid-template-columns: minmax(7rem, 0.28fr) minmax(0, 1fr);
+  gap: 0.75rem;
+}
+
+.runTechnicalGrid dt {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.runTechnicalGrid dd {
+  min-width: 0;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+
+.runTechnicalGrid code {
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .inspectorActions {
@@ -251,7 +340,9 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 0.45rem;
-  margin: 0.85rem 0;
+  margin: 1rem 0;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-subtle);
 }
 
 .pairControlStatus {
@@ -357,17 +448,9 @@
   font-size: var(--text-xs);
 }
 
-@media (max-width: 1100px) {
+@media (max-width: 1160px) {
   .filters {
     grid-template-columns: minmax(220px, 1fr) repeat(2, minmax(140px, 0.4fr));
-  }
-
-  .resultCount {
-    grid-column: 1 / -1;
-    max-width: none;
-    padding-bottom: 0;
-    text-align: left;
-    white-space: normal;
   }
 
   .runWorkspace {
@@ -375,13 +458,17 @@
   }
 
   .runLedger {
-    max-height: 320px;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .runList {
+    overflow-y: visible;
   }
 
   .runInspector {
     padding: 1.25rem 0 0;
     border-top: 1px solid var(--border-subtle);
-    border-left: 0;
   }
 }
 
@@ -391,7 +478,7 @@
   }
 
   .filters label:first-child,
-  .resultCount {
+  .filterSummary {
     grid-column: 1 / -1;
   }
 
@@ -403,14 +490,6 @@
 
   .definitionGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .definitionGrid > div:nth-child(3n + 1) {
-    border-left: 1px solid var(--border-subtle);
-  }
-
-  .definitionGrid > div:nth-child(odd) {
-    border-left: 0;
   }
 }
 
@@ -424,14 +503,13 @@
     grid-column: auto;
   }
 
-  .definitionGrid > div,
-  .definitionGrid > div:nth-child(3n + 1),
-  .definitionGrid > div:nth-child(odd) {
-    border-left: 0;
-  }
-
   .definitionWide {
     grid-column: auto;
+  }
+
+  .runTechnicalGrid > div {
+    grid-template-columns: 1fr;
+    gap: 0.2rem;
   }
 
   .eventList li {

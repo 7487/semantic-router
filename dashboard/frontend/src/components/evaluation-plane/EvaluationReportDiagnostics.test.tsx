@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 import type {
   EvaluationCapacityProfile,
   EvaluationFailureSummary,
+  EvaluationMetric,
 } from '../../types/evaluationReport'
 import EvaluationReportDiagnostics from './EvaluationReportDiagnostics'
 
@@ -141,9 +142,9 @@ describe('EvaluationReportDiagnostics', () => {
         loading: false,
       }),
     )
-    expect(markup).toContain('Outcome accounting by evaluation track')
+    expect(markup).toContain('Outcome accounting by evaluation area')
     expect(markup).toContain('Capacity profile diagnostic error')
-    expect(markup).toContain('Invalid diagnostic artifact')
+    expect(markup).toContain('Diagnostic could not be verified')
     expect(markup).not.toContain('This run did not publish aggregate diagnostics')
   })
 
@@ -163,8 +164,8 @@ describe('EvaluationReportDiagnostics', () => {
       }),
     )
     expect(markup).toContain('Outcome accounting diagnostic error')
-    expect(markup).toContain('Diagnostic artifact unavailable')
-    expect(markup).not.toContain('Invalid diagnostic artifact')
+    expect(markup).toContain('Diagnostic is not available')
+    expect(markup).not.toContain('Diagnostic could not be verified')
   })
 
   it('renders the frozen protocol, repeated observations, UCB, and stability evidence', () => {
@@ -178,14 +179,93 @@ describe('EvaluationReportDiagnostics', () => {
         loading: false,
       }),
     )
-    expect(markup).toContain('SLO envelope pass')
-    expect(markup).toContain('Frozen capacity load protocol')
+    expect(markup).toContain('Capacity target passed')
+    expect(markup).toContain('Supported concurrency')
+    expect(markup).toContain('Within target')
+    expect(markup).toContain('Recorded capacity load plan')
     expect(markup).toContain('c1 → c2')
     expect(markup).toContain('100 requests × 3 repetitions')
-    expect(markup).toContain('Errors / 95% UCB')
-    expect(markup).toContain('Throughput / CV')
+    expect(markup).toContain('Errors / upper confidence estimate')
+    expect(markup).toContain('Throughput / variation')
     expect(markup).toContain('3 independent windows')
-    expect(markup).toContain('Checks W / L / E / T / S / Tσ / Lσ')
+    expect(markup).toContain('<th scope="col">Service checks</th>')
+    for (const label of [
+      'Warmup requests',
+      'Response-time target',
+      'Error-rate target',
+      'Throughput target',
+      'Scaling efficiency',
+      'Throughput stability',
+      'Response-time stability',
+    ]) {
+      expect(markup).toContain(`${label}: passed`)
+      expect(markup).toContain(`>${label}</span>`)
+    }
+    expect(markup).not.toContain('Checks W / L / E / T / S / Tσ / Lσ')
     expect(markup).toContain('40 / 20')
+  })
+
+  it('retains distinct analysis methods that share an estimator release', () => {
+    const metric = (id: string, analysisUnit: string, clusterUnit: string): EvaluationMetric => ({
+      id,
+      name: id,
+      value: 1,
+      unit: 'fraction',
+      analysis_provenance: {
+        contract_version: 'metric-analysis.v1',
+        estimator_id: 'paired-bootstrap',
+        estimator_version: '1.0.0',
+        analysis_unit: analysisUnit,
+        cluster_unit: clusterUnit,
+        weighting: 'uniform_pair',
+        missingness: 'fail_closed',
+        exclusion_policy: 'exclude_unavailable_evidence',
+        observed_exclusions: 0,
+      },
+    })
+    const markup = renderToStaticMarkup(
+      createElement(EvaluationReportDiagnostics, {
+        metrics: [
+          metric('task-success', 'agent_attempt', 'task'),
+          metric('tool-success', 'tool_call', 'agent_attempt'),
+        ],
+        failureSummary: null,
+        capacityProfile: null,
+        failureSummaryIssue: null,
+        capacityProfileIssue: null,
+        loading: false,
+      }),
+    )
+
+    expect(markup).toContain('2 methods')
+    expect(markup).toContain('agent_attempt / task')
+    expect(markup).toContain('tool_call / agent_attempt')
+  })
+
+  it('keeps adversarial artifact responses behind closed technical details', () => {
+    const backendMessage = 'decoder://artifact E5 schema-path=private.internal.field'
+    const artifactName = 'worker-capacity-profile.internal.json'
+    const markup = renderToStaticMarkup(
+      createElement(EvaluationReportDiagnostics, {
+        metrics: [],
+        failureSummary: null,
+        capacityProfile: null,
+        failureSummaryIssue: null,
+        capacityProfileIssue: {
+          kind: 'invalid',
+          artifactName,
+          message: backendMessage,
+        },
+        loading: false,
+      }),
+    )
+    const boundaryIndex = markup.indexOf('data-evaluation-technical-details="true"')
+
+    expect(markup.slice(0, boundaryIndex)).toContain('Diagnostic could not be verified')
+    expect(markup.slice(0, boundaryIndex)).not.toContain(backendMessage)
+    expect(markup.slice(0, boundaryIndex)).not.toContain(artifactName)
+    expect(markup.slice(boundaryIndex)).toContain(backendMessage)
+    expect(markup.slice(boundaryIndex)).toContain(artifactName)
+    expect(markup).not.toContain('<details open')
   })
 })

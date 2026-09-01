@@ -11,6 +11,21 @@ import { metricAnalysisSpecification } from '../../utils/evaluationReportContrac
 import { buildEvaluationRoutingRecipePlan } from '../../test/evaluationRoutingRecipeFixture'
 import EvaluationReportView from './EvaluationReportView'
 
+function expectInsideCollapsedDetails(markup: string, value: string, summary: string) {
+  const valueIndex = markup.indexOf(value)
+  expect(valueIndex).toBeGreaterThan(-1)
+
+  const detailsStart = markup.lastIndexOf('<details', valueIndex)
+  const openingTagEnd = markup.indexOf('>', detailsStart)
+  const detailsEnd = markup.indexOf('</details>', valueIndex)
+  expect(detailsStart).toBeGreaterThan(-1)
+  expect(openingTagEnd).toBeGreaterThan(detailsStart)
+  expect(detailsEnd).toBeGreaterThan(valueIndex)
+  expect(markup.slice(detailsStart, openingTagEnd + 1)).not.toMatch(/\sopen(?:=|\s|>)/)
+  expect(markup.slice(openingTagEnd + 1, valueIndex)).toContain(`<summary>${summary}</summary>`)
+  expect(markup.slice(0, detailsStart)).not.toContain(value)
+}
+
 function analysisProvenance(metricID: string): EvaluationMetricAnalysisProvenance {
   return {
     contract_version: 'metric-analysis.v1',
@@ -172,9 +187,16 @@ describe('EvaluationReportView evidence language', () => {
     const markup = renderToStaticMarkup(
       createElement(EvaluationReportView, { report: methodReport }),
     )
-    expect(markup).toContain('Server-recomputed analysis')
+    expect(markup).toContain('Benchmark-specific analysis')
     expect(markup).toContain('Exploratory import only')
-    expect(markup).toContain('r2.compound-model-budget.v2')
+    expect(markup).toContain('Model pool benchmark analysis')
+    const methodStart = markup.indexOf('Model pool benchmark analysis')
+    const technicalStart = markup.indexOf('Technical details', methodStart)
+    expect(technicalStart).toBeGreaterThan(methodStart)
+    expect(markup.slice(methodStart, technicalStart)).not.toContain('r2.compound-model-budget.v2')
+    expect(markup.slice(methodStart, technicalStart)).not.toContain('case_action_budget')
+    expect(markup.slice(methodStart, technicalStart)).not.toContain('r2.compound_model_budget.audc')
+    expect(markup.indexOf('r2.compound-model-budget.v2')).toBeGreaterThan(technicalStart)
   })
 
   it('explains one frozen Mixture across recipe, pool-arm, and joint outcomes', () => {
@@ -341,22 +363,39 @@ describe('EvaluationReportView evidence language', () => {
     expect(markup).toContain('01 · Routing recipe')
     expect(markup).toContain('02 · Model pool')
     expect(markup).toContain('03 · Routed system')
-    expect(markup).toContain('Per-arm outcome matrix')
+    expect(markup).toContain('Per-model outcome matrix')
     expect(markup).toContain('models/fast')
     expect(markup).toContain('models/strong')
     expect(markup).toContain('Fallback')
-    expect(markup).toContain('Normalized regret')
+    expect(markup).toContain('Normalized quality gap')
     expect(markup).toContain('Read left to right')
-    expect(markup).toContain('Server-owned decision evidence')
+    expect(markup).toContain('Routing behavior')
+    expect(markup).toContain('Recipe and pool pinned')
+    expect(markup).toContain('Saved with this run')
     expect(markup).toContain('Decision coverage')
     expect(markup).toContain('Eligibility complete')
     expect(markup).toContain('Selected feasible')
     expect(markup).toContain('Projection outcome calibration')
-    expect(markup).toContain('insufficient complete pool outcomes')
-    expect(markup).toContain('Oracle regret')
-    expect(markup.indexOf('Diagnostic evidence only')).toBeLessThan(
-      markup.indexOf('Server-owned decision evidence'),
+    expect(markup).toContain('Outcome estimate 1')
+    expect(markup).not.toContain('Insufficient complete pool outcomes')
+    expectInsideCollapsedDetails(markup, 'insufficient_latency_samples', 'Technical details')
+    expect(markup).toContain('Quality gap to the best feasible model')
+    expectInsideCollapsedDetails(markup, 'Oracle regret', 'Technical details')
+    expect(markup.indexOf('Diagnostic result only')).toBeLessThan(
+      markup.indexOf('Routing behavior'),
     )
+    expectInsideCollapsedDetails(markup, plan.plan_digest, 'Reproducibility details')
+    expectInsideCollapsedDetails(markup, plan.target_snapshot_digest, 'Reproducibility details')
+    for (const digest of [
+      mixtureReport.run.mixture?.recipe_digest,
+      mixtureReport.run.mixture?.pool_digest,
+      mixtureReport.run.mixture?.selector_digest,
+      mixtureReport.run.mixture?.adaptation_digest,
+      mixtureReport.run.mixture?.binding_digest,
+    ]) {
+      if (!digest) throw new Error('test Mixture must include every reproducibility identity')
+      expectInsideCollapsedDetails(markup, digest, 'Reproducibility details')
+    }
   })
 
   it('renders current attested E0 evidence without manufacturing promotion readiness', () => {
@@ -384,16 +423,50 @@ describe('EvaluationReportView evidence language', () => {
     }
     const markup = renderToStaticMarkup(createElement(EvaluationReportView, { report: diagnostic }))
 
-    expect(markup).toContain('Promotion summary withheld — server-attested diagnostic E0')
-    expect(markup).toContain('Diagnostic evidence only')
-    expect(markup).toContain('0/1 required gates passed')
-    expect(markup).toContain('Evidence needed')
+    expect(markup).toContain('Diagnostic run — no release recommendation')
+    expect(markup).toContain('Diagnostic result only')
+    expect(markup).toContain('0/1 required checks passed')
+    expect(markup).toContain('Incomplete')
     expect(markup.match(/2 not measured/g)).toHaveLength(3)
     expect(markup).toContain('Safety violation rate')
-    expect(markup).toContain('Server-reduced E0')
+    expect(markup).toContain('Verified result · Diagnostic')
     expect(markup).toContain('Verified artifacts')
-    expect(markup).toContain('Verified track scope')
-    expect(markup).toContain('Verified cost ledgers')
-    expect(markup).toContain(EVALUATION_ATTESTATION_REVISION)
+    expect(markup).toContain('Evaluation coverage')
+    expect(markup).toContain('Recorded costs')
+    expect(markup).not.toContain(EVALUATION_ATTESTATION_REVISION)
+    expect(markup).not.toContain('E0')
+    expect(markup).not.toContain('evaluation-release-gates.v2')
+  })
+
+  it('presents actionable next steps while retaining raw service notes in technical details', () => {
+    const rawServiceNote =
+      'Resolve G8 from the sealed all-arm receipt under evaluation-release-gates.v2.'
+    const diagnostic = {
+      ...report,
+      gates: [
+        {
+          id: 'G8',
+          name: 'Shadow / canary',
+          disposition: 'required' as const,
+          verdict: 'unavailable' as const,
+          change_profile: 'recipe' as const,
+          contract_version: 'evaluation-release-gates.v2' as const,
+          evidence_refs: [],
+        },
+      ],
+      recommendations: [rawServiceNote],
+    }
+    const markup = renderToStaticMarkup(createElement(EvaluationReportView, { report: diagnostic }))
+    const rawNoteIndex = markup.indexOf(rawServiceNote)
+    const technicalDetailsStart = markup.lastIndexOf('<details', rawNoteIndex)
+    const technicalSummary = markup.indexOf('Technical details · 1', technicalDetailsStart)
+
+    expect(markup).toContain('Next evaluation steps')
+    expect(markup).toContain(
+      'Canary safety: Run a guarded shadow or canary with exposure, stop, and rollback monitoring.',
+    )
+    expect(technicalDetailsStart).toBeGreaterThan(-1)
+    expect(technicalSummary).toBeGreaterThan(technicalDetailsStart)
+    expect(markup.slice(0, technicalDetailsStart)).not.toContain(rawServiceNote)
   })
 })

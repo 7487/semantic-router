@@ -45,12 +45,6 @@ func TestR2CompoundModelBudgetPreservesActionIdentityAndSharedCurve(t *testing.T
 func TestR2ReducersFailClosedOnDuplicateAndRaggedDomains(t *testing.T) {
 	plugin := R2CompoundModelBudgetPlugin()
 	duplicate := r2Outcome("case-a", "small", 100, .5)
-	if _, err := ReduceCaseArmObservations([]CaseArmObservation{
-		{CaseID: "case-a", Action: ActionRef{SchemaVersion: EvaluationMethodContractVersion, ID: "small"}, Value: .5},
-		{CaseID: "case-a", Action: ActionRef{SchemaVersion: EvaluationMethodContractVersion, ID: "small"}, Value: .6},
-	}); err == nil || !strings.Contains(err.Error(), "duplicate case×action") {
-		t.Fatalf("generic reducer accepted duplicate case×action: %v", err)
-	}
 	if _, err := ReduceCompoundModelBudget(plugin, []CompoundModelBudgetOutcome{duplicate, duplicate}); err == nil || !strings.Contains(err.Error(), "duplicate case×action×budget") {
 		t.Fatalf("compound reducer accepted duplicate case×action×budget: %v", err)
 	}
@@ -59,14 +53,6 @@ func TestR2ReducersFailClosedOnDuplicateAndRaggedDomains(t *testing.T) {
 		r2Outcome("case-a", "large", 100, .6),
 	}); err == nil || !strings.Contains(err.Error(), "exact shared") {
 		t.Fatalf("compound reducer accepted ragged shared domain: %v", err)
-	}
-}
-
-func TestR2CatalogPlannerExposesOnlyRunnableGradeableMethods(t *testing.T) {
-	if _, err := PlanRunnableGradeableLiveMethods(
-		[]EvaluationMethodPlugin{R2CompoundModelBudgetPlugin()}, []TrackID{"model_pool"},
-	); err == nil || !strings.Contains(err.Error(), "no runnable") {
-		t.Fatalf("planner exposed an uncovered live track: %v", err)
 	}
 }
 

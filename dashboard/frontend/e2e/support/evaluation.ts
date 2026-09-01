@@ -35,8 +35,8 @@ import { buildEvaluationRoutingRecipePlan } from '../../src/test/evaluationRouti
 import {
   EVALUATION_ATTESTATION_REVISION,
   EVALUATION_TRACK_IDS,
-  TRACK_PRESENTATION,
 } from '../../src/types/evaluationPlane'
+import { TRACK_PRESENTATION } from '../../src/components/evaluation-plane/evaluationTrackPresentation'
 import {
   gateApplicabilityForProfile,
   SUPPORTED_GATE_CONTRACT_VERSION,
@@ -80,8 +80,7 @@ export const EVALUATION_RUN_IDS = {
   campaignG7: evaluationRunID(19),
 } as const
 
-export const EVALUATION_MOM_ID =
-  'mom-37a8eec1ce19687d132fe29051dca629d164e2c4958ba141d5f4133a33f0688f'
+const EVALUATION_MOM_ID = 'mom-37a8eec1ce19687d132fe29051dca629d164e2c4958ba141d5f4133a33f0688f'
 export const EVALUATION_BASELINE_MOM_TARGET_ID = `baseline--${EVALUATION_MOM_ID}`
 export const EVALUATION_MOM_TARGET_ID = `candidate--${EVALUATION_MOM_ID}`
 
@@ -362,44 +361,48 @@ export const evaluationCatalog: EvaluationCatalog = {
   change_profiles: [
     {
       id: 'schema_adapter',
-      name: 'Schema / adapter',
-      description: 'Strict schema and adapter parity changes.',
+      name: 'Schema and integration',
+      description:
+        'Request or response formats, provider integrations, and adapter behavior changes.',
       campaign_slots: campaignSlots('schema_adapter'),
     },
     {
       id: 'recipe',
       name: 'Routing recipe',
-      description: 'Recipe signal, decision, algorithm, and policy changes.',
+      description: 'Routing rules, signals, decision logic, or selection policy changes.',
       campaign_slots: campaignSlots('recipe'),
     },
     {
       id: 'selector',
-      name: 'Selector / binding',
-      description: 'Selector, projection, classifier, and binding changes.',
+      name: 'Model selection',
+      description: 'Model scoring, prediction, classification, or model-binding changes.',
       campaign_slots: campaignSlots('selector'),
     },
     {
       id: 'model_pool',
       name: 'Model pool',
-      description: 'Logical arm composition, capability, quality, and price changes.',
+      description:
+        'Available models, their capabilities, quality, reliability, or pricing changes.',
       campaign_slots: campaignSlots('model_pool'),
     },
     {
       id: 'runtime_capacity',
-      name: 'Runtime / capacity',
-      description: 'Serving runtime, placement, capacity, and transport changes.',
+      name: 'Runtime and capacity',
+      description:
+        'Serving software, deployment placement, throughput, latency, or transport changes.',
       campaign_slots: campaignSlots('runtime_capacity'),
     },
     {
       id: 'agent_multimodal',
-      name: 'Agent / multimodal',
-      description: 'Agent trajectory, tool, state, and multimodal changes.',
+      name: 'Agents and multimodal',
+      description:
+        'Tool use, multi-step agent behavior, state handling, or multimodal input changes.',
       campaign_slots: campaignSlots('agent_multimodal'),
     },
     {
       id: 'online_adaptation',
-      name: 'Online adaptation',
-      description: 'Online assignment, preference, feedback, and adaptive policy changes.',
+      name: 'Online learning and feedback',
+      description: 'Traffic assignment, user preferences, feedback, or adaptive policy changes.',
       campaign_slots: campaignSlots('online_adaptation'),
     },
   ],
@@ -462,6 +465,54 @@ export const evaluationCatalog: EvaluationCatalog = {
           qualified_gate_ids: [],
           evidence_source: 'live_runtime',
           status: 'configured',
+        },
+      ],
+    },
+    {
+      id: 'live-agent-tasks',
+      executors: { live: 'live-runtime.v1' },
+      name: 'Agent task evaluation',
+      description:
+        'Repeated tool-use and reasoning tasks with complete provider results, reliability, latency, and cost.',
+      track_ids: ['agentic'],
+      modes: ['live'],
+      evidence_level: 'E5',
+      campaign_eligible: false,
+      campaign_minimum_cases: 0,
+      revision: 'executor-v1',
+      tags: [],
+      methods: [
+        {
+          id: 'live-agent-task.v1',
+          track_id: 'agentic',
+          qualified_gate_ids: [],
+          evidence_source: 'live_runtime',
+          status: 'data_required',
+          reason: 'Connect complete repeated agent-task results for the selected Mixture.',
+        },
+      ],
+    },
+    {
+      id: 'live-fault-recovery',
+      executors: { live: 'live-runtime.v1' },
+      name: 'Agent fault-recovery evaluation',
+      description:
+        'Matched baseline and injected-failure tasks that measure recovery and state continuity.',
+      track_ids: ['agentic'],
+      modes: ['live'],
+      evidence_level: 'E5',
+      campaign_eligible: false,
+      campaign_minimum_cases: 0,
+      revision: 'executor-v1',
+      tags: [],
+      methods: [
+        {
+          id: 'live-fault-recovery.v1',
+          track_id: 'agentic',
+          qualified_gate_ids: ['G6'],
+          evidence_source: 'live_runtime',
+          status: 'data_required',
+          reason: 'Connect complete matched baseline and injected-failure attempts.',
         },
       ],
     },
@@ -593,8 +644,9 @@ export const evaluationCatalog: EvaluationCatalog = {
   targets: [
     {
       id: 'fixture',
-      name: 'Built-in replay fixture',
-      description: 'Local deterministic harness validation with no production-quality claim.',
+      name: 'Built-in evaluation sample',
+      description:
+        'A deterministic sample that verifies the evaluation workflow without making a production-quality claim.',
       kind: 'builtin-fixture',
       track_ids: [...EVALUATION_TRACK_IDS],
       modes: ['replay'],
@@ -1160,7 +1212,7 @@ export function evaluationReport(run = defaultEvaluationRuns[0]): EvaluationRepo
   }
 }
 
-export const evaluationComparison: EvaluationComparison = {
+const evaluationComparison: EvaluationComparison = {
   schema_version: 'evaluation.v1',
   attestation_revision: EVALUATION_ATTESTATION_REVISION,
   baseline_run_id: EVALUATION_RUN_IDS.baseline,

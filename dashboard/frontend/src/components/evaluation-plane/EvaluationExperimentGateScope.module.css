@@ -44,9 +44,10 @@
   text-transform: uppercase;
 }
 
-.profileHeader > div code {
+.profileHeader > div strong {
   color: var(--text-secondary);
   font-size: 0.72rem;
+  font-weight: 600;
 }
 
 .gateMatrix {
@@ -73,7 +74,6 @@
   gap: 0.45rem;
 }
 
-.gateMatrix article code,
 .gateMatrix article small {
   color: var(--text-muted);
   font-size: 0.7rem;
@@ -112,6 +112,21 @@
 
 .gateDisclosure > summary::-webkit-details-marker {
   display: none;
+}
+
+.gateDisclosure > summary::after {
+  width: 0.45rem;
+  height: 0.45rem;
+  flex: 0 0 auto;
+  border-right: 1.5px solid var(--text-secondary);
+  border-bottom: 1.5px solid var(--text-secondary);
+  content: '';
+  transform: rotate(45deg) translate(-0.1rem, -0.1rem);
+  transition: transform var(--transition-fast);
+}
+
+.gateDisclosure[open] > summary::after {
+  transform: rotate(225deg) translate(-0.05rem, -0.05rem);
 }
 
 .gateDisclosure > summary:focus-visible {

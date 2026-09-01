@@ -40,8 +40,8 @@ from cli.evaluation.manifest_identity import (
 )
 from cli.evaluation.method_ledger_identity import method_mixture_binding
 from cli.evaluation.metric_agent_task import agent_task_metrics, reduce_agent_tasks
-from cli.evaluation.routing_recipe_plan import build_routing_recipe_plan
 from cli.evaluation.target_capabilities import DEFAULT_TARGET_REGISTRY
+from evaluation_contract_test_support import build_routing_recipe_plan
 from pydantic import ValidationError
 from test_evaluation_engine import _live_manifest
 

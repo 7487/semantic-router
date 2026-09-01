@@ -210,8 +210,8 @@ func (registry *Registry) registerInstalledSuites(values []CatalogSuite) error {
 func (registry *Registry) registerRecordedTargets(installedSuites bool) error {
 	healthy := true
 	fixture := targetDefinition{Public: CatalogTarget{
-		ID: "fixture", Name: "Built-in replay fixture", Kind: "builtin-fixture",
-		Description:       "Deterministic evidence for validating the complete evaluation plane.",
+		ID: "fixture", Name: "Built-in evaluation sample", Kind: "builtin-fixture",
+		Description:       "A small deterministic replay for checking the full evaluation workflow without calling a live system.",
 		Modes:             []Mode{ModeReplay},
 		AcceptedExecutors: map[Mode][]string{ModeReplay: {fixtureReplayExecutorID}},
 		EvidenceLevel:     "E0", Healthy: &healthy,
@@ -224,9 +224,9 @@ func (registry *Registry) registerRecordedTargets(installedSuites bool) error {
 		return err
 	}
 	benchmarkSource := targetDefinition{Public: CatalogTarget{
-		ID: "benchmark-source", Name: "Installed benchmark observations",
+		ID: "benchmark-source", Name: "Imported benchmark results",
 		Kind:              "normalized-benchmark-source",
-		Description:       "Pinned source-policy observations from installed normalized benchmark revisions. This target never represents the active runtime.",
+		Description:       "Replay saved results from pinned benchmark revisions. This evaluates imported observations, not the live system.",
 		Modes:             []Mode{ModeReplay},
 		AcceptedExecutors: map[Mode][]string{ModeReplay: {normalizedSuiteExecutorID}},
 		Healthy:           &installedSuites,
@@ -292,7 +292,7 @@ func mixtureTargetDefinition(
 		name = deploymentName + " · " + mixture.EntrypointModel
 	}
 	if description == "" {
-		description = "Recipe-scoped Mixture-of-Models evaluation target."
+		description = "Evaluate this routing recipe and its model pool together as one system."
 	}
 	topologyDigest := snapshot.BackendTopologyDigest
 	if !snapshot.Ready {

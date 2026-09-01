@@ -51,7 +51,8 @@ export const GATE_CONTRACT_DEFINITIONS: readonly GateContractDefinition[] = [
   {
     id: 'G7',
     name: 'Cost / latency / capacity',
-    description: 'Three ledgers, latency decomposition, saturation, SLOs, and headroom.',
+    description:
+      'Cost accounting, latency breakdown, saturation, service objectives, and available capacity.',
   },
   {
     id: 'G8',

@@ -97,6 +97,8 @@
 }
 
 .error {
+  display: grid;
+  gap: 0.35rem;
   margin-top: 1rem;
   padding: 0.75rem 0.8rem;
   border: 0;
@@ -114,6 +116,10 @@
   margin-top: 1rem;
   color: var(--text-secondary);
   font-size: var(--text-xs);
+}
+
+.confirmationInstruction {
+  line-height: 1.5;
 }
 
 .confirmation input {

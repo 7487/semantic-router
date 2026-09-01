@@ -177,14 +177,3 @@ func (index *runMetadataIndex) page(cursor *runListCursor, limit int) (runs []Ru
 	}
 	return runs, len(index.runs), warnings, index.warningCount
 }
-
-func (index *runMetadataIndex) activeWarnings() []runListWarning {
-	index.mu.RLock()
-	defer index.mu.RUnlock()
-	warnings := make([]runListWarning, 0, len(index.warnings))
-	for _, warning := range index.warnings {
-		warnings = append(warnings, warning)
-	}
-	sort.Slice(warnings, func(left, right int) bool { return warnings[left].EvidenceID < warnings[right].EvidenceID })
-	return warnings
-}

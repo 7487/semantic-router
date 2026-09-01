@@ -70,10 +70,10 @@ class NormalizedSuiteCatalog:
                     + ", ".join(unsupported)
                 )
         import_evidence = manifest.qualification_receipt.qualification
-        parser_label = (
-            "Registered parser output was re-derived exactly"
+        import_summary = (
+            "The registered parser was rerun and produced the same records."
             if import_evidence.parser_verified
-            else "User-provided normalized records passed the closed schema"
+            else "The imported records passed the required data checks."
         )
         if live_admissions:
             executors["live"] = live.id
@@ -81,10 +81,11 @@ class NormalizedSuiteCatalog:
             id=manifest.id,
             name=manifest.name,
             description=(
-                f"Pinned, normalized {descriptor.name} exploratory workload. "
-                f"{parser_label}; upstream benchmark execution is not attested. "
-                "Replay is E0 diagnostic evidence only, and raw cases, labels, "
-                "outcomes, and artifact references stay private."
+                f"Imported {descriptor.name} benchmark workload pinned to a specific "
+                f"revision. {import_summary} Imported results are exploratory and do not "
+                "attest the original benchmark run; release evidence requires a separately "
+                "supported live evaluation. Raw cases, labels, outcomes, and artifact "
+                "references remain private."
             ),
             track_ids=manifest.track_ids,
             modes=tuple(executors),

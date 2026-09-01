@@ -244,8 +244,8 @@ class CatalogChangeProfile(StrictModel):
 _CAMPAIGN_SLOT_TEMPLATES: tuple[dict[str, object], ...] = (
     {
         "gate_id": "G2",
-        "name": "Hard policy",
-        "description": "Server-qualified hard-policy enforcement on the candidate subject.",
+        "name": "Policy enforcement",
+        "description": "Checks that required safety and routing policies are enforced on the proposed system.",
         "binding_kind": "run",
         "track_id": "safety",
         "mode": "live",
@@ -254,8 +254,8 @@ _CAMPAIGN_SLOT_TEMPLATES: tuple[dict[str, object], ...] = (
     },
     {
         "gate_id": "G3",
-        "name": "Controlled paired-live value",
-        "description": "Controlled AB/BA paired-live outcomes under the frozen promotion policy.",
+        "name": "Controlled value comparison",
+        "description": "Compares baseline and candidate outcomes on the same live cases with balanced execution order.",
         "binding_kind": "controlled_pair",
         "track_id": "joint",
         "mode": "live",
@@ -264,8 +264,8 @@ _CAMPAIGN_SLOT_TEMPLATES: tuple[dict[str, object], ...] = (
     },
     {
         "gate_id": "G4",
-        "name": "Declared-shift robustness",
-        "description": "Server-qualified declared-shift robustness on the candidate subject.",
+        "name": "Workload-shift robustness",
+        "description": "Measures quality and reliability under the workload changes declared for this release.",
         "binding_kind": "run",
         "track_id": "routing",
         "mode": "live",
@@ -274,11 +274,8 @@ _CAMPAIGN_SLOT_TEMPLATES: tuple[dict[str, object], ...] = (
     },
     {
         "gate_id": "G5",
-        "name": "Live fidelity",
-        "description": (
-            "Reference-to-fresh-live agreement on the exact live-mom-core "
-            "candidate and joint case cohort."
-        ),
+        "name": "Live consistency",
+        "description": "Checks that a fresh live run agrees with the saved candidate on the same evaluation cases.",
         "binding_kind": "fidelity_pair",
         "track_id": "joint",
         "mode": "live",
@@ -287,8 +284,8 @@ _CAMPAIGN_SLOT_TEMPLATES: tuple[dict[str, object], ...] = (
     },
     {
         "gate_id": "G6",
-        "name": "Live fault-recovery continuity",
-        "description": "Server-qualified fault-recovery continuity on the candidate subject.",
+        "name": "Fault recovery",
+        "description": "Measures fallback, retry, state continuity, and side effects during injected failures.",
         "binding_kind": "run",
         "track_id": "agentic",
         "mode": "live",
@@ -297,8 +294,8 @@ _CAMPAIGN_SLOT_TEMPLATES: tuple[dict[str, object], ...] = (
     },
     {
         "gate_id": "G7",
-        "name": "Cost / latency / capacity",
-        "description": "Server-qualified capacity envelope on the candidate subject.",
+        "name": "Cost, latency, and capacity",
+        "description": "Measures whether the proposed system meets its service objectives under repeated load.",
         "binding_kind": "run",
         "track_id": "capacity",
         "mode": "live",
@@ -307,8 +304,8 @@ _CAMPAIGN_SLOT_TEMPLATES: tuple[dict[str, object], ...] = (
     },
     {
         "gate_id": "G8",
-        "name": "Shadow / canary",
-        "description": "Server-qualified production assignment, exposure, risk, stop, and rollback controls.",
+        "name": "Canary safety",
+        "description": "Checks production assignment, exposure limits, stop conditions, and rollback controls.",
         "binding_kind": "run",
         "track_id": "preference",
         "mode": "live",
@@ -318,7 +315,7 @@ _CAMPAIGN_SLOT_TEMPLATES: tuple[dict[str, object], ...] = (
     {
         "gate_id": "G9",
         "name": "Online preference",
-        "description": "Server-qualified online preference evidence on the candidate subject.",
+        "description": "Measures assigned user-preference outcomes for the baseline and proposed system.",
         "binding_kind": "run",
         "track_id": "preference",
         "mode": "live",
@@ -343,8 +340,8 @@ def _campaign_slots(profile: ChangeProfile) -> tuple[CatalogCampaignSlot, ...]:
             values.update(
                 {
                     "description": (
-                        "Reference-to-fresh-live multimodal agreement on an exact "
-                        "candidate and MMR case cohort."
+                        "Checks that a fresh multimodal run agrees with the saved "
+                        "candidate on the same evaluation cases."
                     ),
                     "track_id": "multimodal",
                     "minimum_evidence_level": "E4",
@@ -393,8 +390,11 @@ def _method(
 _SUITES = (
     CatalogSuite(
         id="evaluation-smoke",
-        name="Evaluation smoke",
-        description="Deterministic all-track vertical slice.",
+        name="Evaluation setup check",
+        description=(
+            "A small deterministic workload that verifies every evaluation area is "
+            "connected and reportable."
+        ),
         track_ids=_ALL_TRACK_IDS,
         modes=("replay",),
         evidence_level="E0",
@@ -413,10 +413,11 @@ _SUITES = (
     ),
     CatalogSuite(
         id="live-mom-core",
-        name="Live Mixture-of-Models core",
+        name="Routing and model-pool evaluation",
         description=(
-            "One hidden-label cohort for exact Recipe routing, dense per-arm outcomes, "
-            "and routed end-to-end utility."
+            "A shared workload whose answers stay hidden during execution. It measures "
+            "routing decisions, every available model, and the quality delivered by the "
+            "routed system."
         ),
         track_ids=("routing", "model_pool", "joint"),
         modes=("replay", "live"),
@@ -438,12 +439,12 @@ _SUITES = (
     ),
     CatalogSuite(
         id="live-agent-tasks",
-        name="Live agent tasks",
+        name="Agent task evaluation",
         description=(
-            "Brokered complete sealed provider-observed task trajectories on the "
-            "exact frozen Mixture. Every task declares a required-tool or pure-reasoning "
-            "policy, and required attempts carry unique provider-executed receipts. This method "
-            "does not execute tools or claim native benchmark parity."
+            "Repeated tool-use and reasoning tasks with complete provider results. "
+            "Measures task completion, tool-policy compliance, reliability, latency, "
+            "and cost; it does not invoke tools itself or claim parity with external "
+            "agent benchmarks."
         ),
         track_ids=("agentic",),
         modes=("live",),
@@ -456,19 +457,19 @@ _SUITES = (
                 "agentic",
                 status="data_required",
                 reason=(
-                    "Configure a dedicated server-owned agent_task_ledger endpoint "
-                    "with a complete sealed repeated-task window and explicit per-task "
-                    "tool policy on the exact frozen Mixture."
+                    "Connect a managed agent-task results source that includes every "
+                    "repeated attempt, the required tool policy for each task, and "
+                    "provider-confirmed outcomes for the selected Mixture."
                 ),
             ),
         ),
     ),
     CatalogSuite(
         id="live-fault-recovery",
-        name="Live fault recovery",
+        name="Agent fault-recovery evaluation",
         description=(
-            "Brokered exact-step fault injection with paired baseline and treatment "
-            "receipts, state continuity, side-effect, retry, and latency evidence."
+            "Matched baseline and injected-failure tasks that measure recovery, state "
+            "continuity, side effects, retries, and latency."
         ),
         track_ids=("agentic",),
         modes=("live",),
@@ -482,16 +483,19 @@ _SUITES = (
                 gate_ids=("G6",),
                 status="data_required",
                 reason=(
-                    "Configure a server-owned fault_recovery_ledger endpoint with a "
-                    "complete sealed exact-step baseline/treatment window."
+                    "Connect a managed fault-recovery results source with complete "
+                    "matched baseline and injected-failure attempts at the same task step."
                 ),
             ),
         ),
     ),
     CatalogSuite(
         id="live-multimodal",
-        name="Live multimodal",
-        description="Bounded non-text request probes with response grading and latency.",
+        name="Multimodal response evaluation",
+        description=(
+            "Text and non-text requests graded for supported input handling, response "
+            "quality, reliability, and latency."
+        ),
         track_ids=("multimodal",),
         modes=("live",),
         evidence_level="E0",
@@ -501,10 +505,10 @@ _SUITES = (
     ),
     CatalogSuite(
         id="live-hard-policy",
-        name="Live hard-policy enforcement",
+        name="Policy enforcement evaluation",
         description=(
-            "Brokered runtime policy proof and attack observations bound to the "
-            "server-owned policy and configuration snapshots."
+            "Live policy and adversarial cases that verify required rules are enforced "
+            "by the selected system configuration."
         ),
         track_ids=("safety",),
         modes=("live",),
@@ -518,18 +522,19 @@ _SUITES = (
                 gate_ids=("G2",),
                 status="data_required",
                 reason=(
-                    "Configure a server-owned hard_policy_ledger endpoint with an "
-                    "exact rule/enforcement-point proof and complete sealed window."
+                    "Connect managed policy-test results with the evaluated rules, "
+                    "enforcement points, and complete outcomes for the selected configuration."
                 ),
             ),
         ),
     ),
     CatalogSuite(
         id="live-production-experiment",
-        name="Live production experiment",
+        name="Guarded production evaluation",
         description=(
-            "Brokered sealed production assignment and exposure ledger for operational "
-            "controls and propensity-qualified target-versus-reference preference lift."
+            "A guarded production experiment that measures assignment balance, exposure "
+            "controls, risk, stop conditions, rollback readiness, and preference lift "
+            "between baseline and candidate."
         ),
         track_ids=("preference",),
         modes=("live",),
@@ -544,8 +549,8 @@ _SUITES = (
                 evidence_source="live_production",
                 status="data_required",
                 reason=(
-                    "Configure a server-owned production_experiment_ledger endpoint "
-                    "with a complete sealed assignment/exposure and control window."
+                    "Connect managed production experiment results with complete "
+                    "assignment, exposure, and safety-control data."
                 ),
             ),
             _method(
@@ -555,19 +560,19 @@ _SUITES = (
                 evidence_source="live_production",
                 status="data_required",
                 reason=(
-                    "Configure a server-owned production_experiment_ledger endpoint "
-                    "with complete preference outcomes, propensities, and explicit "
-                    "target/reference policy probabilities."
+                    "Connect managed production experiment results with complete "
+                    "preference outcomes and the recorded assignment probability for "
+                    "each policy."
                 ),
             ),
         ),
     ),
     CatalogSuite(
         id="live-capacity",
-        name="Live capacity",
+        name="Live capacity evaluation",
         description=(
-            "Repeated closed-loop load levels with frozen warmup, independent "
-            "measurement windows, confidence bounds, stability checks, and SLO headroom."
+            "Repeated load levels after warmup that measure throughput, response time, "
+            "error rate, stability, confidence bounds, and service-objective headroom."
         ),
         track_ids=("capacity",),
         modes=("live",),

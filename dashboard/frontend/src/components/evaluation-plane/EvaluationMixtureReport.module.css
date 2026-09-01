@@ -116,10 +116,6 @@
 }
 
 .mixtureSubheading {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 0.75rem;
   margin-bottom: 0.65rem;
 }
 
@@ -131,15 +127,6 @@
 .mixtureSubheading strong {
   color: var(--text-primary);
   font-size: 0.86rem;
-}
-
-.mixtureSubheading > code {
-  max-width: 9rem;
-  overflow: hidden;
-  color: var(--text-muted);
-  font-size: 0.65rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .mixtureDecisionMap,
@@ -267,14 +254,62 @@
   line-height: 1.35;
 }
 
+.mixtureLineageDetails {
+  margin-top: 0.75rem;
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: 0;
+  background: transparent;
+}
+
+.mixtureLineageDetails summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  width: 100%;
+  padding: 0.65rem 0;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  font-weight: 600;
+  list-style: none;
+}
+
+.mixtureLineageDetails summary::-webkit-details-marker {
+  display: none;
+}
+
+.mixtureLineageDetails summary::after {
+  width: 0.4rem;
+  height: 0.4rem;
+  flex: 0 0 auto;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  content: '';
+  transform: rotate(45deg) translate(-0.08rem, -0.08rem);
+  transition: transform var(--transition-fast);
+}
+
+.mixtureLineageDetails summary:hover,
+.mixtureLineageDetails summary:focus-visible,
+.mixtureLineageDetails[open] summary {
+  color: var(--text-primary);
+}
+
+.mixtureLineageDetails[open] summary::after {
+  transform: rotate(225deg) translate(-0.04rem, -0.04rem);
+}
+
+.mixtureLineageDetails summary:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+
 .mixtureLineageStrip {
   display: grid;
   gap: 0.2rem;
-  margin-top: 0.75rem;
-  padding: 0.65rem 0;
-  border-top: 1px solid var(--border-subtle);
-  border-radius: 0;
-  background: transparent;
+  padding: 0 0 0.65rem;
   color: var(--text-muted);
   font-size: 0.65rem;
 }
@@ -340,7 +375,6 @@
     border-top: 0;
   }
 
-  .mixtureSubheading,
   .mixtureDecisionMap article,
   .mixtureDecisionMap article > div {
     align-items: stretch;

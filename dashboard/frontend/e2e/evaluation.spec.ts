@@ -70,20 +70,33 @@ function controlledPairSourceRuns(changeProfile: EvaluationChangeProfileId = 're
   }
 }
 
-async function launchCampaignControlledPair(page: Page) {
-  const disclosure = page.locator('details').filter({
-    has: page.getByText('Review / customize evidence', { exact: true }),
+async function openReleaseDecisionInputs(page: Page) {
+  const releaseDecisionSummary = page.locator('details > summary').filter({
+    has: page.getByText('Prepare a release decision', { exact: true }),
   })
-  if (!(await disclosure.evaluate((element) => element.hasAttribute('open')))) {
-    await disclosure.locator('summary').click()
+  const releaseDecision = releaseDecisionSummary.locator('..')
+  if (!(await releaseDecision.evaluate((element) => element.hasAttribute('open')))) {
+    await releaseDecisionSummary.click()
   }
+  const inputSummary = releaseDecision.locator('details > summary').filter({
+    has: page.getByText('Review evaluation inputs', { exact: true }),
+  })
+  const inputs = inputSummary.locator('..')
+  if (!(await inputs.evaluate((element) => element.hasAttribute('open')))) {
+    await inputSummary.click()
+  }
+  return inputs
+}
+
+async function launchCampaignControlledPair(page: Page) {
+  await openReleaseDecisionInputs(page)
   await page
-    .getByLabel('Controlled pair baseline source')
+    .getByLabel('Controlled comparison baseline run', { exact: true })
     .selectOption(EVALUATION_RUN_IDS.baselineLive)
   await page
-    .getByLabel('Controlled pair candidate source')
+    .getByLabel('Controlled comparison candidate run', { exact: true })
     .selectOption(EVALUATION_RUN_IDS.candidateLive)
-  await page.getByRole('button', { name: 'Launch controlled pair' }).click()
+  await page.getByRole('button', { name: 'Launch comparison' }).click()
 }
 
 async function captureEvaluationSurface(page: Page, name: string) {
@@ -157,6 +170,63 @@ async function expectEvaluationBottomGutter(page: Page) {
   })
   expect(geometry.paddingBottom).toBeGreaterThanOrEqual(47)
   expect(geometry.contentGap).toBeGreaterThanOrEqual(geometry.paddingBottom - 1)
+}
+
+const INTERNAL_EVALUATION_UI_PATTERN =
+  /\b(?:E[0-5]|G[0-9])\b|E0\s*[–-]\s*E5|(?:schema|contract)_version|evaluation-release-gates|Schema evaluation|Contract range|Evidence needed|\b(?:evaluation-smoke|live-mom-core|normalized-promotion-cohort)\b|\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/i
+
+async function expectProductEvaluationLanguage(page: Page) {
+  const visibleMainText = await page.locator('main').innerText()
+  expect(visibleMainText).not.toMatch(INTERNAL_EVALUATION_UI_PATTERN)
+}
+
+async function expectOverviewActionParity(page: Page) {
+  const readiness = page.locator('section[aria-labelledby="evaluation-readiness-title"]')
+  const geometry = await Promise.all(
+    ['New experiment', 'Inspect runs'].map(async (name) => {
+      const box = await readiness.getByRole('button', { name, exact: true }).boundingBox()
+      return box?.height || 0
+    }),
+  )
+  expect(geometry[0]).toBeGreaterThan(0)
+  expect(geometry[0]).toBe(geometry[1])
+}
+
+async function expectRunsWorkspaceLayout(page: Page) {
+  const viewportWidth = await page.evaluate(() => window.innerWidth)
+  const inspector = page.getByRole('complementary', { name: 'Selected evaluation run' })
+  const workspace = inspector.locator('..')
+  const history = workspace.locator(':scope > div').first()
+  const [historyBox, inspectorBox] = await Promise.all([
+    history.boundingBox(),
+    inspector.boundingBox(),
+  ])
+  expect(historyBox).not.toBeNull()
+  expect(inspectorBox).not.toBeNull()
+  if (!historyBox || !inspectorBox) return
+
+  if (viewportWidth > 1160) {
+    expect(inspectorBox.x - (historyBox.x + historyBox.width)).toBeGreaterThanOrEqual(24)
+    expect(Math.abs(inspectorBox.y - historyBox.y)).toBeLessThanOrEqual(2)
+  } else {
+    expect(inspectorBox.y - (historyBox.y + historyBox.height)).toBeGreaterThanOrEqual(24)
+    expect(Math.abs(inspectorBox.x - historyBox.x)).toBeLessThanOrEqual(2)
+  }
+}
+
+async function expectDefaultCompareWorkspace(page: Page) {
+  const panel = page.getByRole('tabpanel')
+  const candidate = page.getByLabel('Comparison candidate', { exact: true })
+  await expect(candidate).toBeVisible()
+  await expect(candidate).toBeEnabled()
+  await expect(panel.locator('select:visible:not(:disabled)')).toHaveCount(1)
+
+  const releaseDecisionSummary = page.locator('details > summary').filter({
+    has: page.getByText('Prepare a release decision', { exact: true }),
+  })
+  const releaseDecision = releaseDecisionSummary.locator('..')
+  await expect(releaseDecision).not.toHaveAttribute('open', '')
+  await expect(releaseDecision.locator('select:visible')).toHaveCount(0)
 }
 
 async function expectDialogBottomReachable(page: Page, dialog: Locator) {
@@ -409,21 +479,6 @@ async function expectEvaluationControlSystem(page: Page) {
   }
   expect(new Set(navigationGeometry.map((geometry) => geometry.height)).size).toBe(1)
 
-  const overflowGeometry = await page
-    .locator('[data-evaluation-navigation-overflow="true"]:visible')
-    .evaluateAll((elements) =>
-      elements.map((element) => ({
-        width: Math.round(element.getBoundingClientRect().width),
-        height: Math.round(element.getBoundingClientRect().height),
-        borderRadius: getComputedStyle(element).borderRadius,
-      })),
-    )
-  for (const geometry of overflowGeometry) {
-    expect(geometry.width).toBe(40)
-    expect(geometry.height).toBeGreaterThanOrEqual(40)
-    expect(geometry.borderRadius).toBe('0px')
-  }
-
   const ledgerGeometry = await panel
     .locator('[data-evaluation-ledger-row="true"]:visible')
     .evaluateAll((elements) =>
@@ -552,7 +607,7 @@ async function expectCompactVerticalFlow(container: Locator) {
 }
 
 const responsiveEvaluationSurfaces = [
-  { tab: 'Overview', route: '/evaluation', visibleText: 'Decision readiness', capture: 'overview' },
+  { tab: 'Overview', route: '/evaluation', visibleText: 'Latest decision', capture: 'overview' },
   {
     tab: 'New experiment',
     route: '/evaluation?view=new',
@@ -569,7 +624,7 @@ const responsiveEvaluationSurfaces = [
   {
     tab: 'Compare',
     route: '/evaluation?view=compare',
-    visibleText: 'Promotion campaign',
+    visibleText: 'Compare a candidate with its baseline',
     capture: 'compare',
   },
 ] as const
@@ -591,16 +646,26 @@ async function expectResponsiveEvaluationSurface(
     .getByRole('heading', { name: 'Evaluation', exact: true })
     .locator('xpath=ancestor::header[1]')
   await expect(hero).toBeVisible()
-  await expect.poll(async () => (await hero.boundingBox())?.y ?? Infinity).toBeLessThan(100)
+  const pageShell = hero.locator('xpath=ancestor::section[1]/..')
+  await expect
+    .poll(async () => {
+      const [heroBox, shellBox, paddingTop] = await Promise.all([
+        hero.boundingBox(),
+        pageShell.boundingBox(),
+        pageShell.evaluate((element) => Number.parseFloat(getComputedStyle(element).paddingTop)),
+      ])
+      return heroBox && shellBox ? Math.abs(heroBox.y - shellBox.y - paddingTop) : Infinity
+    })
+    .toBeLessThanOrEqual(1)
   if (mobileViewport) {
     await expect.poll(async () => (await hero.boundingBox())?.height ?? Infinity).toBeLessThan(190)
   }
-  await expect(page.getByRole('tablist', { name: 'Evaluation plane views' })).toBeVisible()
+  await expect(page.getByRole('tablist', { name: 'Evaluation views' })).toBeVisible()
   await expect
     .poll(async () => {
       const [tab, tablist] = await Promise.all([
         page.getByRole('tab', { name: surface.tab, exact: true }).boundingBox(),
-        page.getByRole('tablist', { name: 'Evaluation plane views' }).boundingBox(),
+        page.getByRole('tablist', { name: 'Evaluation views' }).boundingBox(),
       ])
       return Boolean(
         tab &&
@@ -610,20 +675,6 @@ async function expectResponsiveEvaluationSurface(
       )
     })
     .toBe(true)
-  if (mobileViewport) {
-    const hasLeftOverflow = surface.tab !== 'Overview'
-    const hasRightOverflow = surface.tab !== 'Compare'
-    if (hasLeftOverflow) {
-      await expect(page.getByTestId('evaluation-navigation-overflow-left')).toBeVisible()
-    } else {
-      await expect(page.getByTestId('evaluation-navigation-overflow-left')).toHaveCount(0)
-    }
-    if (hasRightOverflow) {
-      await expect(page.getByTestId('evaluation-navigation-overflow-right')).toBeVisible()
-    } else {
-      await expect(page.getByTestId('evaluation-navigation-overflow-right')).toHaveCount(0)
-    }
-  }
   await expect(page.getByRole('button', { name: /product guide/i })).toHaveCount(0)
   await expect
     .poll(() =>
@@ -633,23 +684,11 @@ async function expectResponsiveEvaluationSurface(
     )
     .toBeLessThanOrEqual(1)
   await expectNoHorizontalOverflow(page)
+  await expectProductEvaluationLanguage(page)
   await expectEvaluationControlSystem(page)
-  if (surface.capture === 'runs' && viewportName === 'mobile-compact') {
-    const completedStatus = page
-      .locator('[data-evaluation-tag="true"]')
-      .filter({ hasText: /^Completed$/ })
-      .first()
-    await expect(completedStatus).toBeVisible()
-    const statusGeometry = await completedStatus.evaluate((element) => {
-      const rect = element.getBoundingClientRect()
-      const parentRect = element.parentElement?.getBoundingClientRect()
-      return {
-        textFits: element.scrollWidth <= element.clientWidth,
-        staysInsideRow: Boolean(parentRect && rect.right <= parentRect.right + 1),
-      }
-    })
-    expect(statusGeometry).toEqual({ textFits: true, staysInsideRow: true })
-  }
+  if (surface.capture === 'overview') await expectOverviewActionParity(page)
+  if (surface.capture === 'runs') await expectRunsWorkspaceLayout(page)
+  if (surface.capture === 'compare') await expectDefaultCompareWorkspace(page)
   await captureEvaluationSurface(page, `${surface.capture}-${viewportName}`)
   if (viewportName === 'desktop') {
     await captureEvaluationFullPage(page, `${surface.capture}-${viewportName}-full`)
@@ -668,7 +707,9 @@ test.describe('Evaluation Plane', () => {
     })
   })
 
-  test('shows the installed evidence range and complete eight-track contract', async ({ page }) => {
+  test('shows complete evaluation coverage and benchmark readiness in product language', async ({
+    page,
+  }) => {
     await mockEvaluationPlane(page)
     await page.goto('/evaluation')
 
@@ -677,19 +718,17 @@ test.describe('Evaluation Plane', () => {
       await expect(page.getByRole('tab', { name: tab, exact: true })).toBeVisible()
     }
 
-    const heroMetadata = page.locator('dl').filter({
-      has: page.getByText('Current suites', { exact: true }),
-    })
-    await expect(heroMetadata.getByText('E0 · E5', { exact: true })).toBeVisible()
+    await expect(page.getByText('Decision quality', { exact: true })).toBeVisible()
     await expect(
       page.getByText(
-        'This server-attested E0 report exposes a bounded set of independently reduced diagnostics. Promotion remains withheld until native benchmark and execution receipts qualify the claim.',
+        'This run is useful for exploration, but it is not ready to support a release decision. Run a qualified benchmark or live evaluation before changing production.',
         { exact: true },
       ),
     ).toBeVisible()
+    await expectProductEvaluationLanguage(page)
 
     const readiness = page.getByRole('table', {
-      name: 'Evaluation track contract and latest evidence readiness',
+      name: 'Available measurements and latest results by evaluation area',
     })
     await expect(readiness.getByRole('row')).toHaveCount(evaluationCatalog.tracks.length + 1)
     for (const track of evaluationCatalog.tracks) {
@@ -701,21 +740,24 @@ test.describe('Evaluation Plane', () => {
     }
     await expect(
       readiness.getByRole('row').filter({ has: page.getByText('Routing', { exact: true }) }),
-    ).toContainText('E0 · E3')
+    ).toContainText('Diagnostic · Routing validation')
     await expectKeyboardScrollable(
-      page.getByRole('region', { name: 'Scrollable evaluation track readiness' }),
+      page.getByRole('region', { name: 'Scrollable evaluation area readiness' }),
       'vertical',
     )
-    await expect(page.getByText('Schema evaluation.v1', { exact: true })).toBeVisible()
-    await expect(page.getByText('evaluation-release-gates.v2', { exact: true })).toBeVisible()
-
     const declaredMethodCount = evaluationCatalog.suites.reduce(
       (count, suite) => count + suite.methods.length,
       0,
     )
     const methods = page.locator('section[aria-labelledby="evaluation-methods-title"]')
+    const methodSummary = methods.locator('details > summary').filter({
+      has: page.getByText('Browse benchmark methods', { exact: true }),
+    })
+    const methodDisclosure = methodSummary.locator('..')
+    await expect(methodDisclosure).not.toHaveAttribute('open', '')
+    await methodSummary.click()
     const methodTable = methods.getByRole('table', {
-      name: 'Server-declared evaluation methods and collection readiness',
+      name: 'Available evaluation methods and setup readiness',
     })
     await expect(methodTable.getByRole('row')).toHaveCount(declaredMethodCount + 1)
     await expectKeyboardScrollable(
@@ -723,27 +765,28 @@ test.describe('Evaluation Plane', () => {
       'vertical',
     )
     const methodSearch = methods.getByLabel('Search evaluation methods')
+    const hardPolicySuite = evaluationCatalog.suites.find((suite) =>
+      suite.methods.some((method) => method.id === 'safety.hard-policy-enforcement.v1'),
+    )!
     await methodSearch.fill('hard-policy')
     await expect(
       methodTable.getByRole('row').filter({
-        has: page.getByText('safety.hard-policy-enforcement.v1', { exact: true }),
+        has: page.getByText(hardPolicySuite.name, { exact: true }),
       }),
     ).toBeVisible()
     await expect(methods.getByRole('status')).toHaveText(
-      `Showing 1 of ${declaredMethodCount} declared methods`,
+      `Showing 1 of ${declaredMethodCount} methods`,
     )
     await methodSearch.clear()
-    await methods.getByLabel('Method track filter').selectOption('safety')
-    await methods.getByLabel('Method readiness filter').selectOption('data_required')
+    await methods.getByLabel('Method evaluation area filter').selectOption('safety')
+    await methods.getByLabel('Method readiness filter').selectOption('setup_required')
     await expect(
       methodTable.getByRole('row').filter({
-        has: page.getByText('safety.hard-policy-enforcement.v1', { exact: true }),
+        has: page.getByText(hardPolicySuite.name, { exact: true }),
       }),
-    ).toContainText(
-      'Configure a server-owned hard-policy ledger endpoint with static rule proofs and dynamic enforcement observations.',
-    )
+    ).toContainText('Setup required')
     await expect(methods.getByRole('status')).toHaveText(
-      `Showing 1 of ${declaredMethodCount} declared methods`,
+      `Showing 1 of ${declaredMethodCount} methods`,
     )
     await captureEvaluationSurface(page, 'overview-desktop')
   })
@@ -769,7 +812,7 @@ test.describe('Evaluation Plane', () => {
     await page.goto('/evaluation')
 
     const readiness = page.getByRole('region', {
-      name: 'Scrollable evaluation track readiness',
+      name: 'Scrollable evaluation area readiness',
     })
     await expect(readiness).toBeVisible()
     await expect(readiness).toHaveAttribute('tabindex', '0')
@@ -789,11 +832,11 @@ test.describe('Evaluation Plane', () => {
     await page.goto('/evaluation')
     await catalogResponse
 
-    await expect(page.getByText('Loading evaluation plane', { exact: true })).toBeVisible()
-    await expect(page.getByText('Decision readiness', { exact: true })).toHaveCount(0)
+    await expect(page.getByText('Loading evaluation', { exact: true })).toBeVisible()
+    await expect(page.getByText('Latest decision', { exact: true })).toHaveCount(0)
 
-    await expect(page.getByText('Loading evaluation plane', { exact: true })).toHaveCount(0)
-    await expect(page.getByText('Decision readiness', { exact: true })).toBeVisible()
+    await expect(page.getByText('Loading evaluation', { exact: true })).toHaveCount(0)
+    await expect(page.getByText('Latest decision', { exact: true })).toBeVisible()
   })
 
   test('keeps evidence navigation available while suppressing run mutations in read-only mode', async ({
@@ -806,7 +849,7 @@ test.describe('Evaluation Plane', () => {
     await mockEvaluationPlane(page)
     await page.goto(`/evaluation?view=runs&run=${EVALUATION_RUN_IDS.candidate}`)
 
-    await expect(page.getByText(/Server read-only policy disables creation/i)).toBeVisible()
+    await expect(page.getByText(/server is in read-only mode/i)).toBeVisible()
     await expect(
       page.getByRole('button', { name: `Open report for Candidate recipe` }),
     ).toBeVisible()
@@ -815,19 +858,19 @@ test.describe('Evaluation Plane', () => {
     await expect(page.getByRole('heading', { name: 'Candidate recipe' })).toBeVisible()
   })
 
-  test('exposes advanced promotion evidence with a discoverable touch disclosure at 320px', async ({
+  test('keeps release decision inputs progressive and touch discoverable at 320px', async ({
     page,
   }) => {
     await page.setViewportSize({ width: 320, height: 568 })
     await mockEvaluationPlane(page)
     await page.goto('/evaluation?view=compare')
 
-    const disclosure = page.locator('details').filter({
-      has: page.getByText('Review / customize evidence', { exact: true }),
+    const summary = page.locator('details > summary').filter({
+      has: page.getByText('Prepare a release decision', { exact: true }),
     })
-    const summary = disclosure.locator('summary')
+    const disclosure = summary.locator('..')
     const primarySelects = page.locator('#evaluation-panel select:visible')
-    await expect(primarySelects).toHaveCount(2)
+    await expect(primarySelects).toHaveCount(1)
     const primarySelectStyles = await primarySelects.evaluateAll((elements) =>
       elements.map((element) => {
         const style = getComputedStyle(element)
@@ -848,10 +891,17 @@ test.describe('Evaluation Plane', () => {
       .not.toBe('none')
     await summary.click()
     await expect(disclosure).toHaveAttribute('open', '')
-    await expect(page.getByRole('region', { name: 'Campaign evidence slots' })).toBeVisible()
+    await expect(page.getByLabel('Release decision change type')).toBeVisible()
+    const inputSummary = disclosure.locator('details > summary').filter({
+      has: page.getByText('Review evaluation inputs', { exact: true }),
+    })
+    const inputs = inputSummary.locator('..')
+    await expect(inputs).not.toHaveAttribute('open', '')
+    await inputSummary.click()
+    await expect(page.getByRole('region', { name: 'Release decision inputs' })).toBeVisible()
     await expectNoHorizontalOverflow(page)
-    await summary.click()
-    await expect(disclosure).not.toHaveAttribute('open', '')
+    await inputSummary.click()
+    await expect(inputs).not.toHaveAttribute('open', '')
   })
 
   test('keeps native radio and checkbox inline width outside the shared field skin', async ({
@@ -883,23 +933,17 @@ test.describe('Evaluation Plane', () => {
     await mockEvaluationPlane(page, runs, { runPageSize: 5 })
     await page.goto('/evaluation?view=runs')
 
-    await expect(
-      page.getByText('5 matching among loaded · 5 of 12 runs loaded', { exact: true }),
-    ).toBeVisible()
+    await expect(page.getByText(/5 matching runs.*5 of 12 loaded/)).toBeVisible()
     await expect(
       page.getByText(
-        'Search and filters cover only the 5 loaded runs. Load older records to search and filter the full ledger.',
+        'Search and filters cover only the 5 loaded runs. Load older records to search and filter the full history.',
         { exact: true },
       ),
     ).toBeVisible()
     await page.getByRole('button', { name: 'Load more', exact: true }).click()
-    await expect(
-      page.getByText('10 matching among loaded · 10 of 12 runs loaded', { exact: true }),
-    ).toBeVisible()
+    await expect(page.getByText(/10 matching runs.*10 of 12 loaded/)).toBeVisible()
     await page.getByRole('button', { name: 'Load more', exact: true }).click()
-    await expect(
-      page.getByText('12 matching among loaded · 12 of 12 runs loaded', { exact: true }),
-    ).toBeVisible()
+    await expect(page.getByText(/12 matching runs.*12 of 12 loaded/)).toBeVisible()
     await expect(page.getByRole('button', { name: 'Load more', exact: true })).toHaveCount(0)
     await expect(page.getByText(/Search and filters cover only/)).toHaveCount(0)
   })
@@ -944,11 +988,11 @@ test.describe('Evaluation Plane', () => {
     await page.goto(
       `/evaluation?view=compare&baseline=${EVALUATION_RUN_IDS.olderBaseline}&candidate=${EVALUATION_RUN_IDS.olderCandidate}`,
     )
-    await expect(page.getByLabel('Comparison candidate')).toHaveValue(
+    await expect(page.getByLabel('Comparison candidate', { exact: true })).toHaveValue(
       EVALUATION_RUN_IDS.olderCandidate,
     )
-    await expect(page.getByLabel('Pinned baseline')).toHaveValue(/Older production baseline/)
-    await page.getByRole('button', { name: 'Compare paired evidence' }).click()
+    await expect(page.getByText('Older production baseline', { exact: true })).toBeVisible()
+    await page.getByRole('button', { name: 'Compare results' }).click()
     await expect.poll(() => state.comparisonRequests.length).toBe(1)
     expect(state.comparisonRequests[0]).toEqual({
       baselineRunID: EVALUATION_RUN_IDS.olderBaseline,
@@ -986,9 +1030,7 @@ test.describe('Evaluation Plane', () => {
     await expect
       .poll(() => state.runRequests.filter((runID) => runID === offPageRun.id).length)
       .toBeGreaterThanOrEqual(2)
-    await expect(
-      page.getByText('50 matching among loaded · 50 of 51 runs loaded', { exact: true }),
-    ).toBeVisible()
+    await expect(page.getByText(/50 matching runs.*50 of 51 loaded/)).toBeVisible()
   })
 
   test('resumes first-page polling after a load-more request fails', async ({ page }) => {
@@ -1007,16 +1049,27 @@ test.describe('Evaluation Plane', () => {
     await page.goto('/evaluation?view=runs')
 
     await page.getByRole('button', { name: 'Load more', exact: true }).click()
-    await expect(page.getByText(/temporary ledger page failure/)).toBeVisible()
+    const refreshIssue = page.getByRole('status').filter({
+      has: page.getByText('Run history could not refresh. Showing the last loaded run state.', {
+        exact: true,
+      }),
+    })
+    await expect(refreshIssue).toBeVisible()
+    const backendFailure = refreshIssue.getByText('temporary ledger page failure', {
+      exact: true,
+    })
+    await expect(backendFailure).not.toBeVisible()
+    await refreshIssue
+      .locator('details[data-evaluation-technical-details="true"] > summary')
+      .click()
+    await expect(backendFailure).toBeVisible()
     const requestCountAfterFailure = state.getLedgerRequestCount()
     await expect
       .poll(() => state.getLedgerRequestCount(), { timeout: 7_000 })
       .toBeGreaterThan(requestCountAfterFailure)
     await expect(page.getByText(/temporary ledger page failure/)).toHaveCount(0)
     await page.getByRole('button', { name: 'Load more', exact: true }).click()
-    await expect(
-      page.getByText('6 matching among loaded · 6 of 6 runs loaded', { exact: true }),
-    ).toBeVisible()
+    await expect(page.getByText(/6 matching runs.*6 of 6 loaded/)).toBeVisible()
   })
 
   test('keeps completed evidence identity honest while the newest report is loading', async ({
@@ -1030,17 +1083,22 @@ test.describe('Evaluation Plane', () => {
     await expect(page.locator('#latest-evidence-title')).toHaveText('Candidate recipe')
     await expect(
       page.getByText(
-        'Loading the newest completed report and its server attestation. No decision state is inferred while evidence is in flight.',
+        'Loading the newest completed report. No decision is shown until the result is ready.',
         { exact: true },
       ),
     ).toBeVisible()
     await expect(
-      page.getByText('Establish the first evidence baseline', { exact: true }),
+      page.getByText('Establish the first evaluation baseline', { exact: true }),
     ).toHaveCount(0)
     await expect(page.getByText('No completed report yet', { exact: true })).toHaveCount(0)
 
     await expect(page.getByText('Loading report summary…', { exact: true })).toHaveCount(0)
-    await expect(page.getByText(/server-attested E0 report exposes a bounded set/i)).toBeVisible()
+    await expect(
+      page.getByText(
+        'Headline results are verified by the evaluation service. Open the full report for every measured outcome.',
+        { exact: true },
+      ),
+    ).toBeVisible()
   })
 
   test('supports keyboard navigation across the evaluation tabs', async ({ page }) => {
@@ -1076,10 +1134,15 @@ test.describe('Evaluation Plane', () => {
     await mockEvaluationPlane(page)
     await page.goto('/evaluation?view=new')
 
-    await page.getByRole('radio', { name: /Live Execute against/ }).check()
+    await page
+      .getByRole('radio', {
+        name: 'Live: evaluate a registered Mixture.',
+        exact: true,
+      })
+      .check()
     const target = page.getByLabel('Mixture to evaluate')
     expect(await target.locator('option').allTextContents()).toEqual([
-      'Select target',
+      'Select Mixture',
       'test-mom · Baseline',
       'test-mom · Candidate',
     ])
@@ -1089,21 +1152,22 @@ test.describe('Evaluation Plane', () => {
     await expect(target).toHaveValue(EVALUATION_MOM_TARGET_ID)
   })
 
-  test('creates and starts an E0 run through separately authorized endpoints', async ({ page }) => {
+  test('creates and starts a diagnostic run through separately authorized endpoints', async ({
+    page,
+  }) => {
     const state = await mockEvaluationPlane(page, defaultEvaluationRuns, { mutationDelayMs: 250 })
     await page.goto('/evaluation?view=new')
 
-    await expect(page.getByText('Catalog evidence class E0', { exact: true }).first()).toBeVisible()
-    await expect(page.getByText(/cannot supply its own execution address/i)).toBeVisible()
+    await expect(page.getByText('Evaluation scope · Diagnostic', { exact: true })).toBeVisible()
     await page.getByRole('radio', { name: /Replay/ }).check()
-    await page.getByLabel('Evidence target').selectOption('fixture')
+    await page.getByLabel('Evaluation target').selectOption('fixture')
     await page.getByRole('checkbox', { name: /Evaluation harness smoke/ }).check()
-    await page.getByLabel('Change profile').selectOption({ label: 'Routing recipe' })
+    await page.getByLabel('Change type').selectOption({ label: 'Routing recipe' })
     await page.getByLabel('Experiment name').fill('Recipe v4 candidate')
     await page.getByLabel('Description').fill('Validate the full evaluation surface.')
-    await page.getByLabel('Sample limit').fill('64')
-    await page.getByLabel('Concurrency').fill('8')
-    await page.getByLabel('Seed').fill('7')
+    await page.getByLabel('Maximum cases').fill('64')
+    await page.getByLabel('Parallel requests').fill('8')
+    await page.getByLabel('Repeatability key').fill('7')
     await page.getByRole('heading', { name: 'New evaluation experiment' }).scrollIntoViewIfNeeded()
     await captureEvaluationSurface(page, 'new-experiment-desktop')
     await page.getByRole('button', { name: 'Create and start' }).click()
@@ -1171,7 +1235,12 @@ test.describe('Evaluation Plane', () => {
     const state = await mockEvaluationPlane(page)
     await page.goto('/evaluation?view=new')
 
-    await page.getByRole('radio', { name: /Live Execute against/ }).check()
+    await page
+      .getByRole('radio', {
+        name: 'Live: evaluate a registered Mixture.',
+        exact: true,
+      })
+      .check()
     await page.getByLabel('Mixture to evaluate').selectOption(EVALUATION_MOM_TARGET_ID)
     await expect(page.getByLabel('Mixture to evaluate')).toHaveValue(EVALUATION_MOM_TARGET_ID)
     await page.getByRole('checkbox', { name: /Live Mixture-of-Models core/ }).uncheck()
@@ -1198,8 +1267,10 @@ test.describe('Evaluation Plane', () => {
     await expect(
       capacity.getByRole('spinbutton', { name: /^Minimum scaling efficiency/ }),
     ).toHaveValue('0.7')
-    await expect(capacity.getByLabel('Frozen capacity load protocol')).toContainText('c1 → c2 → c4')
-    await expect(capacity.getByLabel('Frozen capacity load protocol')).toContainText(
+    await expect(capacity.getByLabel('Recorded capacity load plan')).toContainText(
+      '1 → 2 → 4 concurrent requests',
+    )
+    await expect(capacity.getByLabel('Recorded capacity load plan')).toContainText(
       '100 requests × 3 repetitions',
     )
 
@@ -1256,24 +1327,28 @@ test.describe('Evaluation Plane', () => {
     await page.getByLabel('Baseline run').selectOption(EVALUATION_RUN_IDS.baseline)
     await expect(
       page.getByText(
-        'Exact cohort copied and locked: profile, mode, target, suites, tracks, sample limit, concurrency, capacity contracts, and seed.',
+        'The comparison setup is copied and locked: change type, run type, Mixture, benchmarks, evaluation areas, sample size, parallel requests, performance goals, and repeatability key.',
         { exact: true },
       ),
     ).toBeVisible()
-    await expect(page.getByLabel('Change profile')).toHaveValue('recipe')
-    await expect(page.getByLabel('Change profile')).toBeDisabled()
-    await expect(page.getByLabel('Evidence target')).toHaveValue('fixture')
-    await expect(page.getByLabel('Evidence target')).toBeDisabled()
-    await expect(page.getByRole('spinbutton', { name: 'Sample limit', exact: true })).toHaveValue(
+    await expect(page.getByLabel('Change type')).toHaveValue('recipe')
+    await expect(page.getByLabel('Change type')).toBeDisabled()
+    await expect(page.getByLabel('Evaluation source')).toHaveValue('fixture')
+    await expect(page.getByLabel('Evaluation source')).toBeDisabled()
+    await expect(page.getByRole('spinbutton', { name: 'Maximum cases', exact: true })).toHaveValue(
       '4',
     )
-    await expect(page.getByRole('spinbutton', { name: 'Sample limit', exact: true })).toBeDisabled()
-    await expect(page.getByRole('spinbutton', { name: 'Concurrency', exact: true })).toHaveValue(
-      '4',
-    )
-    await expect(page.getByRole('spinbutton', { name: 'Concurrency', exact: true })).toBeDisabled()
-    await expect(page.getByRole('spinbutton', { name: 'Seed', exact: true })).toHaveValue('42')
-    await expect(page.getByRole('spinbutton', { name: 'Seed', exact: true })).toBeDisabled()
+    await expect(
+      page.getByRole('spinbutton', { name: 'Maximum cases', exact: true }),
+    ).toBeDisabled()
+    await expect(
+      page.getByRole('spinbutton', { name: 'Parallel requests', exact: true }),
+    ).toHaveValue('4')
+    await expect(
+      page.getByRole('spinbutton', { name: 'Parallel requests', exact: true }),
+    ).toBeDisabled()
+    await expect(page.getByRole('spinbutton', { name: /^Repeatability key/ })).toHaveValue('42')
+    await expect(page.getByRole('spinbutton', { name: /^Repeatability key/ })).toBeDisabled()
 
     await page.getByLabel('Experiment name').fill('Paired recipe candidate')
     await page.getByLabel('Description').fill('Exact-cohort candidate for paired comparison.')
@@ -1306,9 +1381,9 @@ test.describe('Evaluation Plane', () => {
     const options = await selector.locator('option').allTextContents()
     expect(options).toEqual([
       'Select a completed run',
-      'Candidate recipe · #00000001 · Routing recipe · Replay · E0 · n=4',
-      'Production baseline · #00000002 · Routing recipe · Replay · E0 · n=4',
-      'Unpaired diagnostic · #00000003 · Routing recipe · Replay · E0 · n=4',
+      'Candidate recipe · Routing recipe · Replay · Diagnostic · 4 cases',
+      'Production baseline · Routing recipe · Replay · Diagnostic · 4 cases',
+      'Unpaired diagnostic · Routing recipe · Replay · Diagnostic · 4 cases',
     ])
     expect(options.join(' ')).not.toContain('Live AMD validation')
     expect(options.join(' ')).not.toContain('Failed diagnostic')
@@ -1361,11 +1436,19 @@ test.describe('Evaluation Plane', () => {
     })
     await page.goto('/evaluation')
 
+    const latestReport = page.locator('section[aria-labelledby="latest-evidence-title"]')
+    await expect(latestReport.getByText('Latest report could not be refreshed.')).toBeVisible()
+    const technicalDetails = latestReport.locator(
+      'details[data-evaluation-technical-details="true"]',
+    )
+    await expect(technicalDetails).not.toHaveAttribute('open', '')
+    await expect(page.getByText('report storage is temporarily unavailable')).toBeHidden()
+    await technicalDetails.getByText('Technical details', { exact: true }).click()
     await expect(page.getByText('report storage is temporarily unavailable')).toBeVisible()
     expect(state.reportRequests).toEqual([EVALUATION_RUN_IDS.candidate])
   })
 
-  test('changes a comparison candidate and its pinned baseline atomically', async ({ page }) => {
+  test('changes a comparison candidate and its matching baseline atomically', async ({ page }) => {
     const secondBaseline = evaluationRun(
       EVALUATION_RUN_IDS.secondBaseline,
       'Second baseline',
@@ -1385,9 +1468,9 @@ test.describe('Evaluation Plane', () => {
       `/evaluation?view=compare&baseline=${EVALUATION_RUN_IDS.baseline}&candidate=${EVALUATION_RUN_IDS.candidate}`,
     )
 
-    await page.getByRole('button', { name: 'Compare paired evidence' }).click()
+    await page.getByRole('button', { name: 'Compare results' }).click()
     await expect(page.getByRole('table', { name: 'Paired comparison metrics' })).toBeVisible()
-    await page.getByLabel('Comparison candidate').selectOption(secondCandidate.id)
+    await page.getByLabel('Comparison candidate', { exact: true }).selectOption(secondCandidate.id)
 
     await expect(page.getByRole('table', { name: 'Paired comparison metrics' })).toHaveCount(0)
     await expect(
@@ -1399,7 +1482,7 @@ test.describe('Evaluation Plane', () => {
     await expect
       .poll(() => new URL(page.url()).searchParams.get('baseline'))
       .toBe(secondBaseline.id)
-    await expect(page.getByLabel('Pinned baseline')).toHaveValue(new RegExp(secondBaseline.name))
+    await expect(page.getByText(secondBaseline.name, { exact: true })).toBeVisible()
   })
 
   test('rejects controlled-pair cohort order drift and missing Mixture identity', async ({
@@ -1477,7 +1560,7 @@ test.describe('Evaluation Plane', () => {
     ])
     await page.goto('/evaluation?view=compare')
 
-    await expect(page.getByLabel('Comparison candidate')).toBeDisabled()
+    await expect(page.getByLabel('Comparison candidate', { exact: true })).toHaveCount(0)
     for (const [baselineRunID, candidateRunID] of [
       [orderedBaseline.id, reorderedCandidate.id],
       [missingMixtureBaseline.id, missingMixtureCandidate.id],
@@ -1495,30 +1578,44 @@ test.describe('Evaluation Plane', () => {
     }
   })
 
-  test('withholds E0 promotion claims while retaining diagnostics and never fakes G2+ pass', async ({
-    page,
-  }) => {
+  test('keeps diagnostic results distinct from release decisions', async ({ page }) => {
     await mockEvaluationPlane(page)
     await page.goto(`/evaluation?view=reports&report=${EVALUATION_RUN_IDS.candidate}`)
 
     await expect(
-      page.getByText('Promotion summary withheld — server-attested diagnostic E0', {
-        exact: true,
-      }),
+      page.getByText('Diagnostic run — no release recommendation', { exact: true }),
     ).toBeVisible()
-    await expect(page.getByRole('heading', { name: 'Diagnostic evidence only' })).toBeVisible()
-    await expect(page.getByText(/case-track observations/)).toBeVisible()
-    const findings = page.locator('details').filter({ hasText: 'Diagnostic findings' })
-    await findings.locator('summary').click()
-    await expect(findings.getByText(/worker-derived rule-based diagnostics/i)).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Diagnostic result only' })).toBeVisible()
+    const rawServiceNote = page.getByText(
+      'Treat these E0 observations as diagnostics, not a promotion claim.',
+      { exact: true },
+    )
+    await expect(rawServiceNote).not.toBeVisible()
+    const findingsSummary = page
+      .locator('details > summary')
+      .filter({ hasText: 'Next evaluation steps' })
+    const findings = findingsSummary.locator('..')
+    await findingsSummary.click()
+    await expect(
+      findings.getByText(
+        'Use this diagnostic result to verify the evaluation setup; collect controlled or live results before making a release decision.',
+        { exact: true },
+      ),
+    ).toBeVisible()
+    await expect(rawServiceNote).not.toBeVisible()
+    const technicalFindingsSummary = findings
+      .locator(':scope > div > details > summary')
+      .filter({ hasText: 'Technical details' })
+    await technicalFindingsSummary.click()
+    await expect(rawServiceNote).toBeVisible()
 
     const metrics = page.getByRole('table', { name: 'Evaluation metrics' })
-    await expect(
-      metrics.getByRole('row').filter({ hasText: 'joint.realized_quality' }),
-    ).toContainText('System quality')
-    await expect(
-      metrics.getByRole('row').filter({ hasText: 'capacity.latency_p95_ms' }),
-    ).toContainText('P95 latency')
+    await expect(metrics.locator('tr[data-metric-id="joint.realized_quality"]')).toContainText(
+      'System quality',
+    )
+    await expect(metrics.locator('tr[data-metric-id="capacity.latency_p95_ms"]')).toContainText(
+      'P95 latency',
+    )
 
     const diagnostics = page.locator('section[aria-labelledby="report-diagnostics-title"]')
     await expect(diagnostics.getByRole('heading', { name: 'Execution diagnostics' })).toBeVisible()
@@ -1526,17 +1623,27 @@ test.describe('Evaluation Plane', () => {
     await expect(
       diagnostics.getByText('Succeeded', { exact: true }).first().locator('..'),
     ).toContainText('32')
-    await page.getByRole('heading', { name: 'Diagnostic evidence only' }).scrollIntoViewIfNeeded()
+    await page.getByRole('heading', { name: 'Diagnostic result only' }).scrollIntoViewIfNeeded()
     await captureEvaluationSurface(page, 'report-decision-desktop')
 
-    const allGates = page.locator('details').filter({
-      has: page.getByText('All promotion gates', { exact: false }),
+    const allGatesSummary = page.locator('details > summary').filter({
+      has: page.getByText('All release checks', { exact: false }),
     })
-    await allGates.locator('summary').click()
+    const allGates = allGatesSummary.locator('..')
+    await allGatesSummary.click()
     await expect(allGates.getByText('Passed', { exact: true })).toHaveCount(2)
-    for (let gateIndex = 2; gateIndex <= 9; gateIndex += 1) {
+    for (const capability of [
+      'Policy enforcement',
+      'Controlled value comparison',
+      'Shift robustness',
+      'Live fidelity',
+      'Fault recovery',
+      'Cost, latency, and capacity',
+      'Canary safety',
+      'Online preference',
+    ]) {
       const gate = allGates.locator('article').filter({
-        has: page.getByText(`G${gateIndex}`, { exact: true }),
+        has: page.getByText(capability, { exact: true }),
       })
       await expect(gate).toHaveCount(1)
       await expect(gate.getByText('Passed', { exact: true })).toHaveCount(0)
@@ -1581,18 +1688,27 @@ test.describe('Evaluation Plane', () => {
       await expect(
         routingRecipe.getByRole('table', { name: 'Projection outcome calibration' }),
       ).toBeVisible()
-      await expect(routingRecipe.getByText('Oracle regret', { exact: true })).toBeVisible()
       await expect(
-        routingRecipe
-          .getByText('Unavailable · insufficient latency samples', { exact: true })
-          .first(),
+        routingRecipe.getByText('Quality gap to the best feasible model', { exact: true }),
+      ).toBeVisible()
+      const technicalDetails = routingRecipe.locator(
+        'details[data-evaluation-technical-details="true"]',
+      )
+      await expect(technicalDetails).not.toHaveAttribute('open', '')
+      await expect(
+        routingRecipe.getByText('insufficient_latency_samples', { exact: true }).first(),
+      ).toBeHidden()
+      await technicalDetails.getByText('Technical details', { exact: true }).click()
+      await expect(
+        routingRecipe.getByText('insufficient_latency_samples', { exact: true }).first(),
       ).toBeVisible()
       await expect(
-        routingRecipe.getByText('Unavailable · insufficient outcome pairs', { exact: true }),
+        routingRecipe.getByText('insufficient_outcome_pairs', { exact: true }),
       ).toBeVisible()
-      await expect(
-        routingRecipe.getByText('Unavailable · oracle outcome missing', { exact: true }),
-      ).toHaveCount(2)
+      await expect(routingRecipe.getByText('oracle_outcome_missing', { exact: true })).toHaveCount(
+        2,
+      )
+      await technicalDetails.getByText('Technical details', { exact: true }).click()
       const decision = page.locator('section[aria-labelledby="report-decision-title"]')
       await expect(decision).toBeVisible()
       await expect
@@ -1668,19 +1784,38 @@ test.describe('Evaluation Plane', () => {
     await page.goto(`/evaluation?view=reports&report=${EVALUATION_RUN_IDS.candidate}`)
 
     await expect(
-      page.getByText('Promotion summary withheld — server-attested diagnostic E0', {
-        exact: true,
-      }),
+      page.getByText('Diagnostic run — no release recommendation', { exact: true }),
     ).toBeVisible()
     await expect(page.getByRole('table', { name: 'Evaluation metrics' })).toBeVisible()
-    await expect(page.getByRole('heading', { name: 'Track observations' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Results by evaluation area' })).toBeVisible()
 
     const diagnostics = page.locator('section[aria-labelledby="report-diagnostics-title"]')
+    const capacityIssue = diagnostics.getByRole('alert', {
+      name: 'Capacity profile diagnostic error',
+    })
     await expect(
-      diagnostics.getByRole('alert', { name: 'Capacity profile diagnostic error' }),
-    ).toContainText('Invalid diagnostic artifact')
+      capacityIssue.getByText('Diagnostic could not be verified', { exact: true }),
+    ).toBeVisible()
     await expect(
-      diagnostics.getByRole('table', { name: 'Outcome accounting by evaluation track' }),
+      capacityIssue.getByText(
+        'This diagnostic is excluded because its saved evidence could not be verified. Other verified results remain available.',
+        { exact: true },
+      ),
+    ).toBeVisible()
+    const artifactPath = capacityIssue.getByText('capacity-profile.json', { exact: true })
+    const serviceResponse = capacityIssue.getByText(
+      'capacity-profile.json did not match the required evaluation.v1 diagnostic schema.',
+      { exact: true },
+    )
+    await expect(artifactPath).not.toBeVisible()
+    await expect(serviceResponse).not.toBeVisible()
+    await capacityIssue
+      .locator('details[data-evaluation-technical-details="true"] > summary')
+      .click()
+    await expect(artifactPath).toBeVisible()
+    await expect(serviceResponse).toBeVisible()
+    await expect(
+      diagnostics.getByRole('table', { name: 'Outcome accounting by evaluation area' }),
     ).toBeVisible()
     await expect(
       diagnostics.getByRole('table', { name: 'Capacity observations by concurrency' }),
@@ -1688,7 +1823,7 @@ test.describe('Evaluation Plane', () => {
     await expect(page.getByRole('heading', { name: 'Report unavailable' })).toHaveCount(0)
   })
 
-  test('pins comparison lineage and colors deltas according to metric direction', async ({
+  test('preserves comparison lineage and colors deltas according to metric direction', async ({
     page,
   }) => {
     const state = await mockEvaluationPlane(page)
@@ -1697,21 +1832,17 @@ test.describe('Evaluation Plane', () => {
     )
 
     await expect(
-      page.getByRole('heading', { name: 'Compare a candidate with its pinned baseline' }),
+      page.getByRole('heading', { name: 'Compare a candidate with its baseline' }),
     ).toBeVisible()
-    const candidates = page.getByLabel('Comparison candidate')
+    const candidates = page.getByLabel('Comparison candidate', { exact: true })
     expect(await candidates.locator('option').allTextContents()).toEqual([
-      'Select a candidate with baseline lineage',
-      'Candidate recipe · #00000001 · Routing recipe · Replay · E0 · n=4',
+      'Choose a compatible candidate',
+      'Candidate recipe',
     ])
-    const baseline = page.getByLabel('Pinned baseline')
-    await expect(baseline).toHaveValue(
-      'Production baseline · #00000002 · Routing recipe · Replay · E0 · n=4',
-    )
-    await expect(baseline).toHaveJSProperty('readOnly', true)
+    await expect(page.getByText('Production baseline', { exact: true })).toBeVisible()
     await captureEvaluationSurface(page, 'comparison-setup-desktop')
 
-    await page.getByRole('button', { name: 'Compare paired evidence' }).click()
+    await page.getByRole('button', { name: 'Compare results' }).click()
     await expect.poll(() => state.comparisonRequests.length).toBe(1)
     expect(state.comparisonRequests[0]).toEqual({
       baselineRunID: EVALUATION_RUN_IDS.baseline,
@@ -1719,19 +1850,15 @@ test.describe('Evaluation Plane', () => {
     })
 
     const table = page.getByRole('table', { name: 'Paired comparison metrics' })
-    const quality = table.getByRole('row').filter({ hasText: 'joint.realized_quality' })
+    const quality = table.locator('tr[data-metric-id="joint.realized_quality"]')
     await expect(quality).toContainText('Higher is better')
     await expect(quality.locator('strong[class*="delta_positive"]')).toHaveText('+3.0%')
-    const latency = table.getByRole('row').filter({ hasText: 'capacity.latency_p95_ms' })
+    const latency = table.locator('tr[data-metric-id="capacity.latency_p95_ms"]')
     await expect(latency).toContainText('Lower is better')
     await expect(latency.locator('strong[class*="delta_positive"]')).toHaveText('−28 ms')
-    const statistics = page.getByRole('table', {
-      name: 'Server-reduced paired scientific statistics',
-    })
-    const normalizedRegret = statistics.getByRole('row').filter({
-      hasText: 'joint.normalized_regret',
-    })
-    await expect(normalizedRegret).toContainText('Case normalized regret')
+    const statistics = page.getByRole('table', { name: 'Paired outcome comparison' })
+    const normalizedRegret = statistics.locator('tr[data-statistic-id="joint.normalized_regret"]')
+    await expect(normalizedRegret).toContainText('Normalized quality gap')
     await expect(normalizedRegret).toContainText('Not estimable')
     await expect(normalizedRegret).toContainText(
       'Needs at least 20 independent case units; observed 4.',
@@ -1740,14 +1867,18 @@ test.describe('Evaluation Plane', () => {
       'section[aria-labelledby="evaluation-comparison-gates-title"]',
     )
     await expect(comparisonGates).toBeVisible()
-    const g3 = comparisonGates.locator('article').filter({ hasText: 'G3' })
-    await expect(g3.getByText('Evidence needed', { exact: true })).toBeVisible()
-    await expect(g3.getByText('Passed', { exact: true })).toHaveCount(0)
+    const valueComparison = comparisonGates.locator('article').filter({
+      has: page.getByText('Controlled value comparison', { exact: true }),
+    })
+    await expect(
+      valueComparison.getByText(/Release blocked · complete the required evaluation data/),
+    ).toBeVisible()
+    await expect(valueComparison.getByText('Passed', { exact: true })).toHaveCount(0)
     await table.scrollIntoViewIfNeeded()
     await captureEvaluationSurface(page, 'comparison-results-desktop')
   })
 
-  test('builds and reloads a server-attested promotion campaign above diagnostic comparison', async ({
+  test('builds and reloads a verified release decision above diagnostic comparison', async ({
     page,
   }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
@@ -1869,32 +2000,35 @@ test.describe('Evaluation Plane', () => {
     )
     await page.goto('/evaluation?view=compare')
 
-    await expect(page.getByRole('heading', { name: 'Promotion campaign' })).toBeVisible()
     await expect(
-      page.getByText(/scientific diagnostic does not issue a promotion decision/i),
+      page.getByRole('heading', { name: 'Compare a candidate with its baseline' }),
     ).toBeVisible()
-    const evidenceDisclosure = page.locator('details').filter({
-      has: page.getByText('Review / customize evidence', { exact: true }),
+    const releaseDecisionSummary = page.locator('details > summary').filter({
+      has: page.getByText('Prepare a release decision', { exact: true }),
     })
-    await expect(page.getByLabel('Controlled pair baseline source')).not.toBeVisible()
-    await evidenceDisclosure.locator('summary').focus()
-    await evidenceDisclosure.locator('summary').press('Enter')
-    await expect(evidenceDisclosure).toHaveAttribute('open', '')
-    await expect(page.getByLabel('Controlled pair baseline source')).toBeVisible()
+    const releaseDecision = releaseDecisionSummary.locator('..')
+    await expect(releaseDecision).not.toHaveAttribute('open', '')
+    await expect(
+      page.getByLabel('Controlled comparison baseline run', { exact: true }),
+    ).not.toBeVisible()
+    const evidenceDisclosure = await openReleaseDecisionInputs(page)
+    await expect(
+      page.getByLabel('Controlled comparison baseline run', { exact: true }),
+    ).toBeVisible()
     await expectEvaluationControlSystem(page)
-    await evidenceDisclosure.locator('summary').press('Enter')
+    await evidenceDisclosure.locator(':scope > summary').press('Enter')
     await expect(evidenceDisclosure).not.toHaveAttribute('open', '')
-    await evidenceDisclosure.locator('summary').press('Enter')
+    await evidenceDisclosure.locator(':scope > summary').press('Enter')
     await expect(evidenceDisclosure).toHaveAttribute('open', '')
     await page
-      .getByLabel('Controlled pair baseline source')
+      .getByLabel('Controlled comparison baseline run', { exact: true })
       .selectOption(EVALUATION_RUN_IDS.baselineLive)
     await page
-      .getByLabel('Controlled pair candidate source')
+      .getByLabel('Controlled comparison candidate run', { exact: true })
       .selectOption(EVALUATION_RUN_IDS.candidateLive)
-    await page.getByRole('button', { name: 'Launch controlled pair' }).click()
+    await page.getByRole('button', { name: 'Launch comparison' }).click()
     await expect(page.getByRole('alert')).toContainText('two worker slots are required')
-    await page.getByRole('button', { name: 'Retry controlled pair' }).click()
+    await page.getByRole('button', { name: 'Retry comparison' }).click()
     await expect.poll(() => state.controlledPairRequests.length).toBe(2)
     const controlledPairRequest = state.controlledPairRequests[1]
     expect(Object.keys(controlledPairRequest).sort()).toEqual([
@@ -1914,17 +2048,19 @@ test.describe('Evaluation Plane', () => {
     await expect
       .poll(() => new URL(page.url()).searchParams.get('controlled_pair_profile'))
       .toBe('recipe')
-    const profileSelect = page.getByLabel('Campaign change profile')
+    const profileSelect = page.getByLabel('Release decision change type')
     await expect(profileSelect).toBeDisabled()
     await expect(
-      page.getByText(/change profile is locked while this controlled pair/i),
+      page.getByText(/change type is locked while this controlled comparison/i),
     ).toBeVisible()
     const aggregatePath = `/api/evaluation/v1/controlled-pairs/${controlledPairRequest.client_request_id}`
     await expect
       .poll(() => state.controlledPairGetRequests.filter((path) => path === aggregatePath).length)
       .toBeGreaterThanOrEqual(1)
     await expect(
-      page.getByText('Fresh baseline and candidate runs completed and were bound to G3.'),
+      page.getByText(
+        'Fresh baseline and candidate runs completed and are attached to the value comparison.',
+      ),
     ).toHaveCount(0)
     expect(state.runRequests).not.toContain(controlledPairRequest.baseline_run_id)
     expect(state.runRequests).not.toContain(controlledPairRequest.candidate_run_id)
@@ -1939,7 +2075,9 @@ test.describe('Evaluation Plane', () => {
     expect(() => state.getRuns().forEach((run) => decodeEvaluationRun(run))).not.toThrow()
     await expect(profileSelect).toBeDisabled()
     await expect(
-      page.getByText('Fresh baseline and candidate runs completed and were bound to G3.'),
+      page.getByText(
+        'Fresh baseline and candidate runs completed and are attached to the value comparison.',
+      ),
     ).toBeVisible()
     await expect
       .poll(() => state.controlledPairGetRequests.filter((path) => path === aggregatePath).length)
@@ -1950,13 +2088,16 @@ test.describe('Evaluation Plane', () => {
     await expect
       .poll(() => new URL(page.url()).searchParams.get('controlled_pair_profile'))
       .toBeNull()
-    const g3Evidence = page.getByLabel('G3 controlled pair evidence')
-    await expect(g3Evidence).toContainText('Controlled baseline AB/BA')
-    await expect(g3Evidence).toContainText('Controlled candidate AB/BA')
-    const comparisonCandidate = page.getByLabel('Comparison candidate')
+    const controlledComparison = page.getByLabel('Controlled comparison runs')
+    await expect(controlledComparison).toContainText('Controlled baseline AB/BA')
+    await expect(controlledComparison).toContainText('Controlled candidate AB/BA')
+    const comparisonCandidate = page.getByLabel('Comparison candidate', { exact: true })
     await comparisonCandidate.selectOption(controlledPairRequest.candidate_run_id)
-    await expect(page.getByLabel('Pinned baseline')).toHaveValue(/Controlled baseline AB\/BA/)
-    await page.getByRole('button', { name: 'Compare paired evidence' }).click()
+    const comparePanel = page
+      .getByRole('heading', { name: 'Compare a candidate with its baseline' })
+      .locator('xpath=ancestor::section[1]')
+    await expect(comparePanel.getByText(/Controlled baseline AB\/BA/)).toBeVisible()
+    await page.getByRole('button', { name: 'Compare results' }).click()
     await expect
       .poll(() => state.comparisonRequests.at(-1))
       .toEqual({
@@ -1967,46 +2108,42 @@ test.describe('Evaluation Plane', () => {
       page.getByRole('heading', { name: 'Paired scientific statistics', exact: true }),
     ).toBeVisible()
     const controlledPairStatistics = page.getByRole('table', {
-      name: 'Server-reduced paired scientific statistics',
+      name: 'Paired outcome comparison',
     })
     await expect(controlledPairStatistics).toBeVisible()
     await expect(
-      controlledPairStatistics.getByRole('row').filter({ hasText: 'joint.normalized_regret' }),
+      controlledPairStatistics.locator('tr[data-statistic-id="joint.normalized_regret"]'),
     ).toContainText('Not estimable')
-    await expect(page.getByText(/comparison G3 is not server-owned/i)).toHaveCount(0)
-    await page.getByLabel('G2 Hard policy evidence').selectOption(EVALUATION_RUN_IDS.campaignG2)
+    await page.getByLabel('Hard policy run').selectOption(EVALUATION_RUN_IDS.campaignG2)
     await page
-      .getByLabel('G4 Declared-shift robustness evidence')
+      .getByLabel('Declared-shift robustness run')
       .selectOption(EVALUATION_RUN_IDS.campaignG4)
+    await page.getByLabel('Reference run').selectOption(EVALUATION_RUN_IDS.campaignG5Reference)
     await page
-      .getByLabel('G5 fidelity reference')
-      .selectOption(EVALUATION_RUN_IDS.campaignG5Reference)
-    await page
-      .getByLabel('G5 fidelity live evidence')
+      .getByLabel('Candidate run', { exact: true })
       .selectOption(EVALUATION_RUN_IDS.campaignG5Live)
-    const g7Evidence = page.getByLabel('G7 Cost / latency / capacity evidence')
+    const g7Evidence = page.getByLabel('Cost / latency / capacity run')
     const g7OptionLabels = await g7Evidence.locator('option').allTextContents()
     expect(new Set(g7OptionLabels).size).toBe(g7OptionLabels.length)
-    expect(g7OptionLabels.join('\n')).toContain('#00000019')
-    expect(g7OptionLabels.join('\n')).toContain('#00000020')
+    expect(g7OptionLabels.join('\n')).toContain('Option 1')
+    expect(g7OptionLabels.join('\n')).toContain('Option 2')
     await g7Evidence.selectOption(EVALUATION_RUN_IDS.campaignG7)
-    await page.getByLabel('Campaign name').fill('Recipe v4 guarded promotion')
+    await page.getByLabel('Decision name').fill('Recipe v4 production review')
     await page
-      .locator('details')
-      .filter({ has: page.getByText('Decision context', { exact: true }) })
-      .locator('summary')
+      .locator('details > summary')
+      .filter({ has: page.getByText('Decision notes', { exact: true }) })
       .click()
     await page
-      .getByLabel('Decision context')
-      .fill('Promote the exact replay treatment after paired target and confirmation evidence.')
+      .getByLabel('Decision notes')
+      .fill('Review the exact treatment after paired target and confirmation evidence.')
     await expectEvaluationControlSystem(page)
     await captureEvaluationSurface(page, 'campaign-builder-desktop')
-    await page.getByRole('button', { name: 'Create promotion decision' }).click()
+    await page.getByRole('button', { name: 'Create release decision' }).click()
 
     await expect.poll(() => state.campaignRequests.length).toBe(1)
     const request = state.campaignRequests[0]
     expect(request).toMatchObject({
-      name: 'Recipe v4 guarded promotion',
+      name: 'Recipe v4 production review',
       change_profile: 'recipe',
       gate_bindings: {
         g2_run_id: EVALUATION_RUN_IDS.campaignG2,
@@ -2025,13 +2162,22 @@ test.describe('Evaluation Plane', () => {
     await expect
       .poll(() => new URL(page.url()).searchParams.get('campaign'))
       .toBe(request.client_request_id)
-    await expect(page.getByRole('heading', { name: 'Recipe v4 guarded promotion' })).toBeVisible()
-    await expect(page.getByText('All required promotion campaign gates passed.')).toBeVisible()
-    await expect(page.getByText('Decision digest', { exact: true })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Recipe v4 production review' })).toBeVisible()
+    await expect(page.getByText('Verified release decision', { exact: true })).toBeVisible()
+    await expect(page.getByLabel('Release decision summary')).toBeVisible()
     await expectEvaluationControlSystem(page)
-    await page.getByRole('button', { name: 'Copy decision digest' }).click()
-    await expect(page.getByRole('button', { name: 'Copied decision digest' })).toBeVisible()
     await captureEvaluationSurface(page, 'campaign-decision-desktop')
+    const technicalDetails = page
+      .locator('details[data-evaluation-technical-details="true"]')
+      .filter({
+        has: page.getByText('Reproducibility, run identities, and verification receipts', {
+          exact: true,
+        }),
+      })
+    await expect(technicalDetails).not.toHaveAttribute('open', '')
+    await expect(
+      technicalDetails.getByText('1,000 samples · 95% confidence', { exact: true }),
+    ).not.toBeVisible()
     const pairedLive = page.locator('section[aria-labelledby="campaign-paired-live-title"]')
     const pairedTableRegion = pairedLive.getByRole('region', {
       name: 'Paired live statistic matrix',
@@ -2039,34 +2185,25 @@ test.describe('Evaluation Plane', () => {
     const pairedTable = pairedLive.getByRole('table', {
       name: 'Paired baseline and candidate statistics',
     })
-    await expect(pairedLive.getByText('1,000 samples · 95% CI', { exact: true })).toBeVisible()
     await expect(pairedTable.getByRole('row')).toHaveCount(11)
     await expect(
-      pairedTable.getByRole('row', { name: /routing Quality non-inferiority/i }),
+      pairedTable.getByRole('row', { name: /routing Candidate quality protection/i }),
     ).toContainText('+0.01')
     await expect(pairedTable.getByRole('row', { name: /routing Failure risk/i })).toContainText(
       'Passed',
     )
     await expect(
-      pairedTable.getByRole('row', { name: /model pool All-arm failure risk/i }),
+      pairedTable.getByRole('row', { name: /model pool All-model failure risk/i }),
     ).toContainText('Passed')
-    const promotionTable = pairedLive.getByRole('table', { name: 'G3 promotion statistics' })
-    await expect(promotionTable.getByRole('row')).toHaveCount(6)
-    await expect(promotionTable.getByRole('row', { name: /Pool availability/i })).toContainText(
-      '<= 0.2 fraction',
+    const releaseMeasures = pairedLive.getByRole('table', { name: 'Release measures' })
+    await expect(releaseMeasures.getByRole('row')).toHaveCount(6)
+    await expect(releaseMeasures.getByRole('row', { name: /Pool availability/i })).toContainText(
+      '≤ 20.0%',
     )
     const fidelity = page.locator('section[aria-labelledby="campaign-fidelity-title"]')
-    await expect(fidelity.getByRole('heading', { name: 'Live fidelity receipt' })).toBeVisible()
+    await expect(fidelity.getByRole('heading', { name: 'Live consistency' })).toBeVisible()
     await expect(fidelity.getByText('59', { exact: true }).first()).toBeVisible()
     await expect(fidelity.getByText('Passed', { exact: true })).toBeVisible()
-    const copyPairedDigest = pairedLive.getByRole('button', {
-      name: 'Copy paired live evidence digest',
-    })
-    await copyPairedDigest.focus()
-    await page.keyboard.press('Enter')
-    await expect(
-      pairedLive.getByRole('button', { name: 'Copied paired live evidence digest' }),
-    ).toBeVisible()
     await pairedTableRegion.focus()
     await expect(pairedTableRegion).toBeFocused()
     await expectCompactVerticalFlow(pairedLive)
@@ -2081,19 +2218,30 @@ test.describe('Evaluation Plane', () => {
     })
     const gates = page.locator('section[aria-labelledby="campaign-gates-title"]')
     await expect(gates.locator('article')).toHaveCount(10)
+    await expect(
+      gates
+        .getByText('Verified evaluation result · End-to-end validation', { exact: true })
+        .first(),
+    ).toBeVisible()
+    await expectProductEvaluationLanguage(page)
+    await technicalDetails.locator(':scope > summary').click()
+    await expect(
+      technicalDetails.getByText('1,000 samples · 95% confidence', { exact: true }),
+    ).toBeVisible()
+    await expect(page.getByText('Evaluation receipt', { exact: true })).toBeVisible()
+    await expect(page.getByText('Decision receipt', { exact: true })).toBeVisible()
     const anchors = page.locator('section[aria-labelledby="campaign-evidence-title"]')
     await expect(anchors.locator('article')).toHaveCount(7)
-    await expect(anchors.getByText('Server execution', { exact: true })).toHaveCount(7)
+    await expect(anchors.getByText('Server execution receipt', { exact: true })).toHaveCount(7)
     const copyExecution = anchors
-      .getByRole('button', { name: 'Copy server execution digest' })
+      .getByRole('button', { name: 'Copy server execution receipt' })
       .first()
     await copyExecution.click()
     await expect(
-      anchors.getByRole('button', { name: 'Copied server execution digest' }).first(),
+      anchors.getByRole('button', { name: 'Copied server execution receipt' }).first(),
     ).toBeVisible()
-    await expect(gates.getByText('gate_binding', { exact: true }).first()).toBeVisible()
     await expect(
-      page.getByRole('heading', { name: 'Compare a candidate with its pinned baseline' }),
+      page.getByRole('heading', { name: 'Compare a candidate with its baseline' }),
     ).toBeVisible()
 
     await expect
@@ -2106,12 +2254,12 @@ test.describe('Evaluation Plane', () => {
     await page.waitForTimeout(300)
     state.rejectCampaignGets()
     await page.reload()
-    await expect(page.getByRole('alert')).toContainText('temporary campaign read failure')
+    await expect(page.getByRole('alert')).toBeVisible()
     const retryDecision = page.getByRole('button', { name: 'Retry decision' })
     state.allowCampaignGets()
     await retryDecision.click()
     await expect(page.getByRole('button', { name: 'Retrying decision…' })).toBeDisabled()
-    await expect(page.getByRole('heading', { name: 'Recipe v4 guarded promotion' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Recipe v4 production review' })).toBeVisible()
     expect(state.campaignGetRequests).toContain(request.client_request_id)
 
     await page.setViewportSize({ width: 1024, height: 768 })
@@ -2131,7 +2279,7 @@ test.describe('Evaluation Plane', () => {
       const root = document.scrollingElement
       if (root) root.scrollTop = 0
     })
-    await expect(page.getByRole('button', { name: 'Build another campaign' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Start another decision' })).toBeVisible()
     await expectNoHorizontalOverflow(page)
     await expectCompactVerticalFlow(pairedLive)
     await captureEvaluationSurface(page, 'campaign-decision-mobile')
@@ -2144,9 +2292,9 @@ test.describe('Evaluation Plane', () => {
       if (root) root.scrollTop = 0
     })
 
-    await page.getByRole('button', { name: 'Build another campaign' }).click()
-    await expect(page.getByText('Promotion readiness', { exact: true })).toBeVisible()
-    await expect(page.getByLabel('Campaign name')).toHaveValue('')
+    await page.getByRole('button', { name: 'Start another decision' }).click()
+    await expect(page.getByText('Release readiness', { exact: true })).toBeVisible()
+    await expect(page.getByLabel('Decision name')).toHaveValue('')
     await expect.poll(() => new URL(page.url()).searchParams.get('campaign')).toBeNull()
     await expectNoHorizontalOverflow(page)
   })
@@ -2172,12 +2320,11 @@ test.describe('Evaluation Plane', () => {
       .toBe('recipe')
     await page.reload()
 
-    const disclosure = page.locator('details').filter({
-      has: page.getByText('Review / customize evidence', { exact: true }),
-    })
-    await disclosure.locator('summary').click()
+    await openReleaseDecisionInputs(page)
     await expect(
-      page.getByText('Fresh baseline and candidate runs completed and were bound to G3.'),
+      page.getByText(
+        'Fresh baseline and candidate runs completed and are attached to the value comparison.',
+      ),
     ).toBeVisible()
     const aggregatePath = `/api/evaluation/v1/controlled-pairs/${request.client_request_id}`
     await expect
@@ -2213,14 +2360,11 @@ test.describe('Evaluation Plane', () => {
       .poll(() => new URL(page.url()).searchParams.get('controlled_pair'))
       .toBe(request.client_request_id)
 
-    const disclosure = page.locator('details').filter({
-      has: page.getByText('Review / customize evidence', { exact: true }),
-    })
-    if (!(await disclosure.evaluate((element) => element.hasAttribute('open')))) {
-      await disclosure.locator('summary').click()
-    }
+    await openReleaseDecisionInputs(page)
     await expect(
-      page.getByText('Fresh baseline and candidate runs completed and were bound to G3.'),
+      page.getByText(
+        'Fresh baseline and candidate runs completed and are attached to the value comparison.',
+      ),
     ).toBeVisible()
     expect(state.runRequests).not.toContain(request.baseline_run_id)
     expect(state.runRequests).not.toContain(request.candidate_run_id)
@@ -2236,7 +2380,8 @@ test.describe('Evaluation Plane', () => {
       ledgerDelayMs: 250,
     })
     await page.goto('/evaluation?view=compare')
-    await page.getByLabel('Campaign change profile').selectOption('model_pool')
+    await openReleaseDecisionInputs(page)
+    await page.getByLabel('Release decision change type').selectOption('model_pool')
     await launchCampaignControlledPair(page)
 
     await expect.poll(() => state.controlledPairRequests.length).toBe(1)
@@ -2249,7 +2394,8 @@ test.describe('Evaluation Plane', () => {
       .toBe('model_pool')
 
     await page.reload()
-    const profile = page.getByLabel('Campaign change profile')
+    await openReleaseDecisionInputs(page)
+    const profile = page.getByLabel('Release decision change type')
     await expect(profile).toHaveValue('model_pool')
     await expect(profile).toBeDisabled()
     await page.getByRole('tab', { name: 'Runs', exact: true }).click()
@@ -2257,19 +2403,16 @@ test.describe('Evaluation Plane', () => {
       .poll(() => new URL(page.url()).searchParams.get('controlled_pair_profile'))
       .toBe('model_pool')
     await page.getByRole('tab', { name: 'Compare', exact: true }).click()
+    await openReleaseDecisionInputs(page)
     await expect(profile).toHaveValue('model_pool')
     await expect(profile).toBeDisabled()
 
-    const disclosure = page.locator('details').filter({
-      has: page.getByText('Review / customize evidence', { exact: true }),
-    })
-    if (!(await disclosure.evaluate((element) => element.hasAttribute('open')))) {
-      await disclosure.locator('summary').click()
-    }
     await expect(
-      page.getByText('Fresh baseline and candidate runs completed and were bound to G3.'),
+      page.getByText(
+        'Fresh baseline and candidate runs completed and are attached to the value comparison.',
+      ),
     ).toBeVisible()
-    await expect(page.getByLabel('G3 controlled pair evidence')).toContainText(
+    await expect(page.getByLabel('Controlled comparison runs')).toContainText(
       /Controlled baseline AB\/BA.*Controlled candidate AB\/BA/,
     )
     await expect.poll(() => new URL(page.url()).searchParams.get('controlled_pair')).toBeNull()
@@ -2312,22 +2455,18 @@ test.describe('Evaluation Plane', () => {
       `/evaluation?view=compare&controlled_pair=${pairID}&controlled_pair_profile=model_pool`,
     )
 
-    const profile = page.getByLabel('Campaign change profile')
+    await openReleaseDecisionInputs(page)
+    const profile = page.getByLabel('Release decision change type')
     await expect(profile).toHaveValue('model_pool')
     await expect(profile).toBeDisabled()
-    await page
-      .locator('details')
-      .filter({ has: page.getByText('Review / customize evidence', { exact: true }) })
-      .locator('summary')
-      .click()
     await expect(page.getByRole('alert')).toContainText('temporary controlled-pair state failure')
     await expect(profile).toBeDisabled()
     await expect.poll(() => state.controlledPairGetRequests.length).toBeGreaterThanOrEqual(2)
 
-    await page.getByRole('button', { name: 'Retry controlled pair' }).click()
+    await page.getByRole('button', { name: 'Retry comparison' }).click()
     await expect.poll(() => state.controlledPairGetRequests.length).toBeGreaterThanOrEqual(3)
     await expect(page.getByRole('alert')).toHaveCount(0)
-    await expect(page.getByRole('button', { name: 'Controlled pair running…' })).toBeDisabled()
+    await expect(page.getByRole('button', { name: 'Comparison running…' })).toBeDisabled()
     await expect(profile).toBeDisabled()
   })
 
@@ -2341,9 +2480,11 @@ test.describe('Evaluation Plane', () => {
     await page.goto('/evaluation?view=compare')
     await launchCampaignControlledPair(page)
 
-    const profile = page.getByLabel('Campaign change profile')
+    const profile = page.getByLabel('Release decision change type')
     await expect(
-      page.getByText('Both runs completed. Refreshing the durable ledger before binding G3.'),
+      page.getByText(
+        'Both runs completed. Refreshing run history before attaching the comparison.',
+      ),
     ).toBeVisible()
     await expect(profile).toBeDisabled()
     await profile.evaluate((element) => {
@@ -2355,7 +2496,7 @@ test.describe('Evaluation Plane', () => {
     })
 
     await expect(profile).toHaveValue('recipe')
-    await expect(page.getByLabel('G3 controlled pair evidence')).toContainText(
+    await expect(page.getByLabel('Controlled comparison runs')).toContainText(
       /Controlled baseline AB\/BA.*Controlled candidate AB\/BA/,
     )
     await expect.poll(() => new URL(page.url()).searchParams.get('controlled_pair')).toBeNull()
@@ -2366,21 +2507,19 @@ test.describe('Evaluation Plane', () => {
     await page.goto(
       '/evaluation?view=compare&controlled_pair=not-a-canonical-id&controlled_pair_profile=recipe',
     )
-    await expect(page.getByRole('heading', { name: 'Promotion campaign' })).toBeVisible()
+    await expect(
+      page.getByRole('heading', { name: 'Compare a candidate with its baseline' }),
+    ).toBeVisible()
     expect(state.controlledPairGetRequests).toHaveLength(0)
 
     const stalePairID = evaluationRunID(990)
     await page.goto(
       `/evaluation?view=compare&controlled_pair=${stalePairID}&controlled_pair_profile=recipe`,
     )
-    await page
-      .locator('details')
-      .filter({ has: page.getByText('Review / customize evidence', { exact: true }) })
-      .locator('summary')
-      .click()
+    await openReleaseDecisionInputs(page)
     await expect(page.getByRole('alert')).toContainText('not found: controlled pair')
-    await expect(page.getByLabel('G3 controlled pair evidence')).not.toContainText(stalePairID)
-    await page.getByRole('button', { name: 'Clear saved pair' }).click()
+    await expect(page.getByLabel('Controlled comparison runs')).not.toContainText(stalePairID)
+    await page.getByRole('button', { name: 'Clear saved comparison' }).click()
     await expect.poll(() => new URL(page.url()).searchParams.get('controlled_pair')).toBeNull()
     await expect
       .poll(() => new URL(page.url()).searchParams.get('controlled_pair_profile'))
@@ -2405,29 +2544,30 @@ test.describe('Evaluation Plane', () => {
       `/evaluation?view=compare&baseline=${EVALUATION_RUN_IDS.baseline}&candidate=${EVALUATION_RUN_IDS.candidate}`,
     )
 
-    await expect(page.getByText('Run ledger incomplete', { exact: true })).toBeVisible()
-    await expect(page.getByText(/3 durable run bundles are quarantined/)).toBeVisible()
+    await expect(page.getByText('Some saved runs could not be read', { exact: true })).toBeVisible()
+    await expect(page.getByText(/3 saved runs are excluded/)).toBeVisible()
     await expect(
-      page.getByText('Showing 1 of 3 warning details returned by the ledger.', { exact: true }),
+      page.getByText('Showing 1 of 3 warning details returned by run history.', { exact: true }),
     ).toBeVisible()
+    await expect(page.getByText('bundle-entry-7f9d2a', { exact: true })).not.toBeVisible()
+    const warningSummary = page.locator('details > summary').filter({
+      has: page.getByText('Technical details · 1', { exact: true }),
+    })
+    await warningSummary.click()
     await expect(page.getByText('bundle-entry-7f9d2a', { exact: true })).toBeVisible()
     await expect(page.getByText(/status\.json: Durable run status evidence/)).toBeVisible()
-    await expect(page.getByLabel('Comparison candidate')).toBeDisabled()
-    await expect(page.getByRole('button', { name: 'Compare paired evidence' })).toBeDisabled()
-    await expect(
-      page.getByText(/Baseline selection and comparison conclusions are blocked/),
-    ).toBeVisible()
-    await expect(page.getByLabel('Comparison candidate')).toHaveValue('')
+    await expect(page.getByLabel('Comparison candidate', { exact: true })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Compare results' })).toHaveCount(0)
+    await expect(page.getByText(/Baseline selection and comparison are paused/)).toBeVisible()
     expect(state.comparisonRequests).toHaveLength(0)
 
     await page.getByRole('tab', { name: 'New experiment', exact: true }).click()
-    await expect(page.getByText('Run ledger incomplete', { exact: true })).toBeVisible()
+    await expect(page.getByText('Some saved runs could not be read', { exact: true })).toBeVisible()
     await expect(page.getByLabel('Baseline run')).toBeDisabled()
     await expect(
-      page.getByText(
-        'Baseline selection is blocked until quarantined durable run evidence is repaired.',
-        { exact: true },
-      ),
+      page.getByText('Baseline selection is paused until unreadable saved runs are repaired.', {
+        exact: true,
+      }),
     ).toBeVisible()
   })
 
@@ -2440,24 +2580,39 @@ test.describe('Evaluation Plane', () => {
     })
     await page.goto(`/evaluation?view=runs&run=${EVALUATION_RUN_IDS.live}`)
 
-    await page.getByRole('button', { name: 'Cancel Live AMD validation' }).click()
+    const cancelTrigger = page.getByRole('button', { name: 'Cancel Live AMD validation' })
+    await cancelTrigger.click()
     const dialog = page.getByRole('alertdialog')
-    await expect(dialog).toContainText('Execution stops and no completed report is published.')
+    await expect(dialog).toContainText('Execution stops and no completed report is created.')
     await expect(dialog.getByRole('button', { name: 'Cancel', exact: true })).toBeFocused()
+    await page.keyboard.press('Shift+Tab')
+    await expect(dialog.getByRole('button', { name: 'Cancel run' })).toBeFocused()
+    await page.keyboard.press('Tab')
+    await expect(dialog.getByRole('button', { name: 'Cancel', exact: true })).toBeFocused()
+    await page.keyboard.press('Escape')
+    await expect(dialog).toHaveCount(0)
+    await expect(cancelTrigger).toBeFocused()
+
+    await cancelTrigger.click()
     await expectDialogBottomReachable(page, dialog)
     await captureEvaluationSurface(page, 'cancel-dialog')
     await dialog.getByRole('button', { name: 'Cancel run' }).click()
-    await expect(dialog.getByRole('alert')).toContainText('temporary cancellation failure')
+    const dialogError = dialog.getByRole('alert')
+    await expect(dialogError).toContainText('temporary cancellation failure')
+    await expect(page.locator('[role="alert"]')).toHaveCount(1)
     await expect(dialog.getByRole('button', { name: 'Cancel run' })).toBeEnabled()
 
     await dialog.getByRole('button', { name: 'Cancel run' }).click()
     await expect(dialog).toHaveAttribute('aria-busy', 'true')
     await expect(dialog.getByRole('button', { name: 'Cancelling…' })).toBeDisabled()
     await expect(dialog.getByRole('button', { name: 'Cancel', exact: true })).toBeDisabled()
-    await expect(page.getByRole('button', { name: 'Cancel Live AMD validation' })).toBeDisabled()
+    await expect(cancelTrigger).toBeDisabled()
+    await page.keyboard.press('Escape')
+    await expect(dialog).toBeVisible()
 
     await expect.poll(state.getCancelCount).toBe(1)
     await expect(dialog).toHaveCount(0)
+    await expect(page.getByRole('tabpanel')).toBeFocused()
     const inspector = page.locator('aside').filter({
       has: page.getByRole('heading', { name: 'Live AMD validation' }),
     })
@@ -2551,25 +2706,42 @@ test.describe('Evaluation Plane', () => {
     })
     await page.goto(`/evaluation?view=runs&run=${candidate.id}`)
 
-    const cancelPair = page.getByRole('button', {
-      name: `Cancel controlled pair ${pairID}`,
-    })
-    await expect(cancelPair).toHaveText('Cancel pair')
+    const cancelPair = page.getByRole('button', { name: 'Cancel controlled comparison' })
+    await expect(cancelPair).toHaveText('Cancel comparison')
+    const defaultInspectorText = await page
+      .getByRole('complementary', { name: 'Selected evaluation run' })
+      .innerText()
+    expect(defaultInspectorText).not.toContain(candidate.id)
+    expect(defaultInspectorText).not.toContain(baseline.id)
+    expect(defaultInspectorText).not.toContain(candidate.suite_ids[0])
+    const technicalDetails = page
+      .getByRole('complementary', { name: 'Selected evaluation run' })
+      .locator('details')
+      .filter({ has: page.getByText('Run ID', { exact: true }) })
+    await technicalDetails.locator(':scope > summary').click()
+    await expect(technicalDetails.getByText(candidate.id, { exact: true })).toBeVisible()
+    await expect(technicalDetails.getByText(baseline.id, { exact: true })).toBeVisible()
+    await expect(
+      technicalDetails.getByText(candidate.suite_ids.join(', '), { exact: true }),
+    ).toBeVisible()
+    await technicalDetails.locator(':scope > summary').click()
     await expect(page.getByRole('button', { name: `Cancel ${candidate.name}` })).toHaveCount(0)
     await expect(page.getByRole('button', { name: `Delete ${candidate.name}` })).toHaveCount(0)
 
     await cancelPair.click()
     let dialog = page.getByRole('alertdialog')
-    await expect(dialog.getByRole('heading', { name: 'Cancel controlled pair?' })).toBeVisible()
-    await expect(dialog).toContainText('Both derived runs stop as one controlled-pair transition.')
-    await expect(dialog).toContainText(pairID)
+    await expect(
+      dialog.getByRole('heading', { name: 'Cancel controlled comparison?' }),
+    ).toBeVisible()
+    await expect(dialog).toContainText('Both runs stop together.')
+    await expect(dialog).not.toContainText(pairID)
     await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
     await expect(dialog).toHaveCount(0)
     expect(state.controlledPairCancelRequests).toHaveLength(0)
 
     await cancelPair.click()
     dialog = page.getByRole('alertdialog')
-    await dialog.getByRole('button', { name: 'Cancel pair', exact: true }).click()
+    await dialog.getByRole('button', { name: 'Cancel comparison', exact: true }).click()
     await expect(dialog.getByRole('alert')).toContainText(
       'temporary controlled-pair cancellation failure',
     )
@@ -2577,43 +2749,51 @@ test.describe('Evaluation Plane', () => {
       `/api/evaluation/v1/controlled-pairs/${pairID}/cancel`,
     ])
 
-    await dialog.getByRole('button', { name: 'Cancel pair', exact: true }).click()
+    await dialog.getByRole('button', { name: 'Cancel comparison', exact: true }).click()
     await expect(dialog).toHaveAttribute('aria-busy', 'true')
-    await expect(dialog.getByRole('button', { name: 'Cancelling pair…' })).toBeDisabled()
+    await expect(dialog.getByRole('button', { name: 'Cancelling comparison…' })).toBeDisabled()
     await expect(dialog).toHaveCount(0)
     expect(state.getCancelCount()).toBe(0)
-    await expect(page.getByRole('button', { name: `Inspect ${baseline.name}` })).toContainText(
-      'Controlled pair cancelled',
-    )
-    await expect(page.getByRole('button', { name: `Inspect ${candidate.name}` })).toContainText(
-      'Controlled pair cancelled',
-    )
+    await expect(
+      page
+        .getByRole('button', { name: `Open ${baseline.name} details` })
+        .getByText('Cancelled', { exact: true }),
+    ).toBeVisible()
+    await expect(
+      page
+        .getByRole('button', { name: `Open ${candidate.name} details` })
+        .getByText('Cancelled', { exact: true }),
+    ).toBeVisible()
 
-    const deletePair = page.getByRole('button', {
-      name: `Delete controlled pair ${pairID}`,
-    })
-    await expect(deletePair).toHaveText('Delete pair')
+    const deletePair = page.getByRole('button', { name: 'Delete controlled comparison' })
+    await expect(deletePair).toHaveText('Delete comparison')
     await deletePair.click()
     dialog = page.getByRole('alertdialog')
-    await expect(dialog.getByRole('heading', { name: 'Delete controlled pair?' })).toBeVisible()
+    await expect(
+      dialog.getByRole('heading', { name: 'Delete controlled comparison?' }),
+    ).toBeVisible()
     await expect(dialog).toContainText(
-      'This permanently removes both derived run bundles and their Dashboard history.',
+      'This permanently removes both runs and their reports from Evaluation.',
     )
-    await expect(dialog).toContainText(pairID)
-    const confirmation = dialog.getByRole('textbox', { name: new RegExp(pairID) })
-    await confirmation.fill(pairID)
+    await expect(dialog).not.toContainText(pairID)
+    const confirmation = dialog.getByRole('textbox', {
+      name: /Enter DELETE COMPARISON to confirm/,
+    })
+    await confirmation.fill('DELETE COMPARISON')
     const ledgerRequestsBeforeDelete = state.getLedgerRequestCount()
-    await dialog.getByRole('button', { name: 'Delete pair', exact: true }).click()
+    await dialog.getByRole('button', { name: 'Delete comparison', exact: true }).click()
     await expect(dialog).toHaveAttribute('aria-busy', 'true')
-    await expect(dialog.getByRole('button', { name: 'Deleting pair…' })).toBeDisabled()
+    await expect(dialog.getByRole('button', { name: 'Deleting comparison…' })).toBeDisabled()
     await expect(dialog).toHaveCount(0)
 
     expect(state.controlledPairDeleteRequests).toEqual([
       `/api/evaluation/v1/controlled-pairs/${pairID}`,
     ])
     expect(state.getDeleteCount()).toBe(0)
-    await expect(page.getByRole('button', { name: `Inspect ${baseline.name}` })).toHaveCount(0)
-    await expect(page.getByRole('button', { name: `Inspect ${candidate.name}` })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: `Open ${baseline.name} details` })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: `Open ${candidate.name} details` })).toHaveCount(
+      0,
+    )
     await expect.poll(state.getLedgerRequestCount).toBeGreaterThan(ledgerRequestsBeforeDelete)
     await expect.poll(() => new URL(page.url()).searchParams.get('run')).toBeNull()
   })
@@ -2649,7 +2829,7 @@ test.describe('Evaluation Plane', () => {
       mutationDelayMs: 100,
     })
     await page.goto(`/evaluation?view=runs&run=${candidate.id}`)
-    const cancelPair = page.getByRole('button', { name: `Cancel controlled pair ${pairID}` })
+    const cancelPair = page.getByRole('button', { name: 'Cancel controlled comparison' })
     await expect(cancelPair).toBeVisible()
 
     await page.getByRole('button', { name: 'Refresh evaluation runs' }).click()
@@ -2657,11 +2837,9 @@ test.describe('Evaluation Plane', () => {
       .poll(() => state.runRequests.filter((id) => id === candidate.id).length)
       .toBeGreaterThanOrEqual(1)
     await cancelPair.click()
-    await page.getByRole('alertdialog').getByRole('button', { name: 'Cancel pair' }).click()
+    await page.getByRole('alertdialog').getByRole('button', { name: 'Cancel comparison' }).click()
     await expect.poll(() => state.controlledPairCancelRequests.length).toBe(1)
-    const deletePair = page.getByRole('button', {
-      name: `Delete controlled pair ${pairID}`,
-    })
+    const deletePair = page.getByRole('button', { name: 'Delete controlled comparison' })
     await expect(deletePair).toBeVisible()
 
     await page.waitForTimeout(900)
@@ -2707,28 +2885,29 @@ test.describe('Evaluation Plane', () => {
     await expect(
       page.getByRole('button', { name: `Open report for ${baseline.name}` }),
     ).toBeVisible()
-    await expect(page.getByText('Loading pair controls…')).toBeVisible()
-    await expect(
-      page.getByRole('button', { name: `Cancel controlled pair ${pairID}` }),
-    ).toHaveCount(0)
-    await expect(
-      page.getByRole('button', { name: `Delete controlled pair ${pairID}` }),
-    ).toHaveCount(0)
+    await expect(page.getByText('Loading comparison actions…')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Cancel controlled comparison' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Delete controlled comparison' })).toHaveCount(0)
 
     const pairError = page.getByRole('alert').filter({
-      hasText: 'Controlled-pair controls are unavailable.',
+      has: page.getByText(
+        'Comparison actions could not be loaded. Existing run evidence remains available.',
+        { exact: true },
+      ),
     })
-    await expect(pairError).toContainText('temporary controlled-pair state failure')
-    await expect(
-      page.getByRole('button', { name: `Delete controlled pair ${pairID}` }),
-    ).toHaveCount(0)
-    await pairError.getByRole('button', { name: 'Retry pair controls' }).click()
+    await expect(pairError).toBeVisible()
+    const pairBackendFailure = pairError.getByText('temporary controlled-pair state failure', {
+      exact: true,
+    })
+    await expect(pairBackendFailure).not.toBeVisible()
+    await pairError.locator('details[data-evaluation-technical-details="true"] > summary').click()
+    await expect(pairBackendFailure).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Delete controlled comparison' })).toHaveCount(0)
+    await pairError.getByRole('button', { name: 'Retry comparison actions' }).click()
 
-    const cancelPair = page.getByRole('button', { name: `Cancel controlled pair ${pairID}` })
-    await expect(cancelPair).toHaveText('Cancel pair')
-    await expect(
-      page.getByRole('button', { name: `Delete controlled pair ${pairID}` }),
-    ).toHaveCount(0)
+    const cancelPair = page.getByRole('button', { name: 'Cancel controlled comparison' })
+    await expect(cancelPair).toHaveText('Cancel comparison')
+    await expect(page.getByRole('button', { name: 'Delete controlled comparison' })).toHaveCount(0)
     await expect
       .poll(() => state.controlledPairGetRequests)
       .toEqual([
@@ -2737,7 +2916,7 @@ test.describe('Evaluation Plane', () => {
       ])
 
     await page.getByRole('button', { name: 'Refresh evaluation runs' }).click()
-    await expect(page.getByText('Refreshing pair controls…')).toBeVisible()
+    await expect(page.getByText('Refreshing comparison actions…')).toBeVisible()
     await expect(cancelPair).toBeVisible()
     await expect(cancelPair).toBeDisabled()
     await expect(page.getByText('Loading evaluation run')).toHaveCount(0)
@@ -2753,7 +2932,9 @@ test.describe('Evaluation Plane', () => {
 
     await page.getByRole('button', { name: 'Delete Failed diagnostic' }).click()
     const dialog = page.getByRole('alertdialog')
-    const confirmation = dialog.getByRole('textbox', { name: /Type Failed diagnostic to confirm/ })
+    const confirmation = dialog.getByRole('textbox', {
+      name: /Enter Failed diagnostic to confirm/,
+    })
     const deleteButton = dialog.getByRole('button', { name: 'Delete run' })
     await expect(confirmation).toBeFocused()
     await captureEvaluationSurface(page, 'delete-dialog')
@@ -2775,7 +2956,10 @@ test.describe('Evaluation Plane', () => {
 
     await expect.poll(state.getDeleteCount).toBe(1)
     await expect(dialog).toHaveCount(0)
-    await expect(page.getByRole('button', { name: 'Inspect Failed diagnostic' })).toHaveCount(0)
+    await expect(page.getByRole('tabpanel')).toBeFocused()
+    await expect(page.getByRole('button', { name: 'Open Failed diagnostic details' })).toHaveCount(
+      0,
+    )
   })
 
   test('keeps one SSE subscription and one event across a run refresh', async ({ page }) => {
@@ -2808,8 +2992,8 @@ test.describe('Evaluation Plane', () => {
     await page.goto(`/evaluation?view=runs&run=${EVALUATION_RUN_IDS.live}`)
 
     await expect.poll(state.getEventStreamCount).toBe(1)
-    await expect(page.getByText('Stream unavailable', { exact: true })).toBeVisible()
-    await page.getByRole('button', { name: 'Reconnect stream' }).click()
+    await expect(page.getByText('Updates unavailable', { exact: true })).toBeVisible()
+    await page.getByRole('button', { name: 'Reconnect', exact: true }).click()
     await expect.poll(state.getEventStreamCount).toBe(2)
     await expect(page.getByText('Executing routing track from SSE')).toHaveCount(1)
     await expect(
@@ -2817,9 +3001,32 @@ test.describe('Evaluation Plane', () => {
     ).toHaveCount(0)
   })
 
+  test('offers one clear next step when no comparable candidate exists', async ({ page }) => {
+    const standaloneBaseline = evaluationRun(
+      evaluationRunID(998),
+      'Standalone production baseline',
+      'completed',
+      '2026-08-20T00:00:00Z',
+    )
+    await mockEvaluationPlane(page, [standaloneBaseline])
+    await page.goto('/evaluation?view=compare')
+
+    await expect(page.getByLabel('Comparison candidate', { exact: true })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Compare results' })).toHaveCount(0)
+    const panel = page.getByRole('tabpanel')
+    await expect(panel.locator('[data-evaluation-action="true"]:visible')).toHaveCount(1)
+    await expect(page.getByRole('button', { name: 'Create candidate run' })).toBeVisible()
+    const releaseDecisionSummary = page.locator('details > summary').filter({
+      has: page.getByText('Prepare a release decision', { exact: true }),
+    })
+    const releaseDecision = releaseDecisionSummary.locator('..')
+    await expect(releaseDecision).not.toHaveAttribute('open', '')
+    await expectProductEvaluationLanguage(page)
+  })
+
   const responsiveViewports = [
-    { name: 'mobile-compact', width: 320, height: 568 },
     { name: 'mobile', width: 390, height: 844 },
+    { name: 'tablet-compact', width: 768, height: 1024 },
     { name: 'tablet', width: 1024, height: 768 },
     { name: 'desktop', width: 1440, height: 900 },
   ] as const

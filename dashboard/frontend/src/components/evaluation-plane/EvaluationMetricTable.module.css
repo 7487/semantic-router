@@ -72,8 +72,10 @@
   font-weight: 400;
 }
 
-.metricIdentity code {
-  overflow-wrap: anywhere;
+.metricTechnicalDetails {
+  margin-top: 0.25rem;
+  font-size: 0.68rem;
+  font-weight: 400;
 }
 
 .missingValue {

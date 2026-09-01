@@ -19,24 +19,27 @@ function sameMixtureIdentity(baseline: EvaluationRun, candidate: EvaluationRun):
 
 export function cohortMismatches(baseline: EvaluationRun, candidate: EvaluationRun): string[] {
   const mismatches: string[] = []
-  if (baseline.mode !== candidate.mode) mismatches.push('mode')
-  if (baseline.target_id !== candidate.target_id) mismatches.push('target')
-  if (baseline.change_profile !== candidate.change_profile) mismatches.push('change profile')
-  if (baseline.sample_limit !== candidate.sample_limit) mismatches.push('sample limit')
-  if (baseline.concurrency !== candidate.concurrency) mismatches.push('concurrency')
-  if (baseline.seed !== candidate.seed) mismatches.push('seed')
-  if (!sameMixtureIdentity(baseline, candidate)) mismatches.push('mixture')
+  if (baseline.mode !== candidate.mode) mismatches.push('run type')
+  if (baseline.target_id !== candidate.target_id) mismatches.push('tested Mixture')
+  if (baseline.change_profile !== candidate.change_profile)
+    mismatches.push('change being evaluated')
+  if (baseline.sample_limit !== candidate.sample_limit) mismatches.push('sample size')
+  if (baseline.concurrency !== candidate.concurrency) mismatches.push('parallel request setting')
+  if (baseline.seed !== candidate.seed) mismatches.push('repeatability setting')
+  if (!sameMixtureIdentity(baseline, candidate)) mismatches.push('Mixture version')
   if (!equalEvaluationCapacitySLO(baseline.capacity_slo, candidate.capacity_slo))
-    mismatches.push('capacity SLO')
+    mismatches.push('performance goals')
   if (
     !equalEvaluationCapacityLoadProtocol(
       baseline.capacity_load_protocol,
       candidate.capacity_load_protocol,
     )
   )
-    mismatches.push('capacity load protocol')
-  if (!sameOrderedMembers(baseline.suite_ids, candidate.suite_ids)) mismatches.push('suites')
-  if (!sameOrderedMembers(baseline.track_ids, candidate.track_ids)) mismatches.push('tracks')
+    mismatches.push('load pattern')
+  if (!sameOrderedMembers(baseline.suite_ids, candidate.suite_ids))
+    mismatches.push('benchmark selection')
+  if (!sameOrderedMembers(baseline.track_ids, candidate.track_ids))
+    mismatches.push('evaluation areas')
   return mismatches
 }
 
@@ -55,11 +58,11 @@ export function comparisonCohortMismatches(
 
   const mismatches = cohortMismatches(baseline, candidate)
   if (!hasControlledPairMembership) return mismatches
-  if (!sameControlledPair) return [...mismatches, 'controlled pair lineage']
-  if (baseline.mode !== 'live' || candidate.mode !== 'live') return ['controlled pair mode']
-  if (!baseline.mixture || !candidate.mixture) return ['controlled pair mixture']
-  if (baseline.target_id === candidate.target_id) return ['controlled pair target']
-  return mismatches.filter((mismatch) => mismatch !== 'target')
+  if (!sameControlledPair) return [...mismatches, 'baseline pairing']
+  if (baseline.mode !== 'live' || candidate.mode !== 'live') return ['live run requirement']
+  if (!baseline.mixture || !candidate.mixture) return ['Mixture selection']
+  if (baseline.target_id === candidate.target_id) return ['candidate Mixture']
+  return mismatches.filter((mismatch) => mismatch !== 'tested Mixture')
 }
 
 export function eligibleComparisonCandidates(runs: EvaluationRun[]): EvaluationRun[] {

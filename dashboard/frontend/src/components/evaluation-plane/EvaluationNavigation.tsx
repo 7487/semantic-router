@@ -48,7 +48,7 @@ export default function EvaluationNavigation({ active, onChange }: EvaluationNav
         ref={navigation}
         className={styles.navigation}
         role="tablist"
-        aria-label="Evaluation plane views"
+        aria-label="Evaluation views"
       >
         {VIEWS.map((view, index) => (
           /* Tabs retain their compact, underlined navigation treatment rather than action-button styling. */
@@ -73,33 +73,6 @@ export default function EvaluationNavigation({ active, onChange }: EvaluationNav
           </button>
         ))}
       </div>
-      {activeIndex > 0 ? (
-        /* These are viewport-only tab navigation affordances on narrow screens. */
-        <button
-          type="button"
-          className={`${styles.navigationOverflowHint} ${styles.navigationOverflowHintLeft}`}
-          data-testid="evaluation-navigation-overflow-left"
-          data-evaluation-navigation-overflow="true"
-          aria-label="Previous evaluation section"
-          title={`Go to ${VIEWS[activeIndex - 1].label}`}
-          onClick={() => onChange(VIEWS[activeIndex - 1].id)}
-        >
-          ‹
-        </button>
-      ) : null}
-      {activeIndex < VIEWS.length - 1 ? (
-        <button
-          type="button"
-          className={`${styles.navigationOverflowHint} ${styles.navigationOverflowHintRight}`}
-          data-testid="evaluation-navigation-overflow-right"
-          data-evaluation-navigation-overflow="true"
-          aria-label="Next evaluation section"
-          title={`Go to ${VIEWS[activeIndex + 1].label}`}
-          onClick={() => onChange(VIEWS[activeIndex + 1].id)}
-        >
-          ›
-        </button>
-      ) : null}
     </div>
   )
 }

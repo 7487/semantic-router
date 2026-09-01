@@ -6,15 +6,6 @@ export function targetPresentationLabel(target: TargetPresentationIdentity): str
   return target.name
 }
 
-function shortestUniquePrefixWidth(targetIDs: string[]): number {
-  const maximumWidth = Math.max(...targetIDs.map((targetID) => targetID.length))
-  for (let width = 1; width <= maximumWidth; width += 1) {
-    const prefixes = targetIDs.map((targetID) => targetID.slice(0, width))
-    if (new Set(prefixes).size === targetIDs.length) return width
-  }
-  return maximumWidth
-}
-
 export function targetOptionLabels(
   targets: readonly TargetPresentationIdentity[],
 ): Map<string, string> {
@@ -31,10 +22,12 @@ export function targetOptionLabels(
       labels.set(sameNameTargets[0].id, label)
       continue
     }
-    const prefixWidth = shortestUniquePrefixWidth(sameNameTargets.map((target) => target.id))
-    for (const target of sameNameTargets) {
-      labels.set(target.id, `${label} · #${target.id.slice(0, prefixWidth)}`)
-    }
+    const sortedTargets = [...sameNameTargets].sort((left, right) =>
+      left.id.localeCompare(right.id),
+    )
+    sortedTargets.forEach((target, index) =>
+      labels.set(target.id, `${label} · Option ${index + 1}`),
+    )
   }
   return labels
 }

@@ -8,7 +8,8 @@ import EvaluationReportDiagnostics from './EvaluationReportDiagnostics'
 import EvaluationReportDisclosures from './EvaluationReportDisclosures'
 import EvaluationReportTracks from './EvaluationReportTracks'
 import EvaluationRoutingRecipeReport from './EvaluationRoutingRecipeReport'
-import { evaluationPromotionVerdict } from './evaluationPresentation'
+import { evaluationPromotionVerdict, evaluationResultScopeLabel } from './evaluationPresentation'
+import { changeProfileLabel } from './evaluationRunPresentation'
 import {
   CoverageBar,
   EvaluationTag,
@@ -26,32 +27,31 @@ export default function EvaluationReportView({ report }: { report: EvaluationRep
     <article className={styles.report} aria-labelledby="evaluation-report-title">
       <section className={heroStyles.reportHero}>
         <div className={heroStyles.reportHeroCopy}>
-          <span className={styles.eyebrow}>Evidence report · {report.schema_version}</span>
+          <span className={styles.eyebrow}>Evaluation report</span>
           <h2 id="evaluation-report-title">{report.run.name}</h2>
           <p>{report.run.description || 'No experiment description was recorded.'}</p>
           <div className={heroStyles.heroBadges}>
             <RunStatusBadge status={report.run.status} />
             <GateVerdictBadge verdict={evaluationPromotionVerdict(report)} disposition="required" />
-            <EvaluationTag tone="info">{report.run.evidence_level} evidence</EvaluationTag>
-            <EvaluationTag>{report.run.mode}</EvaluationTag>
-            <EvaluationTag>{report.run.change_profile}</EvaluationTag>
-            <EvaluationTag mono>{report.attestation_revision}</EvaluationTag>
+            <EvaluationTag tone="info">
+              {evaluationResultScopeLabel(report.run.evidence_level)}
+            </EvaluationTag>
+            <EvaluationTag>{report.run.mode === 'live' ? 'Live run' : 'Replay'}</EvaluationTag>
+            <EvaluationTag>{changeProfileLabel(report.run.change_profile)}</EvaluationTag>
           </div>
         </div>
         <div>
           <CoverageBar coverage={report.summary.coverage} />
-          <p className={styles.scopeCopy}>Server-attested coverage.</p>
+          <p className={styles.scopeCopy}>Measured coverage for this run.</p>
         </div>
       </section>
 
       {isDiagnostic ? (
         <div className={heroStyles.claimNotice} role="status">
-          <strong>Promotion summary withheld — server-attested diagnostic E0</strong>
+          <strong>Diagnostic run — no release recommendation</strong>
           <span>
-            Independently reduced diagnostics below remain valid for debugging. Deterministic
-            parsing of an imported export proves its normalized bytes, not that upstream benchmark
-            code generated them. Without a server-owned native-run receipt, imported evidence cannot
-            qualify a release gate or promotion claim.
+            The results below validate the evaluation setup and help diagnose behavior. They do not
+            establish the controlled or live outcomes needed for a release decision.
           </span>
         </div>
       ) : null}
@@ -72,8 +72,8 @@ export default function EvaluationReportView({ report }: { report: EvaluationRep
             <span className={styles.eyebrow}>Measured outcomes</span>
             <h3 id="report-metrics-title">Metric explorer</h3>
             <p>
-              Server-reduced {report.run.evidence_level} metrics are identified explicitly; every
-              other worker-derived aggregate remains inspectable as diagnostic evidence.
+              Verified headline results are identified explicitly. Supporting diagnostics remain
+              available for investigation without being treated as release evidence.
             </p>
           </div>
           <span>{report.metrics.length} aggregates</span>
@@ -86,10 +86,7 @@ export default function EvaluationReportView({ report }: { report: EvaluationRep
           <div>
             <span className={styles.eyebrow}>Verified artifacts</span>
             <h3 id="report-diagnostics-title">Execution diagnostics</h3>
-            <p>
-              Server-attested outcome accounting and bounded capacity observations load
-              independently.
-            </p>
+            <p>Outcome accounting and capacity observations load independently.</p>
           </div>
         </div>
         <EvaluationReportDiagnostics metrics={report.metrics} {...diagnostics} />

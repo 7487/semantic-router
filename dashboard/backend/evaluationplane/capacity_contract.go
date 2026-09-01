@@ -111,24 +111,6 @@ func capacityLoadRequestBudget(protocol CapacityLoadProtocol) int64 {
 	return warmup + measured
 }
 
-func defaultCapacityLoadProtocol(concurrency int) *CapacityLoadProtocol {
-	levels, err := capacityConcurrencyLevels(concurrency)
-	if err != nil {
-		return nil
-	}
-	return &CapacityLoadProtocol{
-		SchemaVersion:                    SchemaVersion,
-		Kind:                             capacityLoadKind,
-		ConcurrencyLevels:                levels,
-		WarmupRequestMultiplier:          minimumCapacityWarmupMultiplier,
-		MeasurementRequestsPerRepetition: minimumCapacityMeasurementRequests,
-		RepetitionsPerLevel:              minimumCapacityRepetitions,
-		ConfidenceLevel:                  capacityLoadConfidence,
-		MaxThroughputCV:                  maximumCapacityStabilityCV,
-		MaxLatencyP95CV:                  maximumCapacityStabilityCV,
-	}
-}
-
 func positiveFinite(value float64) bool {
 	return !math.IsNaN(value) && !math.IsInf(value, 0) && value > 0
 }

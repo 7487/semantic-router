@@ -95,7 +95,10 @@ CATALOG_TRACKS = (
     CatalogTrack(
         id="routing",
         name="Routing",
-        description="Recipe decisions, coverage, abstention, fallback, and oracle regret.",
+        description=(
+            "Decision quality, coverage, abstention, fallbacks, and missed best-model "
+            "opportunities."
+        ),
         modes=("replay", "live"),
         metrics=static_metric_ids_for_track("routing"),
         evidence_levels=("E0", "E3", "E4"),
@@ -103,25 +106,31 @@ CATALOG_TRACKS = (
     CatalogTrack(
         id="model_pool",
         name="Model pool",
-        description="Arm quality, complementarity, unique wins, and pool oracle quality.",
+        description=(
+            "Quality and reliability of each model, complementary strengths, unique "
+            "wins, and the best possible pool outcome."
+        ),
         modes=("replay", "live"),
         metrics=static_metric_ids_for_track("model_pool"),
         evidence_levels=("E0", "E4"),
     ),
     CatalogTrack(
         id="joint",
-        name="Routing + pool",
-        description="Realized system utility, oracle regret, latency, reliability, and cost.",
+        name="Routing and model pool",
+        description=(
+            "End-to-end quality, reliability, latency, and cost, including the gap "
+            "from the best available model."
+        ),
         modes=("replay", "live"),
         metrics=static_metric_ids_for_track("joint"),
         evidence_levels=("E0", "E5"),
     ),
     CatalogTrack(
         id="agentic",
-        name="Agentic",
+        name="Agent tasks",
         description=(
-            "Task quality, trajectory and explicit tool-policy integrity, privacy, complete cost, "
-            "and separately qualified recovery continuity."
+            "Task completion, tool-use policy, state and privacy, recovery from failures, "
+            "latency, and cost."
         ),
         modes=("replay", "live"),
         metrics=static_metric_ids_for_track("agentic"),
@@ -130,7 +139,10 @@ CATALOG_TRACKS = (
     CatalogTrack(
         id="multimodal",
         name="Multimodal",
-        description="Capability-aware routing, grounding quality, and privacy signals.",
+        description=(
+            "Input capability matching, grounded response quality, reliability, and "
+            "privacy for text and non-text requests."
+        ),
         modes=("replay", "live"),
         metrics=static_metric_ids_for_track("multimodal"),
         evidence_levels=("E0", "E4", "E5"),
@@ -138,7 +150,9 @@ CATALOG_TRACKS = (
     CatalogTrack(
         id="preference",
         name="Preference",
-        description="Offline preference agreement and propensity-qualified online evidence.",
+        description=(
+            "Offline preference agreement and statistically valid online preference outcomes."
+        ),
         modes=("replay", "live"),
         metrics=static_metric_ids_for_track("preference"),
         evidence_levels=("E0", "E4", "E5"),
@@ -146,7 +160,9 @@ CATALOG_TRACKS = (
     CatalogTrack(
         id="safety",
         name="Safety",
-        description="Policy adherence, blocking correctness, privacy, and unsafe regressions.",
+        description=(
+            "Policy adherence, correct blocking behavior, privacy, and unsafe regressions."
+        ),
         modes=("replay", "live"),
         metrics=static_metric_ids_for_track("safety"),
         evidence_levels=("E0", "E3", "E4"),
@@ -155,8 +171,8 @@ CATALOG_TRACKS = (
         id="capacity",
         name="Capacity",
         description=(
-            "Repeated closed-loop throughput, tail latency, statistical error "
-            "bounds, stability, SLO headroom, and measurement cost."
+            "Throughput, tail latency, error bounds, stability, service-objective "
+            "headroom, and test cost across repeated load levels."
         ),
         modes=("replay", "live"),
         metrics=static_metric_ids_for_track("capacity"),

@@ -1,4 +1,5 @@
 import type { EvaluationChangeProfileId, EvaluationRun } from '../../types/evaluationPlane'
+import { evaluationResultScopeLabel } from './evaluationPresentation'
 
 type RunOptionIdentity = Pick<
   EvaluationRun,
@@ -6,16 +7,18 @@ type RunOptionIdentity = Pick<
 >
 
 const CHANGE_PROFILE_LABELS: Record<EvaluationChangeProfileId, string> = {
-  schema_adapter: 'Schema adapter',
+  schema_adapter: 'Schema and integration',
   recipe: 'Routing recipe',
-  selector: 'Selector',
+  selector: 'Model selection',
   model_pool: 'Model pool',
-  runtime_capacity: 'Runtime capacity',
-  agent_multimodal: 'Agent + multimodal',
-  online_adaptation: 'Online adaptation',
+  runtime_capacity: 'Runtime and capacity',
+  agent_multimodal: 'Agents and multimodal',
+  online_adaptation: 'Online learning and feedback',
 }
 
 type RunCohortIdentity = Pick<EvaluationRun, 'mixture'>
+type RunTargetIdentity = Pick<EvaluationRun, 'target_id' | 'mixture'>
+type RunWorkloadIdentity = Pick<EvaluationRun, 'sample_limit' | 'concurrency'>
 
 export function changeProfileLabel(profile: EvaluationChangeProfileId): string {
   return CHANGE_PROFILE_LABELS[profile]
@@ -29,36 +32,55 @@ export function runCohortTargetLabel(run: RunCohortIdentity): string {
   return run.mixture?.entrypoint_model || 'Frozen deployment snapshot'
 }
 
-function compactRunID(runID: string): string {
-  return runID.replace(/-/g, '')
+export function runEvaluationTargetLabel(run: RunTargetIdentity): string {
+  if (run.mixture?.entrypoint_model) return run.mixture.entrypoint_model
+  if (run.target_id === 'fixture') return 'Built-in evaluation sample'
+  if (run.target_id === 'benchmark-source') return 'Imported benchmark results'
+  return 'Saved evaluation target'
 }
 
-function uniqueSuffixWidth(runIDs: string[]): number {
-  const compactIDs = [...new Set(runIDs)].map(compactRunID)
-  const maximumWidth = Math.max(0, ...compactIDs.map((id) => id.length))
-  let width = Math.min(8, maximumWidth)
-  while (width < maximumWidth) {
-    const suffixes = compactIDs.map((id) => id.slice(-width))
-    if (new Set(suffixes).size === suffixes.length) break
-    width = Math.min(width + 4, maximumWidth)
-  }
-  return width
+export function runWorkloadLabel(run: RunWorkloadIdentity): string {
+  const cases = `${run.sample_limit} ${run.sample_limit === 1 ? 'case' : 'cases'}`
+  const concurrency = `${run.concurrency} concurrent ${run.concurrency === 1 ? 'request' : 'requests'}`
+  return `${cases} · ${concurrency}`
+}
+
+function runNameLabels<T extends Pick<EvaluationRun, 'id' | 'name'>>(runs: readonly T[]) {
+  const totals = new Map<string, number>()
+  const seen = new Map<string, number>()
+  runs.forEach((run) => totals.set(run.name, (totals.get(run.name) || 0) + 1))
+  return new Map(
+    runs.map((run) => {
+      const occurrence = (seen.get(run.name) || 0) + 1
+      seen.set(run.name, occurrence)
+      return [run.id, totals.get(run.name) === 1 ? run.name : `${run.name} · Option ${occurrence}`]
+    }),
+  )
+}
+
+function distinctRuns<T extends Pick<EvaluationRun, 'id'>>(runs: readonly T[]): T[] {
+  return [...new Map(runs.map((run) => [run.id, run])).values()]
 }
 
 export function runOptionLabels(runs: readonly RunOptionIdentity[]): Map<string, string> {
-  const distinctRuns = [...new Map(runs.map((run) => [run.id, run])).values()]
-  const suffixWidth = uniqueSuffixWidth(distinctRuns.map((run) => run.id))
+  const distinct = distinctRuns(runs)
+  const names = runNameLabels(distinct)
   return new Map(
-    distinctRuns.map((run) => [
+    distinct.map((run) => [
       run.id,
       [
-        run.name,
-        `#${compactRunID(run.id).slice(-suffixWidth)}`,
+        names.get(run.id),
         changeProfileLabel(run.change_profile),
         run.mode === 'live' ? 'Live' : 'Replay',
-        run.evidence_level,
-        `n=${run.sample_limit}`,
+        evaluationResultScopeLabel(run.evidence_level),
+        `${run.sample_limit} ${run.sample_limit === 1 ? 'case' : 'cases'}`,
       ].join(' · '),
     ]),
   )
+}
+
+export function comparisonRunOptionLabels(
+  runs: readonly Pick<EvaluationRun, 'id' | 'name'>[],
+): Map<string, string> {
+  return runNameLabels(distinctRuns(runs))
 }

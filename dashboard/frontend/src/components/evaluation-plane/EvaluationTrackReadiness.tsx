@@ -1,10 +1,12 @@
 import type { EvaluationCatalog } from '../../types/evaluationPlane'
 import type { EvaluationReport } from '../../types/evaluationReport'
-import { EVALUATION_TRACK_IDS, TRACK_PRESENTATION } from '../../types/evaluationPlane'
+import { EVALUATION_TRACK_IDS } from '../../types/evaluationPlane'
+import { evaluationResultScopeLabel } from './evaluationPresentation'
 import EvaluationMethodReadiness from './EvaluationMethodReadiness'
 import { RunStatusBadge } from './EvaluationPrimitives'
+import { TRACK_PRESENTATION } from './evaluationTrackPresentation'
 import styles from './EvaluationPlane.module.css'
-import tableStyles from './EvaluationTable.module.css'
+import tableStyles from './EvaluationReportTable.module.css'
 
 interface EvaluationTrackReadinessProps {
   catalog: EvaluationCatalog
@@ -20,32 +22,32 @@ export default function EvaluationTrackReadiness({
       <section className={styles.surface} aria-labelledby="track-readiness-title">
         <header className={styles.surfaceHeader}>
           <div>
-            <span className={styles.eyebrow}>Coverage and qualification</span>
-            <h2 id="track-readiness-title">Track readiness</h2>
+            <span className={styles.eyebrow}>Evaluation coverage</span>
+            <h2 id="track-readiness-title">What each evaluation area can measure</h2>
             <p>
-              Contract-supported evidence classes and the latest sealed observation are separate
-              states. The active executor determines which class a run can actually earn.
+              Available evaluation depth and the latest measured result are shown separately. The
+              final scope depends on how the experiment runs and which data completes.
             </p>
           </div>
-          <div className={styles.catalogFacts} aria-label="Catalog contracts">
-            <span>Schema {catalog.schema_version}</span>
-            <span>{catalog.gate_contract_version}</span>
+          <div className={styles.catalogFacts} aria-label="Evaluation catalog summary">
+            <span>{catalog.tracks.length} evaluation areas</span>
+            <span>{catalog.suites.length} benchmarks</span>
           </div>
         </header>
         <div
           className={`${tableStyles.tableScroll} ${styles.catalogTableFrame}`}
           role="region"
           tabIndex={0}
-          aria-label="Scrollable evaluation track readiness"
+          aria-label="Scrollable evaluation area readiness"
         >
-          <table className={tableStyles.readinessTable}>
-            <caption>Evaluation track contract and latest evidence readiness</caption>
+          <table className={`${tableStyles.table} ${tableStyles.tableReadiness}`}>
+            <caption>Available measurements and latest results by evaluation area</caption>
             <thead>
               <tr>
-                <th scope="col">Track</th>
-                <th scope="col">Contract</th>
-                <th scope="col">Latest observation</th>
-                <th scope="col">Contract levels</th>
+                <th scope="col">Evaluation area</th>
+                <th scope="col">Metrics</th>
+                <th scope="col">Latest result</th>
+                <th scope="col">Available validation depth</th>
               </tr>
             </thead>
             <tbody>
@@ -58,24 +60,23 @@ export default function EvaluationTrackReadiness({
                       <strong>{TRACK_PRESENTATION[trackID].label}</strong>
                       <span>{contract.description}</span>
                     </th>
-                    <td>{contract.metrics.length} declared metrics</td>
+                    <td>{contract.metrics.length} metrics</td>
                     <td>
                       {observation ? (
                         <span className={tableStyles.inlineStatus}>
                           <RunStatusBadge status={observation.status} />
-                          {observation.evidence_level} · {observation.coverage.evaluated}/
-                          {observation.coverage.total} observations ·{' '}
+                          {evaluationResultScopeLabel(observation.evidence_level)} ·{' '}
+                          {observation.coverage.evaluated}/{observation.coverage.total} cases ·{' '}
                           {Math.round(observation.coverage.fraction * 100)}%
                           {observation.coverage.unavailable
                             ? ` · ${observation.coverage.unavailable} not measured`
                             : ''}
-                          {' · server-attested'}
                         </span>
                       ) : (
-                        'Not collected in latest run · select this track in a new experiment'
+                        'Not included in the latest run · select this area in a new experiment'
                       )}
                     </td>
-                    <td>{contract.evidence_levels.join(' · ')}</td>
+                    <td>{contract.evidence_levels.map(evaluationResultScopeLabel).join(' · ')}</td>
                   </tr>
                 )
               })}

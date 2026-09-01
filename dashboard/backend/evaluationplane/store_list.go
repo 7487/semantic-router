@@ -164,7 +164,3 @@ func decodeRunListCursor(raw string) (*runListCursor, error) {
 	}
 	return &cursor, nil
 }
-
-func (s *Store) activeRunListWarnings() []runListWarning {
-	return s.runIndex.activeWarnings()
-}

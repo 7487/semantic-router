@@ -1,13 +1,11 @@
-import type { EvaluationCapacitySLOInput } from './useEvaluationExperimentForm'
-import type { EvaluationExperimentFormModel } from './useEvaluationExperimentForm'
 import { EvaluationActionButton, EvaluationTag } from './EvaluationPrimitives'
-import EvaluationExperimentSectionHeading from './EvaluationExperimentSectionHeading'
 import styles from './EvaluationCapacitySLO.module.css'
+import EvaluationExperimentSectionHeading from './EvaluationExperimentSectionHeading'
 import sectionStyles from './EvaluationExperimentSection.module.css'
-
-interface EvaluationExperimentCapacitySLOProps {
-  form: EvaluationExperimentFormModel
-}
+import type {
+  EvaluationCapacitySLOInput,
+  EvaluationExperimentFormModel,
+} from './useEvaluationExperimentForm'
 
 interface CapacitySLOPreset {
   id: string
@@ -52,178 +50,202 @@ const CAPACITY_SLO_PRESETS: CapacitySLOPreset[] = [
   },
 ]
 
+function CapacityProtocolSummary({ form }: { form: EvaluationExperimentFormModel }) {
+  if (!form.capacityLoadProtocol) return null
+  const protocol = form.capacityLoadProtocol
+  return (
+    <dl className={styles.protocolSummary} aria-label="Recorded capacity load plan">
+      <div>
+        <dt>Concurrency ladder</dt>
+        <dd>{protocol.concurrency_levels.join(' → ')} concurrent requests</dd>
+      </div>
+      <div>
+        <dt>Warmup</dt>
+        <dd>{protocol.warmup_request_multiplier} × concurrency requests</dd>
+      </div>
+      <div>
+        <dt>Measurement</dt>
+        <dd>
+          {protocol.measurement_requests_per_repetition} requests × {protocol.repetitions_per_level}{' '}
+          repetitions
+        </dd>
+      </div>
+      <div>
+        <dt>Confidence / stability</dt>
+        <dd>
+          {(protocol.confidence_level * 100).toFixed(0)}% · throughput and p95 variation ≤{' '}
+          {(protocol.max_throughput_cv * 100).toFixed(0)}%
+        </dd>
+      </div>
+    </dl>
+  )
+}
+
+function CapacityPresets({ form }: { form: EvaluationExperimentFormModel }) {
+  if (form.baselineLocked) return null
+  return (
+    <div className={styles.sloPresets} role="group" aria-label="Capacity starting points">
+      <div>
+        <span>Optional starting points</span>
+        <small>Choose explicitly, then review every value against your service objective.</small>
+      </div>
+      {CAPACITY_SLO_PRESETS.map((preset) => (
+        <EvaluationActionButton
+          key={preset.id}
+          type="button"
+          compact
+          variant="quiet"
+          title={preset.description}
+          aria-label={`${preset.label}: ${preset.description}`}
+          onClick={() =>
+            form.applyCapacitySLOPreset({
+              requiredConcurrency: String(form.concurrency),
+              ...preset.values,
+            })
+          }
+        >
+          {preset.label}
+        </EvaluationActionButton>
+      ))}
+    </div>
+  )
+}
+
+function RequiredConcurrencyField({ form }: { form: EvaluationExperimentFormModel }) {
+  return (
+    <label>
+      <span>Required concurrency</span>
+      <input
+        type="number"
+        min={1}
+        max={form.concurrency}
+        step={1}
+        required
+        value={form.capacitySLOInput.requiredConcurrency}
+        disabled={form.baselineLocked}
+        onChange={(event) => form.setCapacitySLOField('requiredConcurrency', event.target.value)}
+      />
+      <small>The qualified operating range must reach at least this concurrency.</small>
+    </label>
+  )
+}
+
+type CapacityUnitFieldKey = Exclude<keyof EvaluationCapacitySLOInput, 'requiredConcurrency'>
+
+interface CapacityUnitFieldProps {
+  form: EvaluationExperimentFormModel
+  field: CapacityUnitFieldKey
+  label: string
+  min: string | number
+  max?: string | number
+  step: string | number
+  unit: string
+  help: string
+}
+
+function CapacityUnitField({
+  form,
+  field,
+  label,
+  min,
+  max,
+  step,
+  unit,
+  help,
+}: CapacityUnitFieldProps) {
+  return (
+    <label>
+      <span>{label}</span>
+      <div className={styles.unitInput}>
+        <input
+          type="number"
+          min={min}
+          max={max}
+          step={step}
+          required
+          value={form.capacitySLOInput[field]}
+          disabled={form.baselineLocked}
+          onChange={(event) => form.setCapacitySLOField(field, event.target.value)}
+        />
+        <span>{unit}</span>
+      </div>
+      <small>{help}</small>
+    </label>
+  )
+}
+
+function CapacitySLOFields({ form }: { form: EvaluationExperimentFormModel }) {
+  return (
+    <div className={styles.sloGrid}>
+      <RequiredConcurrencyField form={form} />
+      <CapacityUnitField
+        form={form}
+        field="maxLatencyP95MS"
+        label="Maximum p95 latency"
+        min="0.1"
+        step="0.1"
+        unit="ms"
+        help="Measured independently at every concurrency level."
+      />
+      <CapacityUnitField
+        form={form}
+        field="maxErrorRate"
+        label="Maximum error rate"
+        min={0}
+        max="0.999999"
+        step="0.001"
+        unit="ratio"
+        help="Use 0.01 for a one-percent request error budget."
+      />
+      <CapacityUnitField
+        form={form}
+        field="minThroughputRPS"
+        label="Minimum throughput"
+        min="0.1"
+        step="0.1"
+        unit="req/s"
+        help="Applies at and above the required concurrency."
+      />
+      <CapacityUnitField
+        form={form}
+        field="minThroughputScalingEfficiency"
+        label="Minimum scaling efficiency"
+        min="0.01"
+        max={1}
+        step="0.01"
+        unit="ratio"
+        help="The selected load plan defines how scaling efficiency is measured."
+      />
+    </div>
+  )
+}
+
 export default function EvaluationExperimentCapacitySLO({
   form,
-}: EvaluationExperimentCapacitySLOProps) {
+}: {
+  form: EvaluationExperimentFormModel
+}) {
   if (!form.capacitySLOActive) return null
-
-  const applyPreset = (preset: CapacitySLOPreset) => {
-    form.applyCapacitySLOPreset({
-      requiredConcurrency: String(form.concurrency),
-      ...preset.values,
-    })
-  }
-
   return (
     <section className={`${sectionStyles.formSection} ${styles.sloSection}`}>
       <div className={styles.sloHeadingRow}>
         <EvaluationExperimentSectionHeading
           index="05"
           title="Capacity service objective"
-          description="Freeze the service objective that G7 must prove from server-attested live load observations."
+          description="Define the live capacity thresholds that this deployment must satisfy under a controlled load test."
         />
-        <EvaluationTag tone="info" mono>
-          Required for live capacity
-        </EvaluationTag>
+        <EvaluationTag tone="info">Required for live capacity</EvaluationTag>
       </div>
-
       <div className={styles.sloExplanation}>
         <strong>No inferred pass criteria</strong>
         <span>
-          The server evaluates every declared SLO bound from the frozen load protocol. Missing or
-          unstable measurements cannot qualify the operating point.
+          Every service objective is evaluated under the recorded load plan. Missing or unstable
+          measurements cannot qualify the operating point.
         </span>
       </div>
-
-      {form.capacityLoadProtocol ? (
-        <dl className={styles.protocolSummary} aria-label="Frozen capacity load protocol">
-          <div>
-            <dt>Concurrency ladder</dt>
-            <dd>
-              {form.capacityLoadProtocol.concurrency_levels.map((level) => `c${level}`).join(' → ')}
-            </dd>
-          </div>
-          <div>
-            <dt>Warmup</dt>
-            <dd>{form.capacityLoadProtocol.warmup_request_multiplier} × concurrency requests</dd>
-          </div>
-          <div>
-            <dt>Measurement</dt>
-            <dd>
-              {form.capacityLoadProtocol.measurement_requests_per_repetition} requests ×{' '}
-              {form.capacityLoadProtocol.repetitions_per_level} repetitions
-            </dd>
-          </div>
-          <div>
-            <dt>Confidence / stability</dt>
-            <dd>
-              {(form.capacityLoadProtocol.confidence_level * 100).toFixed(0)}% · throughput and p95
-              CV ≤ {(form.capacityLoadProtocol.max_throughput_cv * 100).toFixed(0)}%
-            </dd>
-          </div>
-        </dl>
-      ) : null}
-
-      {!form.baselineLocked ? (
-        <div className={styles.sloPresets} aria-label="Capacity SLO starting points">
-          <div>
-            <span>Optional starting points</span>
-            <small>
-              Choose explicitly, then review every value against your service objective.
-            </small>
-          </div>
-          {CAPACITY_SLO_PRESETS.map((preset) => (
-            <EvaluationActionButton
-              key={preset.id}
-              type="button"
-              compact
-              variant="quiet"
-              title={preset.description}
-              aria-label={`${preset.label}: ${preset.description}`}
-              onClick={() => applyPreset(preset)}
-            >
-              {preset.label}
-            </EvaluationActionButton>
-          ))}
-        </div>
-      ) : null}
-
-      <div className={styles.sloGrid}>
-        <label>
-          <span>Required concurrency</span>
-          <input
-            type="number"
-            min={1}
-            max={form.concurrency}
-            step={1}
-            required
-            value={form.capacitySLOInput.requiredConcurrency}
-            disabled={form.baselineLocked}
-            onChange={(event) =>
-              form.setCapacitySLOField('requiredConcurrency', event.target.value)
-            }
-          />
-          <small>G7 requires the qualified envelope to reach at least this level.</small>
-        </label>
-        <label>
-          <span>Maximum p95 latency</span>
-          <div className={styles.unitInput}>
-            <input
-              type="number"
-              min="0.1"
-              step="0.1"
-              required
-              value={form.capacitySLOInput.maxLatencyP95MS}
-              disabled={form.baselineLocked}
-              onChange={(event) => form.setCapacitySLOField('maxLatencyP95MS', event.target.value)}
-            />
-            <span>ms</span>
-          </div>
-          <small>Measured independently at every concurrency level.</small>
-        </label>
-        <label>
-          <span>Maximum error rate</span>
-          <div className={styles.unitInput}>
-            <input
-              type="number"
-              min={0}
-              max="0.999999"
-              step="0.001"
-              required
-              value={form.capacitySLOInput.maxErrorRate}
-              disabled={form.baselineLocked}
-              onChange={(event) => form.setCapacitySLOField('maxErrorRate', event.target.value)}
-            />
-            <span>ratio</span>
-          </div>
-          <small>Use 0.01 for a one-percent request error budget.</small>
-        </label>
-        <label>
-          <span>Minimum throughput</span>
-          <div className={styles.unitInput}>
-            <input
-              type="number"
-              min="0.1"
-              step="0.1"
-              required
-              value={form.capacitySLOInput.minThroughputRPS}
-              disabled={form.baselineLocked}
-              onChange={(event) => form.setCapacitySLOField('minThroughputRPS', event.target.value)}
-            />
-            <span>req/s</span>
-          </div>
-          <small>Applies at and above the required concurrency.</small>
-        </label>
-        <label>
-          <span>Minimum scaling efficiency</span>
-          <div className={styles.unitInput}>
-            <input
-              type="number"
-              min="0.01"
-              max={1}
-              step="0.01"
-              required
-              value={form.capacitySLOInput.minThroughputScalingEfficiency}
-              disabled={form.baselineLocked}
-              onChange={(event) =>
-                form.setCapacitySLOField('minThroughputScalingEfficiency', event.target.value)
-              }
-            />
-            <span>ratio</span>
-          </div>
-          <small>The frozen protocol defines how scaling efficiency is measured.</small>
-        </label>
-      </div>
+      <CapacityProtocolSummary form={form} />
+      <CapacityPresets form={form} />
+      <CapacitySLOFields form={form} />
     </section>
   )
 }

@@ -18,11 +18,11 @@ export default function EvaluationExperimentBudget({
       <EvaluationExperimentSectionHeading
         index={form.capacitySLOActive ? '06' : '05'}
         title="Budget and reproducibility"
-        description="Bound execution and pin the deterministic seed."
+        description="Bound execution and keep repeated runs comparable."
       />
       <div className={styles.numericGrid}>
         <label>
-          Sample limit
+          Maximum cases
           <input
             type="number"
             min={1}
@@ -34,7 +34,7 @@ export default function EvaluationExperimentBudget({
           />
         </label>
         <label>
-          <span>Concurrency</span>
+          <span>Parallel requests</span>
           <input
             type="number"
             min={form.capacitySLOActive ? 2 : 1}
@@ -49,7 +49,7 @@ export default function EvaluationExperimentBudget({
           ) : null}
         </label>
         <label>
-          Seed
+          Repeatability key
           <input
             type="number"
             min={0}
@@ -59,6 +59,7 @@ export default function EvaluationExperimentBudget({
             disabled={form.baselineLocked}
             onChange={(event) => form.setSeed(Number(event.target.value))}
           />
+          <small>Keep this value unchanged when comparing two runs.</small>
         </label>
       </div>
       <label className={styles.autoStart}>
@@ -73,7 +74,7 @@ export default function EvaluationExperimentBudget({
           <small>
             {canAutoStart
               ? 'Create the snapshot and enqueue execution.'
-              : 'Requires evaluation.run permission.'}
+              : "You don't have permission to start evaluations."}
           </small>
         </span>
       </label>

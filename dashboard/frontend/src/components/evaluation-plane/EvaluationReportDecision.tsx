@@ -1,8 +1,10 @@
 import type { EvaluationReport } from '../../types/evaluationReport'
-import { TRACK_PRESENTATION } from '../../types/evaluationPlane'
 import EvaluationGateList from './EvaluationGateList'
+import { evaluationMetricLabel } from './evaluationMetricPresentation'
+import { TRACK_PRESENTATION } from './evaluationTrackPresentation'
 import {
   evaluationPromotionVerdict,
+  evaluationResultScopeLabel,
   formatMetric,
   selectHeadlineMetrics,
 } from './evaluationPresentation'
@@ -27,17 +29,17 @@ export default function EvaluationReportDecision({ report }: { report: Evaluatio
       <section className={layoutStyles.section} aria-labelledby="report-decision-title">
         <div className={layoutStyles.sectionHeader}>
           <div>
-            <span className={layoutStyles.eyebrow}>Decision boundary</span>
+            <span className={layoutStyles.eyebrow}>Release readiness</span>
             <h3 id="report-decision-title">
               {isDiagnostic
-                ? 'Diagnostic evidence only'
+                ? 'Diagnostic result only'
                 : requiredBlockers.length
-                  ? 'Promotion needs attention'
-                  : 'Required gates satisfied'}
+                  ? 'Not ready to release'
+                  : 'Ready for release'}
             </h3>
             <p>
-              {`${requiredPassed}/${requiredGates.length} required gates passed · ${requiredFailed} blocked · ${requiredUnavailable} need evidence`}
-              {isDiagnostic ? ' · E0 cannot authorize promotion' : ''}
+              {`${requiredPassed}/${requiredGates.length} required checks passed · ${requiredFailed} blocked · ${requiredUnavailable} incomplete`}
+              {isDiagnostic ? ' · diagnostic runs do not support a release decision' : ''}
             </p>
           </div>
           <GateVerdictBadge verdict={promotionVerdict} disposition="required" />
@@ -46,10 +48,10 @@ export default function EvaluationReportDecision({ report }: { report: Evaluatio
           <dl className={styles.headlineStrip}>
             {headlines.map((metric) => (
               <div key={`${metric.track_id || 'system'}-${metric.id}`}>
-                <dt>{metric.name}</dt>
+                <dt>{evaluationMetricLabel(metric)}</dt>
                 <dd>{formatMetric(metric)}</dd>
                 <span>
-                  Server-reduced {report.run.evidence_level} ·{' '}
+                  {evaluationResultScopeLabel(report.run.evidence_level)} ·{' '}
                   {metric.track_id ? TRACK_PRESENTATION[metric.track_id].label : 'System'}
                 </span>
               </div>
@@ -58,7 +60,7 @@ export default function EvaluationReportDecision({ report }: { report: Evaluatio
         ) : (
           <p className={layoutStyles.empty}>
             {isDiagnostic
-              ? 'No independently reduced diagnostic headline applies to this run scope; inspect the metric explorer for the complete E0 observations.'
+              ? 'No verified headline applies to this diagnostic run. Open the metric explorer for all supporting observations.'
               : 'No measured headline aggregate applies to this run scope.'}
           </p>
         )}
@@ -68,11 +70,11 @@ export default function EvaluationReportDecision({ report }: { report: Evaluatio
         <section className={layoutStyles.section} aria-labelledby="report-blockers-title">
           <div className={layoutStyles.sectionHeader}>
             <div>
-              <span className={layoutStyles.eyebrow}>Next evidence required</span>
-              <h3 id="report-blockers-title">Required blockers</h3>
-              <p>Specific rationale is shown first; generic gate descriptions remain secondary.</p>
+              <span className={layoutStyles.eyebrow}>What needs attention</span>
+              <h3 id="report-blockers-title">Incomplete release checks</h3>
+              <p>Each check explains the result and what is needed before it can pass.</p>
             </div>
-            <span>{requiredBlockers.length} blockers</span>
+            <span>{requiredBlockers.length} checks</span>
           </div>
           <EvaluationGateList gates={requiredBlockers} />
         </section>

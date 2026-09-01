@@ -1,11 +1,12 @@
 import styles from './ChatComponent.module.css'
+import type { PlaygroundErrorPresentation } from './playgroundErrorPresentation'
 import type { PlaygroundRoutingModelStatus } from './usePlaygroundRoutingModel'
 
 interface ChatComponentErrorsProps {
   onDismissError: () => void
   onRetryRoutingModelDiscovery: () => void
   routingModelStatus: PlaygroundRoutingModelStatus
-  visibleError: string | null
+  visibleError: PlaygroundErrorPresentation | null
 }
 
 export default function ChatComponentErrors({
@@ -14,27 +15,47 @@ export default function ChatComponentErrors({
   routingModelStatus,
   visibleError,
 }: ChatComponentErrorsProps) {
-  if (routingModelStatus === 'error' && !visibleError) {
-    return (
-      <div className={styles.error} role="alert">
-        <span className={styles.errorIcon}>⚠️</span>
-        <span>The automatic routing model is unavailable.</span>
-        <button type="button" className={styles.errorAction} onClick={onRetryRoutingModelDiscovery}>
-          Retry discovery
-        </button>
-      </div>
-    )
-  }
-
-  if (!visibleError) return null
+  const routingModelUnavailable = routingModelStatus === 'error' && !visibleError
+  if (!routingModelUnavailable && !visibleError) return null
 
   return (
-    <div className={styles.error}>
-      <span className={styles.errorIcon}>⚠️</span>
-      <span>{visibleError}</span>
-      <button className={styles.errorDismiss} onClick={onDismissError}>
-        ×
-      </button>
+    <div className={styles.errorRegion} data-testid="playground-error-region">
+      <div className={styles.error} role="alert">
+        <span className={styles.errorIcon} aria-hidden="true">
+          !
+        </span>
+        <div className={styles.errorCopy}>
+          <span className={styles.errorMessage}>
+            {routingModelUnavailable
+              ? 'The automatic routing model is unavailable.'
+              : visibleError?.message}
+          </span>
+          {!routingModelUnavailable && visibleError?.technicalDetails ? (
+            <details className={styles.errorDetails} data-playground-technical-details="true">
+              <summary>Technical details</summary>
+              <pre>{visibleError.technicalDetails}</pre>
+            </details>
+          ) : null}
+        </div>
+        {routingModelUnavailable ? (
+          <button
+            type="button"
+            className={styles.errorAction}
+            onClick={onRetryRoutingModelDiscovery}
+          >
+            Retry discovery
+          </button>
+        ) : (
+          <button
+            type="button"
+            className={styles.errorDismiss}
+            aria-label="Dismiss error"
+            onClick={onDismissError}
+          >
+            ×
+          </button>
+        )}
+      </div>
     </div>
   )
 }

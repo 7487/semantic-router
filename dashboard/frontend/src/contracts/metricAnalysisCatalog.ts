@@ -1,4 +1,10 @@
 import catalogDocument from './metric_analysis_catalog.v1.json' with { type: 'json' }
+import {
+  decodeSubjectID,
+  encodeSubjectID,
+  type IdentifierEncoding,
+  validateEncoding,
+} from './metricAnalysisIdentifierEncoding'
 
 export const METRIC_ANALYSIS_CATALOG_SCHEMA_VERSION = 'metric-analysis-catalog.v1'
 export const METRIC_ANALYSIS_CONTRACT_VERSION = 'metric-analysis.v1'
@@ -58,20 +64,6 @@ export interface MetricAnalysisCatalogMatch {
   readonly family_id?: string
   readonly captures: Readonly<Record<string, string>>
   readonly specification: MetricAnalysisCatalogSpecification
-}
-
-interface IdentifierEncodingVector {
-  readonly raw: string
-  readonly encoded: string
-}
-
-interface IdentifierEncoding {
-  readonly scheme: string
-  readonly raw_pattern: string
-  readonly direct_pattern: string
-  readonly reserved_prefix: string
-  readonly encoded_pattern: string
-  readonly vectors: readonly IdentifierEncodingVector[]
 }
 
 interface StaticMetric {
@@ -301,84 +293,6 @@ function captureGroupCount(pattern: string): number {
   return count
 }
 
-function validateEncoding(value: unknown): asserts value is IdentifierEncoding {
-  assertCondition(isRecord(value), 'identifier encoding must be an object')
-  assertExactKeys(
-    value,
-    ['direct_pattern', 'encoded_pattern', 'raw_pattern', 'reserved_prefix', 'scheme', 'vectors'],
-    'identifier encoding',
-  )
-  assertCondition(
-    value.scheme === 'portable-segment-base64url.v1' && value.reserved_prefix === 'u-',
-    'identifier encoding version is invalid',
-  )
-  for (const field of ['raw_pattern', 'direct_pattern', 'encoded_pattern'] as const) {
-    assertTrimmedText(value[field], `identifier encoding ${field}`)
-    assertCondition(
-      value[field].startsWith('^') && value[field].endsWith('$'),
-      `identifier encoding ${field} is not anchored`,
-    )
-    new RegExp(value[field])
-  }
-  assertCondition(
-    Array.isArray(value.vectors) && value.vectors.length > 0,
-    'identifier encoding vectors are missing',
-  )
-  for (const vector of value.vectors) {
-    assertCondition(isRecord(vector), 'identifier encoding vector must be an object')
-    assertExactKeys(vector, ['encoded', 'raw'], 'identifier encoding vector')
-    assertTrimmedText(vector.raw, 'identifier encoding vector raw id')
-    assertTrimmedText(vector.encoded, 'identifier encoding vector encoded id')
-  }
-}
-
-function encodeSubjectID(rawID: string, encoding: IdentifierEncoding): string {
-  if (typeof rawID !== 'string' || !new RegExp(encoding.raw_pattern).test(rawID)) {
-    throw new Error('metric subject id is not a portable raw identifier')
-  }
-  if (
-    !rawID.startsWith(encoding.reserved_prefix) &&
-    new RegExp(encoding.direct_pattern).test(rawID)
-  ) {
-    return rawID
-  }
-  const payload = btoa(rawID).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
-  const encoded = `${encoding.reserved_prefix}${payload}`
-  if (!new RegExp(encoding.encoded_pattern).test(encoded)) {
-    throw new Error('metric subject id exceeds the encoded segment contract')
-  }
-  return encoded
-}
-
-function decodeSubjectID(encodedID: string, encoding: IdentifierEncoding): string {
-  if (typeof encodedID !== 'string') {
-    throw new Error('metric subject segment is not canonical')
-  }
-  if (!encodedID.startsWith(encoding.reserved_prefix)) {
-    if (!new RegExp(encoding.direct_pattern).test(encodedID)) {
-      throw new Error('metric subject segment is not canonical')
-    }
-    return encodedID
-  }
-  if (!new RegExp(encoding.encoded_pattern).test(encodedID)) {
-    throw new Error('metric subject segment is not canonical base64url')
-  }
-  const payload = encodedID
-    .slice(encoding.reserved_prefix.length)
-    .replace(/-/g, '+')
-    .replace(/_/g, '/')
-  let raw: string
-  try {
-    raw = atob(payload + '='.repeat((4 - (payload.length % 4)) % 4))
-  } catch {
-    throw new Error('metric subject segment is not canonical base64url')
-  }
-  if (encodeSubjectID(raw, encoding) !== encodedID) {
-    throw new Error('metric subject segment has a non-canonical encoding')
-  }
-  return raw
-}
-
 function captureValues(
   family: CompiledFamily,
   match: RegExpExecArray,
@@ -448,8 +362,7 @@ function resolveFromIndex(metricID: string, index: CatalogIndex): MetricAnalysis
   }
 }
 
-function validateCatalogSource(source: string): CatalogIndex {
-  const value: unknown = JSON.parse(source)
+function validateCatalogRoot(value: unknown): asserts value is Record<string, unknown> {
   assertCondition(isRecord(value), 'root must be an object')
   assertExactKeys(
     value,
@@ -472,14 +385,15 @@ function validateCatalogSource(source: string): CatalogIndex {
     value.provenance_contract_version === METRIC_ANALYSIS_CONTRACT_VERSION,
     'provenance version is invalid',
   )
-  validateEncoding(value.identifier_encoding)
+}
+
+function buildTemplateIndex(value: unknown): Map<string, MetricAnalysisCatalogSpecification> {
   assertCondition(
-    Array.isArray(value.analysis_templates) &&
-      value.analysis_templates.length === METRIC_ANALYSIS_TEMPLATE_COUNT,
+    Array.isArray(value) && value.length === METRIC_ANALYSIS_TEMPLATE_COUNT,
     'analysis template inventory is invalid',
   )
   const templates = new Map<string, MetricAnalysisCatalogSpecification>()
-  for (const template of value.analysis_templates) {
+  for (const template of value) {
     validateTemplate(template)
     assertCondition(!templates.has(template.id), `analysis template ${template.id} is duplicated`)
     templates.set(template.id, template)
@@ -488,154 +402,162 @@ function validateCatalogSource(source: string): CatalogIndex {
     isSortedUnique([...templates.keys()]),
     'analysis templates are not sorted and unique',
   )
+  return templates
+}
 
+function validateFamilyCapture(
+  value: unknown,
+  index: number,
+  familyID: string,
+  captureNames: Set<string>,
+) {
+  assertCondition(isRecord(value), `dynamic family ${familyID} capture must be an object`)
+  assertTrimmedText(value.name, `dynamic family ${familyID} capture name`)
+  assertCondition(value.group === index + 1, `dynamic family ${familyID} capture group is invalid`)
   assertCondition(
-    Array.isArray(value.dynamic_families) &&
-      value.dynamic_families.length === METRIC_ANALYSIS_DYNAMIC_FAMILY_COUNT,
-    'dynamic family inventory is invalid',
+    ['encoded_portable_id', 'positive_int', 'enum'].includes(String(value.type)),
+    `dynamic family ${familyID} capture type is invalid`,
   )
-  const families: CompiledFamily[] = []
-  for (const rawFamily of value.dynamic_families) {
-    assertCondition(isRecord(rawFamily), 'dynamic family must be an object')
-    assertExactKeys(
-      rawFamily,
-      ['captures', 'examples', 'id', 'literal_prefix', 'pattern', 'selector_capture', 'variants'],
-      'dynamic family',
-    )
-    assertTrimmedText(rawFamily.id, 'dynamic family id')
-    assertTrimmedText(rawFamily.literal_prefix, 'dynamic family literal prefix')
-    assertTrimmedText(rawFamily.pattern, 'dynamic family pattern')
-    assertTrimmedText(rawFamily.selector_capture, 'dynamic family selector')
+  if (value.type === 'enum') {
+    assertExactKeys(value, ['group', 'name', 'type', 'values'], 'enum capture')
+    assertStringArray(value.values, 'enum capture values')
+    assertCondition(isSortedUnique(value.values), 'enum capture values are not sorted')
+  } else if (value.type === 'positive_int') {
+    assertExactKeys(value, ['group', 'maximum', 'minimum', 'name', 'type'], 'integer capture')
     assertCondition(
-      rawFamily.pattern.startsWith('^') && rawFamily.pattern.endsWith('$'),
-      `dynamic family ${rawFamily.id} pattern is not anchored`,
+      Number.isSafeInteger(value.minimum) &&
+        Number.isSafeInteger(value.maximum) &&
+        Number(value.minimum) >= 1 &&
+        Number(value.maximum) >= Number(value.minimum),
+      'integer capture bounds are invalid',
     )
-    const compiled = new RegExp(rawFamily.pattern)
-    assertCondition(
-      Array.isArray(rawFamily.captures) &&
-        rawFamily.captures.length === captureGroupCount(rawFamily.pattern),
-      `dynamic family ${rawFamily.id} capture cardinality is invalid`,
-    )
-    const captureNames = new Set<string>()
-    for (const [index, rawCapture] of rawFamily.captures.entries()) {
-      assertCondition(
-        isRecord(rawCapture),
-        `dynamic family ${rawFamily.id} capture must be an object`,
-      )
-      assertTrimmedText(rawCapture.name, `dynamic family ${rawFamily.id} capture name`)
-      assertCondition(
-        rawCapture.group === index + 1,
-        `dynamic family ${rawFamily.id} capture group is invalid`,
-      )
-      assertCondition(
-        ['encoded_portable_id', 'positive_int', 'enum'].includes(String(rawCapture.type)),
-        `dynamic family ${rawFamily.id} capture type is invalid`,
-      )
-      if (rawCapture.type === 'enum') {
-        assertExactKeys(rawCapture, ['group', 'name', 'type', 'values'], 'enum capture')
-        assertStringArray(rawCapture.values, 'enum capture values')
-        assertCondition(isSortedUnique(rawCapture.values), 'enum capture values are not sorted')
-      } else if (rawCapture.type === 'positive_int') {
-        assertExactKeys(
-          rawCapture,
-          ['group', 'maximum', 'minimum', 'name', 'type'],
-          'integer capture',
-        )
-        assertCondition(
-          Number.isSafeInteger(rawCapture.minimum) &&
-            Number.isSafeInteger(rawCapture.maximum) &&
-            Number(rawCapture.minimum) >= 1 &&
-            Number(rawCapture.maximum) >= Number(rawCapture.minimum),
-          'integer capture bounds are invalid',
-        )
-      } else {
-        assertExactKeys(rawCapture, ['group', 'name', 'type'], 'encoded-id capture')
-      }
-      assertCondition(
-        !captureNames.has(rawCapture.name),
-        `dynamic family ${rawFamily.id} capture is duplicated`,
-      )
-      captureNames.add(rawCapture.name)
-    }
-    const selector = rawFamily.captures.find(
-      (capture) => isRecord(capture) && capture.name === rawFamily.selector_capture,
-    )
-    assertCondition(
-      isRecord(selector),
-      `dynamic family ${rawFamily.id} selector capture is unknown`,
-    )
-    assertCondition(
-      Array.isArray(rawFamily.variants) && rawFamily.variants.length > 0,
-      `dynamic family ${rawFamily.id} variants are missing`,
-    )
-    const variants: DynamicVariant[] = []
-    for (const rawVariant of rawFamily.variants) {
-      assertCondition(
-        isRecord(rawVariant),
-        `dynamic family ${rawFamily.id} variant must be an object`,
-      )
-      assertExactKeys(rawVariant, ['analysis_ref', 'value'], 'dynamic variant')
-      assertTrimmedText(rawVariant.value, 'dynamic variant value')
-      assertTrimmedText(rawVariant.analysis_ref, 'dynamic variant analysis ref')
-      const template = templates.get(rawVariant.analysis_ref)
-      assertCondition(
-        template !== undefined,
-        `dynamic family ${rawFamily.id} references an unknown template`,
-      )
-      validateTemplate(template, captureNames)
-      variants.push(rawVariant as unknown as DynamicVariant)
-    }
-    const variantValues = variants.map((variant) => variant.value)
-    assertCondition(
-      isSortedUnique(variantValues),
-      `dynamic family ${rawFamily.id} variants are not sorted and unique`,
-    )
-    const expectedVariants = selector.type === 'enum' ? selector.values : ['*']
-    assertCondition(
-      Array.isArray(expectedVariants) &&
-        variantValues.length === expectedVariants.length &&
-        variantValues.every((item, index) => item === expectedVariants[index]),
-      `dynamic family ${rawFamily.id} variants do not cover the selector`,
-    )
-    assertCondition(
-      Array.isArray(rawFamily.examples) && rawFamily.examples.length > 0,
-      `dynamic family ${rawFamily.id} examples are missing`,
-    )
-    for (const rawExample of rawFamily.examples) {
-      assertCondition(
-        isRecord(rawExample),
-        `dynamic family ${rawFamily.id} example must be an object`,
-      )
-      assertExactKeys(rawExample, ['analysis_ref', 'captures', 'metric_id'], 'dynamic example')
-      assertTrimmedText(rawExample.metric_id, 'dynamic example metric id')
-      assertTrimmedText(rawExample.analysis_ref, 'dynamic example analysis ref')
-      assertCondition(
-        templates.has(rawExample.analysis_ref),
-        `dynamic family ${rawFamily.id} example references an unknown template`,
-      )
-      assertCondition(
-        isRecord(rawExample.captures),
-        `dynamic family ${rawFamily.id} example captures must be an object`,
-      )
-      assertCondition(
-        Object.keys(rawExample.captures).length === captureNames.size &&
-          Object.entries(rawExample.captures).every(
-            ([name, capture]) => captureNames.has(name) && typeof capture === 'string',
-          ),
-        `dynamic family ${rawFamily.id} example captures are invalid`,
-      )
-    }
-    families.push({
-      ...(rawFamily as unknown as DynamicFamily),
-      captures: rawFamily.captures as unknown as DynamicCapture[],
-      variants,
-      compiled,
-    })
+  } else {
+    assertExactKeys(value, ['group', 'name', 'type'], 'encoded-id capture')
   }
+  assertCondition(!captureNames.has(value.name), `dynamic family ${familyID} capture is duplicated`)
+  captureNames.add(value.name)
+}
+
+function validateFamilyCaptures(value: Record<string, unknown>): Set<string> {
   assertCondition(
-    isSortedUnique(families.map((family) => family.id)),
-    'dynamic family ids are not sorted and unique',
+    Array.isArray(value.captures) &&
+      value.captures.length === captureGroupCount(String(value.pattern)),
+    `dynamic family ${value.id} capture cardinality is invalid`,
   )
+  const captureNames = new Set<string>()
+  for (const [index, capture] of value.captures.entries()) {
+    validateFamilyCapture(capture, index, String(value.id), captureNames)
+  }
+  return captureNames
+}
+
+function validateFamilyVariants(
+  value: Record<string, unknown>,
+  selector: Record<string, unknown>,
+  templates: ReadonlyMap<string, MetricAnalysisCatalogSpecification>,
+  captureNames: ReadonlySet<string>,
+): DynamicVariant[] {
+  assertCondition(
+    Array.isArray(value.variants) && value.variants.length > 0,
+    `dynamic family ${value.id} variants are missing`,
+  )
+  const variants: DynamicVariant[] = []
+  for (const rawVariant of value.variants) {
+    assertCondition(isRecord(rawVariant), `dynamic family ${value.id} variant must be an object`)
+    assertExactKeys(rawVariant, ['analysis_ref', 'value'], 'dynamic variant')
+    assertTrimmedText(rawVariant.value, 'dynamic variant value')
+    assertTrimmedText(rawVariant.analysis_ref, 'dynamic variant analysis ref')
+    const template = templates.get(rawVariant.analysis_ref)
+    assertCondition(
+      template !== undefined,
+      `dynamic family ${value.id} references an unknown template`,
+    )
+    validateTemplate(template, captureNames)
+    variants.push(rawVariant as unknown as DynamicVariant)
+  }
+  const variantValues = variants.map((variant) => variant.value)
+  assertCondition(
+    isSortedUnique(variantValues),
+    `dynamic family ${value.id} variants are not sorted and unique`,
+  )
+  const expectedVariants = selector.type === 'enum' ? selector.values : ['*']
+  assertCondition(
+    Array.isArray(expectedVariants) &&
+      variantValues.length === expectedVariants.length &&
+      variantValues.every((item, index) => item === expectedVariants[index]),
+    `dynamic family ${value.id} variants do not cover the selector`,
+  )
+  return variants
+}
+
+function validateFamilyExamples(
+  value: Record<string, unknown>,
+  templates: ReadonlyMap<string, MetricAnalysisCatalogSpecification>,
+  captureNames: ReadonlySet<string>,
+) {
+  assertCondition(
+    Array.isArray(value.examples) && value.examples.length > 0,
+    `dynamic family ${value.id} examples are missing`,
+  )
+  for (const rawExample of value.examples) {
+    assertCondition(isRecord(rawExample), `dynamic family ${value.id} example must be an object`)
+    assertExactKeys(rawExample, ['analysis_ref', 'captures', 'metric_id'], 'dynamic example')
+    assertTrimmedText(rawExample.metric_id, 'dynamic example metric id')
+    assertTrimmedText(rawExample.analysis_ref, 'dynamic example analysis ref')
+    assertCondition(
+      templates.has(rawExample.analysis_ref),
+      `dynamic family ${value.id} example references an unknown template`,
+    )
+    assertCondition(
+      isRecord(rawExample.captures),
+      `dynamic family ${value.id} example captures must be an object`,
+    )
+    assertCondition(
+      Object.keys(rawExample.captures).length === captureNames.size &&
+        Object.entries(rawExample.captures).every(
+          ([name, capture]) => captureNames.has(name) && typeof capture === 'string',
+        ),
+      `dynamic family ${value.id} example captures are invalid`,
+    )
+  }
+}
+
+function compileFamily(
+  value: unknown,
+  templates: ReadonlyMap<string, MetricAnalysisCatalogSpecification>,
+): CompiledFamily {
+  assertCondition(isRecord(value), 'dynamic family must be an object')
+  assertExactKeys(
+    value,
+    ['captures', 'examples', 'id', 'literal_prefix', 'pattern', 'selector_capture', 'variants'],
+    'dynamic family',
+  )
+  assertTrimmedText(value.id, 'dynamic family id')
+  assertTrimmedText(value.literal_prefix, 'dynamic family literal prefix')
+  assertTrimmedText(value.pattern, 'dynamic family pattern')
+  assertTrimmedText(value.selector_capture, 'dynamic family selector')
+  assertCondition(
+    value.pattern.startsWith('^') && value.pattern.endsWith('$'),
+    `dynamic family ${value.id} pattern is not anchored`,
+  )
+  const compiled = new RegExp(value.pattern)
+  const captureNames = validateFamilyCaptures(value)
+  const captures = value.captures as unknown[]
+  const selector = captures.find(
+    (capture) => isRecord(capture) && capture.name === value.selector_capture,
+  )
+  assertCondition(isRecord(selector), `dynamic family ${value.id} selector capture is unknown`)
+  const variants = validateFamilyVariants(value, selector, templates, captureNames)
+  validateFamilyExamples(value, templates, captureNames)
+  return {
+    ...(value as unknown as DynamicFamily),
+    captures: captures as DynamicCapture[],
+    variants,
+    compiled,
+  }
+}
+
+function assertFamilyPrefixesDoNotOverlap(families: readonly CompiledFamily[]) {
   for (let left = 0; left < families.length; left += 1) {
     for (let right = left + 1; right < families.length; right += 1) {
       assertCondition(
@@ -645,14 +567,36 @@ function validateCatalogSource(source: string): CatalogIndex {
       )
     }
   }
+}
 
+function buildFamilyIndex(
+  value: unknown,
+  templates: ReadonlyMap<string, MetricAnalysisCatalogSpecification>,
+): CompiledFamily[] {
   assertCondition(
-    Array.isArray(value.static_metrics) &&
-      value.static_metrics.length === METRIC_ANALYSIS_STATIC_COUNT,
+    Array.isArray(value) && value.length === METRIC_ANALYSIS_DYNAMIC_FAMILY_COUNT,
+    'dynamic family inventory is invalid',
+  )
+  const families = value.map((family) => compileFamily(family, templates))
+  assertCondition(
+    isSortedUnique(families.map((family) => family.id)),
+    'dynamic family ids are not sorted and unique',
+  )
+  assertFamilyPrefixesDoNotOverlap(families)
+  return families
+}
+
+function buildStaticMetricIndex(
+  value: unknown,
+  templates: ReadonlyMap<string, MetricAnalysisCatalogSpecification>,
+  families: readonly CompiledFamily[],
+): Map<string, StaticMetric> {
+  assertCondition(
+    Array.isArray(value) && value.length === METRIC_ANALYSIS_STATIC_COUNT,
     'static metric inventory is invalid',
   )
   const staticMetrics = new Map<string, StaticMetric>()
-  for (const rawMetric of value.static_metrics) {
+  for (const rawMetric of value) {
     assertCondition(isRecord(rawMetric), 'static metric must be an object')
     assertExactKeys(rawMetric, ['analysis_ref', 'id'], 'static metric')
     assertTrimmedText(rawMetric.id, 'static metric id')
@@ -676,14 +620,16 @@ function validateCatalogSource(source: string): CatalogIndex {
     isSortedUnique([...staticMetrics.keys()]),
     'static metric ids are not sorted and unique',
   )
+  return staticMetrics
+}
 
+function validateRetiredMetrics(value: unknown, staticMetrics: ReadonlyMap<string, StaticMetric>) {
   assertCondition(
-    Array.isArray(value.retired_metric_ids) &&
-      value.retired_metric_ids.length === METRIC_ANALYSIS_RETIRED_COUNT,
+    Array.isArray(value) && value.length === METRIC_ANALYSIS_RETIRED_COUNT,
     'retired metric inventory is invalid',
   )
   const retiredIDs: string[] = []
-  for (const rawRetired of value.retired_metric_ids) {
+  for (const rawRetired of value) {
     assertCondition(isRecord(rawRetired), 'retired metric must be an object')
     assertExactKeys(rawRetired, ['id', 'reason', 'replacement'], 'retired metric')
     assertTrimmedText(rawRetired.id, 'retired metric id')
@@ -700,10 +646,10 @@ function validateCatalogSource(source: string): CatalogIndex {
     retiredIDs.push(rawRetired.id)
   }
   assertCondition(isSortedUnique(retiredIDs), 'retired metric ids are not sorted and unique')
+}
 
-  const document = value as unknown as MetricAnalysisCatalogDocument
-  const index: CatalogIndex = { document, templates, staticMetrics, families }
-  for (const family of families) {
+function validateFamilyGoldenExamples(index: CatalogIndex) {
+  for (const family of index.families) {
     for (const example of family.examples) {
       assertCondition(
         example.metric_id.startsWith(family.literal_prefix),
@@ -720,6 +666,9 @@ function validateCatalogSource(source: string): CatalogIndex {
       )
     }
   }
+}
+
+function validateIdentifierEncodingVectors(document: MetricAnalysisCatalogDocument) {
   for (const vector of document.identifier_encoding.vectors) {
     assertCondition(
       encodeSubjectID(vector.raw, document.identifier_encoding) === vector.encoded,
@@ -730,6 +679,20 @@ function validateCatalogSource(source: string): CatalogIndex {
       `identifier decoding vector ${vector.raw} drifted`,
     )
   }
+}
+
+function validateCatalogSource(source: string): CatalogIndex {
+  const value: unknown = JSON.parse(source)
+  validateCatalogRoot(value)
+  validateEncoding(value.identifier_encoding)
+  const templates = buildTemplateIndex(value.analysis_templates)
+  const families = buildFamilyIndex(value.dynamic_families, templates)
+  const staticMetrics = buildStaticMetricIndex(value.static_metrics, templates, families)
+  validateRetiredMetrics(value.retired_metric_ids, staticMetrics)
+  const document = value as unknown as MetricAnalysisCatalogDocument
+  const index: CatalogIndex = { document, templates, staticMetrics, families }
+  validateFamilyGoldenExamples(index)
+  validateIdentifierEncodingVectors(document)
   return index
 }
 
@@ -768,14 +731,6 @@ export function tryResolveMetricAnalysisCatalog(
     if (error instanceof MetricAnalysisCatalogResolutionError) return undefined
     throw error
   }
-}
-
-export function staticMetricAnalysisIDsForTrack(trackID: string): readonly string[] {
-  if (!TRACK_IDS.has(trackID)) throw new Error(`unknown evaluation track: ${trackID}`)
-  return STATIC_METRIC_ANALYSIS_IDS.filter((metricID) => {
-    const staticMetric = CATALOG.staticMetrics.get(metricID)!
-    return CATALOG.templates.get(staticMetric.analysis_ref)!.track_id === trackID
-  })
 }
 
 /** Runtime validation hook used by parity and ambiguity contract tests. */

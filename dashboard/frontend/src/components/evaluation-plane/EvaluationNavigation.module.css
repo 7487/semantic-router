@@ -5,10 +5,6 @@
   isolation: isolate;
 }
 
-.navigationOverflowHint {
-  display: none;
-}
-
 .navigation {
   display: flex;
   gap: 1.25rem;
@@ -76,49 +72,14 @@
 
 @media (max-width: 760px) {
   .navigation {
-    justify-content: center;
-    padding-inline: 3rem;
-    overflow: hidden;
+    justify-content: flex-start;
+    padding-inline: 0.25rem;
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
   }
 
   .navigationButton {
-    display: none;
-    min-width: max-content;
-  }
-
-  .navigationActive {
     display: flex;
-  }
-
-  .navigationOverflowHint {
-    position: absolute;
-    top: 1px;
-    bottom: 1px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 2.5rem;
-    padding: 0;
-    border: 0;
-    border-radius: 0;
-    background: var(--surface-canvas);
-    color: var(--text-secondary);
-    font-size: 1.05rem;
-    font-weight: 700;
-    cursor: pointer;
-    z-index: 2;
-  }
-
-  .navigationOverflowHint:focus-visible {
-    outline: 2px solid rgba(255, 255, 255, 0.72);
-    outline-offset: -3px;
-  }
-
-  .navigationOverflowHintLeft {
-    left: 0;
-  }
-
-  .navigationOverflowHintRight {
-    right: 0;
+    min-width: max-content;
   }
 }

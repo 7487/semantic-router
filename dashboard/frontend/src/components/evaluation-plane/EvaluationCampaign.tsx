@@ -7,10 +7,10 @@ import type {
   CreateEvaluationCampaignPayload,
   EvaluationCampaign as EvaluationCampaignResource,
 } from '../../types/evaluationCampaign'
-import { EVALUATION_CAMPAIGN_CONTRACT_VERSION } from '../../types/evaluationPlane'
 import EvaluationCampaignBuilder from './EvaluationCampaignBuilder'
 import EvaluationCampaignDecision from './EvaluationCampaignDecision'
-import { EvaluationActionButton, EvaluationTag } from './EvaluationPrimitives'
+import EvaluationIssueDetails from './EvaluationIssueDetails'
+import { EvaluationActionButton } from './EvaluationPrimitives'
 import useEvaluationCampaignBuilder from './useEvaluationCampaignBuilder'
 import styles from './EvaluationCampaign.module.css'
 
@@ -42,104 +42,78 @@ interface EvaluationCampaignProps {
   onClearCampaign: () => void
 }
 
-export default function EvaluationCampaign({
-  catalog,
-  runs,
-  totalRuns,
-  runLedgerAvailable,
-  runLedgerComplete,
-  allRunsLoaded,
-  loadingAllRuns,
-  canCreate,
-  createPending,
-  createError,
-  campaign,
-  campaignLoading,
-  campaignError,
-  activeControlledPairID,
-  activeControlledPairProfileID,
-  onLoadAllRuns,
-  onRefreshRuns,
-  onControlledPairIdentityChange,
-  onCreate,
-  onClearCreateError,
-  onRetryCampaign,
-  onClearCampaign,
-}: EvaluationCampaignProps) {
+export default function EvaluationCampaign(props: EvaluationCampaignProps) {
   const builder = useEvaluationCampaignBuilder({
-    catalog,
-    runs,
-    runLedgerAvailable,
-    runLedgerComplete,
-    allRunsLoaded,
-    lockedChangeProfile: activeControlledPairProfileID,
-    onClearCreateError,
+    catalog: props.catalog,
+    runs: props.runs,
+    runLedgerAvailable: props.runLedgerAvailable,
+    runLedgerComplete: props.runLedgerComplete,
+    allRunsLoaded: props.allRunsLoaded,
+    lockedChangeProfile: props.activeControlledPairProfileID,
+    onClearCreateError: props.onClearCreateError,
   })
 
   const startAnother = () => {
     builder.reset()
-    onClearCreateError()
-    onClearCampaign()
+    props.onClearCreateError()
+    props.onClearCampaign()
   }
 
   return (
-    <div className={styles.campaign} aria-busy={createPending || campaignLoading}>
-      <header className={styles.layerHeader}>
-        <div>
-          <span className={styles.layerIndex}>Decision layer</span>
-          <h2>Promotion campaign</h2>
-          <p>
-            Bind completed evidence to the server catalog&apos;s gate slots, then publish one
-            immutable, server-attested release decision. The paired run comparison remains
-            diagnostic and cannot substitute for this campaign.
-          </p>
-        </div>
-        <EvaluationTag mono>{EVALUATION_CAMPAIGN_CONTRACT_VERSION}</EvaluationTag>
-      </header>
-
-      {campaignLoading ? (
+    <div className={styles.campaign} aria-busy={props.createPending || props.campaignLoading}>
+      {props.campaignLoading ? (
         <div className={styles.inlineNotice} role="status">
           <div>
-            <strong>Loading promotion decision</strong>
-            <span>The server is revalidating every immutable evidence anchor.</span>
+            <strong>Loading release decision</strong>
+            <span>Every selected result is being verified again before the decision is shown.</span>
           </div>
         </div>
       ) : null}
-      {campaignError ? (
+      {props.campaignError ? (
         <div className={styles.inlineError} role="alert">
-          <span>{campaignError}</span>
+          <div>
+            <strong>Release decision could not be loaded</strong>
+            <span>Retry to load the saved decision and its verified evidence.</span>
+            <EvaluationIssueDetails
+              issues={[{ label: 'Release decision request', message: props.campaignError }]}
+            />
+          </div>
           <EvaluationActionButton
             type="button"
             compact
-            disabled={campaignLoading}
-            onClick={onRetryCampaign}
+            disabled={props.campaignLoading}
+            onClick={props.onRetryCampaign}
           >
-            {campaignLoading ? 'Retrying decision…' : 'Retry decision'}
+            {props.campaignLoading ? 'Retrying decision…' : 'Retry decision'}
           </EvaluationActionButton>
         </div>
       ) : null}
-      {campaign ? (
-        <EvaluationCampaignDecision campaign={campaign} runs={runs} onStartAnother={startAnother} />
+      {props.campaign ? (
+        <EvaluationCampaignDecision
+          campaign={props.campaign}
+          runs={props.runs}
+          onStartAnother={startAnother}
+        />
       ) : null}
-      {!campaign && !campaignLoading && !campaignError ? (
+      {!props.campaign && !props.campaignLoading && !props.campaignError ? (
         <EvaluationCampaignBuilder
-          catalog={catalog}
-          runs={runs}
-          totalRuns={totalRuns}
-          runLedgerAvailable={runLedgerAvailable}
-          runLedgerComplete={runLedgerComplete}
-          allRunsLoaded={allRunsLoaded}
-          loadingAllRuns={loadingAllRuns}
-          canCreate={canCreate}
-          createPending={createPending}
-          createError={createError}
-          activeControlledPairID={activeControlledPairID}
+          catalog={props.catalog}
+          runs={props.runs}
+          totalRuns={props.totalRuns}
+          runLedgerAvailable={props.runLedgerAvailable}
+          runLedgerComplete={props.runLedgerComplete}
+          allRunsLoaded={props.allRunsLoaded}
+          loadingAllRuns={props.loadingAllRuns}
+          canCreate={props.canCreate}
+          createPending={props.createPending}
+          createError={props.createError}
+          activeControlledPairID={props.activeControlledPairID}
           model={builder}
-          onLoadAllRuns={onLoadAllRuns}
-          onRefreshRuns={onRefreshRuns}
-          onControlledPairIdentityChange={onControlledPairIdentityChange}
-          onCreate={onCreate}
-          onClearCreateError={onClearCreateError}
+          onLoadAllRuns={props.onLoadAllRuns}
+          onRefreshRuns={props.onRefreshRuns}
+          onControlledPairIdentityChange={props.onControlledPairIdentityChange}
+          onCreate={props.onCreate}
+          onClearCreateError={props.onClearCreateError}
         />
       ) : null}
     </div>

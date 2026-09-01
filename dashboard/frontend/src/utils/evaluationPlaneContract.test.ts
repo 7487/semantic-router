@@ -1,8 +1,13 @@
 import { describe, expect, it } from 'vitest'
 
-import type { EvaluationCatalogCampaignSlot, EvaluationRun } from '../types/evaluationPlane'
+import type { EvaluationCatalogSuite, EvaluationRun } from '../types/evaluationPlane'
 import { decodeEvaluationCatalog } from './evaluationCatalogContract'
 import { buildEvaluationRoutingRecipePlan } from '../test/evaluationRoutingRecipeFixture'
+import {
+  canonicalBuiltinSuites,
+  canonicalCampaignSlots,
+  evaluationCatalogFixture,
+} from './evaluationPlaneApi.testFixtures'
 import {
   decodeEvaluationRun,
   decodeEvaluationRunEvent,
@@ -11,24 +16,6 @@ import {
 } from './evaluationRunContract'
 
 const RUN_ID = '11111111-1111-4111-8111-111111111111'
-const campaignSlots = [
-  ['G2', 'run'],
-  ['G3', 'controlled_pair'],
-  ['G4', 'run'],
-  ['G5', 'fidelity_pair'],
-  ['G6', 'run'],
-  ['G7', 'run'],
-  ['G8', 'run'],
-  ['G9', 'run'],
-].map(([gate_id, binding_kind]) => ({
-  gate_id,
-  name: `${gate_id} evidence`,
-  description: '',
-  disposition: 'not_applicable',
-  binding_kind,
-  minimum_evidence_level: 'E0',
-  accepted_executor_ids: [],
-})) as EvaluationCatalogCampaignSlot[]
 
 const run: EvaluationRun = {
   schema_version: 'evaluation.v1',
@@ -93,13 +80,8 @@ const unavailableMixture = {
   ...unavailableMixtureBase,
   routing_recipe_plan: buildEvaluationRoutingRecipePlan(unavailableMixtureBase),
 }
-const catalogWithUnavailableMixture = {
-  schema_version: 'evaluation.v1',
-  gate_contract_version: 'evaluation-release-gates.v2',
-  generated_at: '2026-08-30T00:00:00Z',
+const catalogWithUnavailableMixture = evaluationCatalogFixture({
   change_profiles: [],
-  tracks: [],
-  suites: [],
   targets: [
     {
       id: 'mom-unavailable',
@@ -116,7 +98,7 @@ const catalogWithUnavailableMixture = {
       mixture: unavailableMixture,
     },
   ],
-}
+})
 
 describe('evaluation current-contract codec', () => {
   it('accepts an inspectable zero-arm Mixture only as an unavailable catalog target', () => {
@@ -174,50 +156,41 @@ describe('evaluation current-contract codec', () => {
   })
 
   it('requires one explicit executor per advertised suite mode', () => {
-    const catalog = {
-      schema_version: 'evaluation.v1',
-      gate_contract_version: 'evaluation-release-gates.v2',
-      generated_at: '2026-08-30T00:00:00Z',
+    const installedSuite: EvaluationCatalogSuite = {
+      id: 'installed-routing',
+      executors: {
+        replay: 'normalized-suite-replay.v1',
+        live: 'normalized-suite-live.v1',
+      },
+      name: 'Installed routing',
+      description: '',
+      track_ids: ['routing'],
+      modes: ['replay', 'live'],
+      evidence_level: 'E0',
+      campaign_eligible: false,
+      campaign_minimum_cases: 0,
+      revision: 'sha256:revision',
+      tags: [],
+      methods: [
+        {
+          id: 'routing.normalized-replay-live.v1',
+          track_id: 'routing',
+          qualified_gate_ids: [],
+          evidence_source: 'normalized_import',
+          status: 'configured',
+        },
+      ],
+    }
+    const catalog = evaluationCatalogFixture({
       change_profiles: [
-        { id: 'recipe', name: 'Recipe', description: '', campaign_slots: campaignSlots },
-      ],
-      tracks: [
         {
-          id: 'routing',
-          name: 'Routing',
-          description: 'Pinned exploratory import; native execution is not attested',
-          modes: ['replay', 'live'],
-          metrics: [],
-          evidence_levels: ['E5'],
-        },
-      ],
-      suites: [
-        {
-          id: 'installed-routing',
-          executors: {
-            replay: 'normalized-suite-replay.v1',
-            live: 'normalized-suite-live.v1',
-          },
-          name: 'Installed routing',
+          id: 'recipe',
+          name: 'Recipe',
           description: '',
-          track_ids: ['routing'],
-          modes: ['replay', 'live'],
-          evidence_level: 'E0',
-          campaign_eligible: false,
-          campaign_minimum_cases: 0,
-          revision: 'sha256:revision',
-          tags: [],
-          methods: [
-            {
-              id: 'routing.normalized-replay-live.v1',
-              track_id: 'routing',
-              qualified_gate_ids: [],
-              evidence_source: 'normalized_import',
-              status: 'configured',
-            },
-          ],
+          campaign_slots: canonicalCampaignSlots,
         },
       ],
+      suites: [...canonicalBuiltinSuites, installedSuite],
       targets: [
         {
           id: 'benchmark-source',
@@ -229,56 +202,62 @@ describe('evaluation current-contract codec', () => {
           accepted_executors: { replay: ['normalized-suite-replay.v1'] },
         },
       ],
-    }
+    })
 
-    expect(decodeEvaluationCatalog(catalog).suites[0]?.executors).toEqual({
+    expect(
+      decodeEvaluationCatalog(catalog).suites.find((suite) => suite.id === installedSuite.id)
+        ?.executors,
+    ).toEqual({
       replay: 'normalized-suite-replay.v1',
       live: 'normalized-suite-live.v1',
     })
-    const brokeredCatalog = {
-      ...catalog,
-      suites: [
+    const brokeredSuite: EvaluationCatalogSuite = {
+      ...installedSuite,
+      methods: [
         {
-          ...catalog.suites[0],
-          methods: [
-            {
-              id: 'routing.declared-shift-live.v1',
-              track_id: 'routing',
-              qualified_gate_ids: ['G4'],
-              evidence_source: 'server_brokered_live',
-              status: 'configured',
-            },
-          ],
+          id: 'routing.declared-shift-live.v1',
+          track_id: 'routing',
+          qualified_gate_ids: ['G4'],
+          evidence_source: 'server_brokered_live',
+          status: 'configured',
         },
       ],
     }
-    expect(decodeEvaluationCatalog(brokeredCatalog).suites[0]?.methods[0]).toMatchObject({
-      evidence_source: 'server_brokered_live',
-      qualified_gate_ids: ['G4'],
-    })
+    const brokeredCatalog = {
+      ...catalog,
+      suites: [...canonicalBuiltinSuites, brokeredSuite],
+    }
+    expect(
+      decodeEvaluationCatalog(brokeredCatalog).suites.find((suite) => suite.id === brokeredSuite.id)
+        ?.methods[0],
+    ).toMatchObject({ evidence_source: 'server_brokered_live', qualified_gate_ids: ['G4'] })
     for (const method of [
-      { ...brokeredCatalog.suites[0].methods[0], qualified_gate_ids: ['G3'] },
-      { ...brokeredCatalog.suites[0].methods[0], status: 'qualified' },
+      { ...brokeredSuite.methods[0], qualified_gate_ids: ['G3'] },
+      { ...brokeredSuite.methods[0], status: 'qualified' },
     ]) {
       expect(() =>
         decodeEvaluationCatalog({
           ...brokeredCatalog,
-          suites: [{ ...brokeredCatalog.suites[0], methods: [method] }],
+          suites: [...canonicalBuiltinSuites, { ...brokeredSuite, methods: [method] }],
         }),
       ).toThrow(/catalog response is incomplete/i)
     }
     expect(() =>
       decodeEvaluationCatalog({
         ...catalog,
-        suites: [{ ...catalog.suites[0], executors: { replay: 'normalized-suite-replay.v1' } }],
+        suites: [
+          ...canonicalBuiltinSuites,
+          { ...installedSuite, executors: { replay: 'normalized-suite-replay.v1' } },
+        ],
       }),
     ).toThrow(/catalog response is incomplete/i)
     expect(() =>
       decodeEvaluationCatalog({
         ...catalog,
         suites: [
+          ...canonicalBuiltinSuites,
           {
-            ...catalog.suites[0],
+            ...installedSuite,
             executor_id: 'retired-universal-executor',
           },
         ],
@@ -287,7 +266,7 @@ describe('evaluation current-contract codec', () => {
   })
 
   it('requires the clean-break agent campaign contract', () => {
-    const agentSlots = campaignSlots.map((slot) => ({ ...slot }))
+    const agentSlots = canonicalCampaignSlots.map((slot) => ({ ...slot }))
     agentSlots[1] = { ...agentSlots[1], disposition: 'not_applicable' }
     agentSlots[3] = {
       ...agentSlots[3],
@@ -297,10 +276,7 @@ describe('evaluation current-contract codec', () => {
       minimum_evidence_level: 'E4',
       accepted_executor_ids: ['normalized-suite-live.v1'],
     }
-    const catalog = {
-      schema_version: 'evaluation.v1',
-      gate_contract_version: 'evaluation-release-gates.v2',
-      generated_at: '2026-08-30T00:00:00Z',
+    const catalog = evaluationCatalogFixture({
       change_profiles: [
         {
           id: 'agent_multimodal',
@@ -309,10 +285,7 @@ describe('evaluation current-contract codec', () => {
           campaign_slots: agentSlots,
         },
       ],
-      tracks: [],
-      suites: [],
-      targets: [],
-    }
+    })
     expect(decodeEvaluationCatalog(catalog).change_profiles[0]?.campaign_slots[3]).toMatchObject({
       track_id: 'multimodal',
       minimum_evidence_level: 'E4',

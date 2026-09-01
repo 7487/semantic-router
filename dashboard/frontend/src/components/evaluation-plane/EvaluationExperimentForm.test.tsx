@@ -6,15 +6,14 @@ import type { EvaluationCatalog, EvaluationRun } from '../../types/evaluationPla
 import EvaluationExperimentForm from './EvaluationExperimentForm'
 import { buildEvaluationRoutingRecipePlan } from '../../test/evaluationRoutingRecipeFixture'
 import {
-  baselineCohortIssue,
   compatibleEvaluationSuites,
   exactCohortFromRun,
   minimumCatalogEvidenceClass,
   reconcileEvaluationScope,
   selectedSuiteTracks,
   toggleEvaluationSuite,
-  validateEvaluationDraft,
 } from './evaluationExperiment'
+import { baselineCohortIssue, validateEvaluationDraft } from './evaluationExperimentValidation'
 import { newEvaluationClientRequestID } from '../../utils/evaluationIdentity'
 
 const catalog: EvaluationCatalog = {
@@ -168,6 +167,21 @@ const baseline: EvaluationRun = {
   completed_at: '2026-08-30T00:01:00Z',
 }
 
+function visibleText(markup: string): string {
+  return markup
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function expectProductLanguage(markup: string): void {
+  const text = visibleText(markup)
+  expect(text).not.toMatch(/\bE[0-5]\b/)
+  expect(text).not.toMatch(/\bG[0-9]\b/)
+  expect(text).not.toContain(catalog.schema_version)
+  expect(text).not.toContain(catalog.gate_contract_version)
+}
+
 describe('evaluation experiment cohort helpers', () => {
   it('uses the least-selected catalog evidence class without promising a run claim', () => {
     expect(minimumCatalogEvidenceClass(catalog, ['routing-suite', 'pool-suite'])).toBe('E2')
@@ -298,9 +312,11 @@ describe('evaluation experiment cohort helpers', () => {
       seed: 42,
     })
     expect(baselineCohortIssue(catalog, baseline)).toBeNull()
-    expect(baselineCohortIssue(catalog, { ...baseline, concurrency: 129 })).toContain('concurrency')
+    expect(baselineCohortIssue(catalog, { ...baseline, concurrency: 129 })).toContain(
+      'parallel request count',
+    )
     expect(baselineCohortIssue(catalog, { ...baseline, suite_ids: ['removed-suite'] })).toContain(
-      'no longer exactly reproducible',
+      'no longer reproducible',
     )
   })
 
@@ -333,16 +349,16 @@ describe('evaluation experiment cohort helpers', () => {
     ).toBe('Concurrency must be an integer between 1 and 128.')
     expect(
       validateEvaluationDraft(catalog, [baseline], { ...unpairedDraft, seed: 4294967296 }),
-    ).toBe('Seed must be an integer between 0 and 4294967295.')
+    ).toBe('Repeatability key must be an integer between 0 and 4294967295.')
     expect(
       validateEvaluationDraft(catalog, [baseline], {
         ...unpairedDraft,
         suiteIDs: ['routing-suite'],
         trackIDs: ['model_pool'],
       }),
-    ).toBe('The selected suites and tracks are no longer compatible with the target and mode.')
+    ).toBe('The selected benchmarks and evaluation areas do not support this Mixture and run type.')
     expect(validateEvaluationDraft(catalog, [baseline], { ...validDraft, seed: 43 })).toBe(
-      'The candidate cohort must exactly match the selected baseline.',
+      'The candidate must use the same comparison setup as the selected baseline.',
     )
     expect(
       validateEvaluationDraft(catalog, [baseline], { ...unpairedDraft, name: '界'.repeat(67) }),
@@ -463,8 +479,8 @@ describe('EvaluationExperimentForm contract', () => {
     expect(markup).toContain('Selected Mixture-of-Models')
     expect(markup).toContain('vllm-sr/auto')
     expect(markup).toContain('balanced')
-    expect(markup).toContain('2 pool arms')
-    expect(markup).toContain('3 tracks')
+    expect(markup).toContain('2 pool models')
+    expect(markup).toContain('3 areas')
   })
 
   it('falls back to the healthy replay diagnostics target when no live Mixture exists', () => {
@@ -511,9 +527,9 @@ describe('EvaluationExperimentForm contract', () => {
 
     expect(markup).toContain('Routing suite')
     expect(markup).not.toContain('Pool suite')
-    expect(markup).toContain('1 tracks')
+    expect(markup).toContain('1 area')
     expect(markup).toContain('Not supported for replay on this target')
-    expect(markup).not.toContain('2 tracks')
+    expect(markup).not.toContain('2 areas')
   })
 
   it('does not substitute replay evidence for a missing Mixture deep link', () => {
@@ -535,9 +551,9 @@ describe('EvaluationExperimentForm contract', () => {
       }),
     )
     expect(markup).toContain('checked="" value="live"')
-    expect(markup).toContain('Requested Mixture is not in the current Evaluation catalog')
+    expect(markup).toContain('Requested Mixture is not registered for evaluation')
     expect(markup).toContain('removed-mixture')
-    expect(markup).toContain('<option value="" selected="">Select target</option>')
+    expect(markup).toContain('<option value="" selected="">Select Mixture</option>')
     expect(markup).not.toContain('Replay fixture</small>')
   })
 
@@ -564,19 +580,16 @@ describe('EvaluationExperimentForm contract', () => {
     expect(markup).toContain('maxLength="4000"')
     expect(markup).toContain('max="128"')
     expect(markup).toContain('max="4294967295"')
-    expect(markup).toContain('Catalog evidence class E4')
+    expect(markup).toContain('Evaluation scope · Model-pool validation')
     expect(markup).toContain('<details')
-    expect(markup).toContain('Review G0–G9 applicability')
-    expect(markup.indexOf('Identity and execution')).toBeLessThan(
-      markup.indexOf('Change profile and G0–G9 contract'),
-    )
-    expect(markup.indexOf('Change profile and G0–G9 contract')).toBeLessThan(
-      markup.indexOf('Benchmark suites'),
-    )
-    expect(markup.indexOf('Benchmark suites')).toBeLessThan(markup.indexOf('Evaluation tracks'))
-    expect(markup.indexOf('Evaluation tracks')).toBeLessThan(
+    expect(markup).toContain('Review release checks')
+    expect(markup.indexOf('Experiment setup')).toBeLessThan(markup.indexOf('Release readiness'))
+    expect(markup.indexOf('Release readiness')).toBeLessThan(markup.indexOf('Benchmarks'))
+    expect(markup.indexOf('Benchmarks')).toBeLessThan(markup.indexOf('Evaluation areas'))
+    expect(markup.indexOf('Evaluation areas')).toBeLessThan(
       markup.indexOf('Budget and reproducibility'),
     )
+    expectProductLanguage(markup)
   })
 
   it('explains when the selected target has no compatible suites or tracks', () => {
@@ -605,9 +618,10 @@ describe('EvaluationExperimentForm contract', () => {
       }),
     )
     expect(markup).toContain(
-      'Select a healthy catalog target that supports replay, or choose another mode.',
+      'Select an available Mixture that supports replay, or choose another run type.',
     )
-    expect(markup).toContain('Select a compatible benchmark suite to make its tracks available.')
-    expect(markup).toContain('Evidence class pending')
+    expect(markup).toContain('Select a compatible benchmark to see the areas it can measure.')
+    expect(markup).toContain('Choose benchmarks to set the scope')
+    expectProductLanguage(markup)
   })
 })

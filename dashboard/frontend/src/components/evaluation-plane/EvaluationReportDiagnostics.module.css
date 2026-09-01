@@ -215,25 +215,40 @@
 }
 
 .capacityChecks {
-  display: inline-grid;
-  grid-auto-flow: column;
-  gap: 0.22rem;
+  display: grid;
+  min-width: 260px;
+  gap: 0.3rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
-.capacityChecks > span {
+.capacityChecks > li {
   display: grid;
-  width: 20px;
-  height: 20px;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 0.4rem;
+  color: #ffb0b3;
+  font-size: 0.68rem;
+  line-height: 1.3;
+}
+
+.capacityChecks > li > span:first-child {
+  display: grid;
+  width: 18px;
+  height: 18px;
   place-items: center;
   border: 1px solid rgba(248, 113, 113, 0.38);
   border-radius: 50%;
-  color: #ffb0b3;
-  font-size: 0.7rem;
+  font-size: 0.65rem;
 }
 
-.capacityChecks > span[data-passed='true'] {
-  border-color: rgba(74, 222, 128, 0.34);
+.capacityChecks > li[data-passed='true'] {
   color: #a5f3c1;
+}
+
+.capacityChecks > li[data-passed='true'] > span:first-child {
+  border-color: rgba(74, 222, 128, 0.34);
 }
 
 @media (max-width: 800px) {

@@ -34,14 +34,8 @@
 }
 
 .catalogTableFrame {
-  max-height: min(55vh, 560px);
+  max-height: min(58vh, 620px);
   overflow: auto;
-}
-
-.catalogTableFrame thead {
-  position: sticky;
-  z-index: 2;
-  top: 0;
 }
 
 .surfaceHeader {
@@ -69,7 +63,6 @@
 
 .eyebrow {
   color: var(--text-muted);
-  font-family: var(--font-mono);
   font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -118,16 +111,14 @@
   color: var(--text-primary);
 }
 
-.quietButton,
-.dangerButton {
-  border-color: transparent;
-}
-
 .quietButton {
+  border-color: transparent;
   color: var(--text-secondary);
 }
 
 .dangerButton {
+  border-color: rgba(248, 113, 113, 0.26);
+  background: rgba(239, 68, 68, 0.045);
   color: #ff9da1;
 }
 
@@ -138,8 +129,8 @@
 }
 
 .dangerButton:hover:not(:disabled) {
-  border-color: rgba(248, 113, 113, 0.2);
-  background: rgba(239, 68, 68, 0.08);
+  border-color: rgba(248, 113, 113, 0.42);
+  background: rgba(239, 68, 68, 0.1);
 }
 
 .primaryButton:focus-visible,
@@ -380,8 +371,14 @@
 
 @media (max-width: 520px) {
   .inlineError,
-  .emptyState {
+  .emptyState,
+  .errorState {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .emptyState button,
+  .errorState button {
+    width: 100%;
   }
 }

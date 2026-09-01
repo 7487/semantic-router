@@ -7,7 +7,6 @@ method.  That makes a report's methodological claims independently auditable.
 
 from __future__ import annotations
 
-from collections import defaultdict
 from collections.abc import Iterable
 from itertools import pairwise
 from math import isfinite
@@ -147,35 +146,6 @@ class EvaluationMethodPlugin(StrictModel):
         ):
             raise ValueError("native parity requires benchmark-native execution")
         return self
-
-
-class CaseArmObservation(StrictModel):
-    """Generic observed value used by strict case x arm reducers."""
-
-    case_id: str
-    action: ActionRef
-    value: float = Field(ge=0, le=1, allow_inf_nan=False)
-
-    _case_id = field_validator("case_id")(validate_portable_id)
-
-
-def reduce_case_arm_observations(
-    observations: Iterable[CaseArmObservation],
-) -> dict[str, dict[str, float]]:
-    """Reduce one and only one observation for every supplied case x action cell."""
-
-    reduced: dict[str, dict[str, float]] = defaultdict(dict)
-    for observation in observations:
-        by_action = reduced[observation.case_id]
-        action_id = observation.action.id
-        if action_id in by_action:
-            raise ValueError(
-                f"duplicate case x action observation: {observation.case_id} x {action_id}"
-            )
-        by_action[action_id] = observation.value
-    if not reduced:
-        raise ValueError("case x action reducer requires observations")
-    return {case_id: dict(values) for case_id, values in reduced.items()}
 
 
 class CompoundModelBudgetOutcome(StrictModel):

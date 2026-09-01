@@ -3,7 +3,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type {
   CreateEvaluationRunPayload,
   EvaluationCatalog,
-  EvaluationCatalogCampaignSlot,
   EvaluationRun,
 } from '../types/evaluationPlane'
 import type { CreateEvaluationCampaignPayload } from '../types/evaluationCampaign'
@@ -28,7 +27,13 @@ import {
   listEvaluationRuns,
   startEvaluationRun,
 } from './evaluationPlaneApi'
-import { RUN_ID, run } from './evaluationPlaneApi.testFixtures'
+import {
+  canonicalBuiltinSuites,
+  canonicalCampaignSlots,
+  evaluationCatalogFixture,
+  RUN_ID,
+  run,
+} from './evaluationPlaneApi.testFixtures'
 import { decodeEvaluationReport } from './evaluationReportContract'
 
 const CREATE_RUN_ID = '4d0b4f2c-1fc5-40b0-b04e-876ad9d4d8e2'
@@ -40,48 +45,17 @@ const CAMPAIGN_LIVE_ID = '55555555-5555-4555-8555-555555555555'
 const CAMPAIGN_LIVE_BASELINE_ID = '66666666-6666-4666-8666-666666666666'
 const CAMPAIGN_CONFIRMATION_ID = '77777777-7777-4777-8777-777777777777'
 
-const campaignSlots = [
-  ['G2', 'run'],
-  ['G3', 'controlled_pair'],
-  ['G4', 'run'],
-  ['G5', 'fidelity_pair'],
-  ['G6', 'run'],
-  ['G7', 'run'],
-  ['G8', 'run'],
-  ['G9', 'run'],
-].map(([gate_id, binding_kind]) => ({
-  gate_id,
-  name: `${gate_id} evidence`,
-  description: 'Server campaign slot.',
-  disposition: 'not_applicable',
-  binding_kind,
-  minimum_evidence_level: 'E0',
-  accepted_executor_ids: [],
-})) as EvaluationCatalogCampaignSlot[]
-
-const catalog: EvaluationCatalog = {
-  schema_version: 'evaluation.v1',
-  gate_contract_version: 'evaluation-release-gates.v2',
-  generated_at: '2026-08-29T00:00:00Z',
+const catalog: EvaluationCatalog = evaluationCatalogFixture({
   change_profiles: [
     {
       id: 'recipe',
       name: 'Routing recipe',
       description: 'Recipe signal, decision, algorithm, and policy changes.',
-      campaign_slots: campaignSlots,
-    },
-  ],
-  tracks: [
-    {
-      id: 'routing',
-      name: 'Routing',
-      description: 'Routing quality',
-      modes: ['replay'],
-      metrics: [],
-      evidence_levels: ['E2'],
+      campaign_slots: canonicalCampaignSlots,
     },
   ],
   suites: [
+    ...canonicalBuiltinSuites,
     {
       id: 'suite-routing',
       executors: { replay: 'fixture-replay.v1' },
@@ -116,7 +90,7 @@ const catalog: EvaluationCatalog = {
       accepted_executors: { replay: ['fixture-replay.v1'] },
     },
   ],
-}
+})
 
 const request: CreateEvaluationRunPayload = {
   client_request_id: CREATE_RUN_ID,
@@ -245,16 +219,16 @@ describe('Evaluation Plane API', () => {
     expect(() => buildCreateRunPayload(untrusted, catalog)).toThrow(/non-contract fields/i)
     expect(() =>
       buildCreateRunPayload({ ...request, target_id: 'https://arbitrary.invalid' }, catalog),
-    ).toThrow(/server evaluation catalog/i)
+    ).toThrow(/available evaluation source/i)
     expect(() =>
       buildCreateRunPayload({ ...request, change_profile: 'selector' }, catalog),
-    ).toThrow(/change profile.*server evaluation catalog/i)
+    ).toThrow(/type of change/i)
     expect(() =>
       buildCreateRunPayload({ ...request, client_request_id: 'retry-me' }, catalog),
     ).toThrow(/canonical UUID/i)
     expect(() =>
       buildCreateRunPayload({ ...request, suite_ids: ['suite-routing', 'suite-routing'] }, catalog),
-    ).toThrow(/duplicate identities/i)
+    ).toThrow(/benchmarks.*duplicates/i)
     expect(() => buildCreateRunPayload({ ...request, concurrency: 1.5 }, catalog)).toThrow(
       /concurrency must be an integer/i,
     )
@@ -368,17 +342,7 @@ describe('Evaluation Plane API', () => {
   it('rejects partially supported suites and tracks before creating a run', () => {
     const expandedCatalog: EvaluationCatalog = {
       ...catalog,
-      tracks: [
-        ...catalog.tracks,
-        {
-          id: 'agentic',
-          name: 'Agentic',
-          description: 'Trajectory evidence',
-          modes: ['replay'],
-          metrics: [],
-          evidence_levels: ['E2'],
-        },
-      ],
+      tracks: [...catalog.tracks],
       suites: [
         ...catalog.suites,
         {
@@ -431,7 +395,7 @@ describe('Evaluation Plane API', () => {
         },
         expandedCatalog,
       ),
-    ).toThrow(/selected track/i)
+    ).toThrow(/evaluation area/i)
   })
 
   it('links only backend-allowlisted report artifacts and never the run manifest', () => {
@@ -573,6 +537,34 @@ describe('Evaluation Plane API', () => {
     expect(createBody).not.toHaveProperty('auto_start')
     expect(fetchMock.mock.calls[5]?.[1]).toMatchObject({ method: 'POST' })
     expect(fetchMock.mock.calls[6]?.[1]).toMatchObject({ method: 'DELETE' })
+  })
+
+  it('rejects incomplete or duplicate canonical catalog members', async () => {
+    const duplicateTrack = { ...catalog.tracks[0] }
+    const duplicateSuite = { ...catalog.suites[0] }
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({ ...catalog, tracks: catalog.tracks.slice(0, -1) }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          ...catalog,
+          tracks: [...catalog.tracks.slice(0, -1), duplicateTrack],
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          ...catalog,
+          suites: catalog.suites.filter((suite) => suite.id !== 'live-capacity'),
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({ ...catalog, suites: [...catalog.suites, duplicateSuite] }),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      await expect(getEvaluationCatalog()).rejects.toThrow(/catalog response is incomplete/i)
+    }
   })
 
   it('requires explicit and internally consistent ledger integrity metadata', async () => {

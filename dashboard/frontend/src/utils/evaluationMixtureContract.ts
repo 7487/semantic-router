@@ -193,8 +193,3 @@ export function isUnavailableEvaluationCatalogMixture(value: unknown): value is 
     isEvaluationMixtureContract(value, true)
   )
 }
-
-export function requireEvaluationMixture(value: unknown, resource: string): EvaluationMixture {
-  if (!isEvaluationMixture(value)) throw new Error(`${resource} has an invalid Mixture snapshot.`)
-  return value
-}

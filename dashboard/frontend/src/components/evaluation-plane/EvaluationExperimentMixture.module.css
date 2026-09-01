@@ -167,6 +167,48 @@
   line-height: 1.45;
 }
 
+.mixtureLineageDetails {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.mixtureLineageDetails > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 42px;
+  padding: 0.55rem 1rem;
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+}
+
+.mixtureLineageDetails > summary::-webkit-details-marker {
+  display: none;
+}
+
+.mixtureLineageDetails > summary::after {
+  width: 0.4rem;
+  height: 0.4rem;
+  flex: 0 0 auto;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  content: '';
+  transform: rotate(45deg) translate(-0.08rem, -0.08rem);
+  transition: transform var(--transition-fast);
+}
+
+.mixtureLineageDetails[open] > summary::after {
+  transform: rotate(225deg) translate(-0.04rem, -0.04rem);
+}
+
+.mixtureLineageDetails > summary:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -3px;
+}
+
 .mixtureLineage {
   display: flex;
   flex-wrap: wrap;

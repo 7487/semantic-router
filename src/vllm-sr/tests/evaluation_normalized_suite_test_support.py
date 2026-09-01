@@ -26,7 +26,6 @@ from cli.evaluation.contracts import (
     Message,
     MixtureDecisionBinding,
     RunManifest,
-    default_capacity_load_protocol,
 )
 from cli.evaluation.execution_contract import (
     NORMALIZED_LIVE_EXECUTOR_ID,
@@ -38,7 +37,6 @@ from cli.evaluation.manifest_identity import (
     model_pool_snapshot_digest,
     selector_snapshot_digest,
 )
-from cli.evaluation.routing_recipe_plan import build_routing_recipe_plan
 from cli.evaluation.suite_catalog import NormalizedSuiteCatalog
 from cli.evaluation.suite_contract import (
     BenchmarkSourceReceipt,
@@ -59,6 +57,10 @@ from cli.evaluation.suite_install_contract import (
     SuiteArtifactRole,
 )
 from cli.evaluation.suite_store import NormalizedSuiteStore
+from evaluation_contract_test_support import (
+    build_routing_recipe_plan,
+    default_capacity_load_protocol,
+)
 
 
 def _catalog(store: NormalizedSuiteStore) -> NormalizedSuiteCatalog:

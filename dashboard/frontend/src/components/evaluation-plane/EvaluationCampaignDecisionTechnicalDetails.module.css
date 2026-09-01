@@ -1,0 +1,146 @@
+.technicalDisclosure {
+  min-width: 0;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.technicalDisclosure > summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 1rem;
+  min-height: var(--control-height);
+  padding: 0.85rem 0;
+  cursor: pointer;
+  list-style: none;
+  transition: background var(--transition-fast);
+}
+
+.technicalDisclosure > summary::-webkit-details-marker {
+  display: none;
+}
+
+.technicalDisclosure > summary::after {
+  width: 0.45rem;
+  height: 0.45rem;
+  flex: 0 0 auto;
+  border-right: 1.5px solid var(--text-secondary);
+  border-bottom: 1.5px solid var(--text-secondary);
+  content: '';
+  transform: rotate(45deg) translate(-0.1rem, -0.1rem);
+  transition: transform var(--transition-fast);
+}
+
+.technicalDisclosure[open] > summary::after {
+  transform: rotate(225deg) translate(-0.05rem, -0.05rem);
+}
+
+.technicalDisclosure > summary:hover {
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.technicalDisclosure > summary:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+
+.technicalSummaryCopy {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.technicalSummaryCopy strong {
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+}
+
+.technicalSummaryCopy small,
+.technicalSummaryCount {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+}
+
+.technicalSummaryCount {
+  white-space: nowrap;
+}
+
+.technicalBody {
+  display: grid;
+  min-width: 0;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.technicalGroup {
+  display: grid;
+  min-width: 0;
+  gap: 0.7rem;
+  padding: 1rem 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.technicalGroup:last-child {
+  border-bottom: 0;
+}
+
+.technicalGroupHeader {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.technicalGroupHeader > div {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.technicalGroupHeader h4,
+.technicalSubgroup h5 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  letter-spacing: -0.015em;
+}
+
+.technicalGroupHeader p {
+  max-width: 48rem;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+  line-height: 1.5;
+}
+
+.technicalGroupHeader > span {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  white-space: nowrap;
+}
+
+.technicalSubgroup {
+  display: grid;
+  gap: 0.55rem;
+  padding-top: 0.15rem;
+}
+
+.technicalSubgroup h5 {
+  font-size: var(--text-xs);
+}
+
+@media (max-width: 760px) {
+  .technicalGroupHeader {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 480px) {
+  .technicalDisclosure > summary {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.65rem;
+  }
+
+  .technicalSummaryCount {
+    display: none;
+  }
+}

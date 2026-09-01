@@ -28,16 +28,6 @@ type workerReport struct {
 	Artifacts       []Artifact    `json:"artifacts"`
 }
 
-func workerReportFromReport(report Report) workerReport {
-	return workerReport{
-		SchemaVersion: report.SchemaVersion,
-		Run:           report.Run, Summary: report.Summary, Tracks: report.Tracks,
-		Metrics: report.Metrics, Gates: report.Gates, Costs: report.Costs,
-		Recommendations: report.Recommendations, Provenance: report.Provenance,
-		Artifacts: report.Artifacts,
-	}
-}
-
 func (s *Service) ReportJSON(runID string) ([]byte, error) {
 	release, err := s.acquireEvidenceRead()
 	if err != nil {

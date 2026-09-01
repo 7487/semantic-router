@@ -1,34 +1,57 @@
-import type { EvaluationReport } from '../../types/evaluationReport'
-import { TRACK_PRESENTATION } from '../../types/evaluationPlane'
+import type { EvaluationReport, EvaluationTrackReport } from '../../types/evaluationReport'
+import { TRACK_PRESENTATION } from './evaluationTrackPresentation'
+import { evaluationResultScopeLabel } from './evaluationPresentation'
+import EvaluationIssueDetails from './EvaluationIssueDetails'
 import { RunStatusBadge } from './EvaluationPrimitives'
 import styles from './EvaluationReportLayout.module.css'
 import tableStyles from './EvaluationReportTable.module.css'
+
+function trackProductSummary(track: EvaluationTrackReport): string {
+  switch (track.status) {
+    case 'completed':
+      return track.coverage.unavailable
+        ? 'Verified results are available, with some cases not measured.'
+        : 'Verified results are available for this area.'
+    case 'failed':
+      return 'This area stopped before a final result was published.'
+    case 'cancelled':
+      return 'This area stopped before completing.'
+    case 'skipped':
+      return 'This area was not executed for this run.'
+    case 'unavailable':
+      return 'This area did not produce verified results.'
+    case 'pending':
+    case 'running':
+    case 'sealing':
+      return 'This area did not publish a final result.'
+  }
+}
 
 export default function EvaluationReportTracks({ report }: { report: EvaluationReport }) {
   return (
     <section className={styles.section} aria-labelledby="report-tracks-title">
       <div className={styles.sectionHeader}>
         <div>
-          <span className={styles.eyebrow}>Verified track scope</span>
-          <h3 id="report-tracks-title">Track observations</h3>
-          <p>Track status and coverage are bound to the server attestation.</p>
+          <span className={styles.eyebrow}>Evaluation coverage</span>
+          <h3 id="report-tracks-title">Results by evaluation area</h3>
+          <p>Status, coverage, and validation depth for every selected area.</p>
         </div>
-        <span>{report.tracks.length} selected tracks</span>
+        <span>{report.tracks.length} selected areas</span>
       </div>
       <div
         className={tableStyles.tableScroll}
         role="region"
         tabIndex={0}
-        aria-label="Scrollable evaluation track observations"
+        aria-label="Scrollable results by evaluation area"
       >
         <table className={tableStyles.table}>
-          <caption>Observation state and coverage by selected evaluation track</caption>
+          <caption>Result status and coverage by selected evaluation area</caption>
           <thead>
             <tr>
-              <th scope="col">Track</th>
-              <th scope="col">Observation</th>
+              <th scope="col">Evaluation area</th>
+              <th scope="col">Status</th>
               <th scope="col">Coverage</th>
-              <th scope="col">Evidence</th>
+              <th scope="col">Validation depth</th>
               <th scope="col">Summary</th>
             </tr>
           </thead>
@@ -46,8 +69,20 @@ export default function EvaluationReportTracks({ report }: { report: EvaluationR
                     ? ` · ${track.coverage.unavailable} not measured`
                     : ''}
                 </td>
-                <td>{track.evidence_level}</td>
-                <td>{track.error || track.summary}</td>
+                <td>{evaluationResultScopeLabel(track.evidence_level)}</td>
+                <td>
+                  <div className={styles.trackSummary}>
+                    <span>{trackProductSummary(track)}</span>
+                    <EvaluationIssueDetails
+                      issues={[
+                        ...(track.summary
+                          ? [{ label: 'Recorded summary', message: track.summary }]
+                          : []),
+                        ...(track.error ? [{ label: 'Recorded error', message: track.error }] : []),
+                      ]}
+                    />
+                  </div>
+                </td>
               </tr>
             ))}
           </tbody>

@@ -42,38 +42,38 @@ class ChangeProfileDefinition:
 CHANGE_PROFILE_DEFINITIONS = (
     ChangeProfileDefinition(
         "schema_adapter",
-        "Schema / adapter",
-        "Strict schema and adapter parity changes.",
+        "Schema and integration",
+        "Request or response formats, provider integrations, and adapter behavior changes.",
     ),
     ChangeProfileDefinition(
         "recipe",
         "Routing recipe",
-        "Recipe signal, decision, algorithm, and policy changes.",
+        "Routing rules, signals, decision logic, or selection policy changes.",
     ),
     ChangeProfileDefinition(
         "selector",
-        "Selector / binding",
-        "Selector, projection, classifier, and binding changes.",
+        "Model selection",
+        "Model scoring, prediction, classification, or model-binding changes.",
     ),
     ChangeProfileDefinition(
         "model_pool",
         "Model pool",
-        "Logical arm composition, capability, quality, and price changes.",
+        "Available models, their capabilities, quality, reliability, or pricing changes.",
     ),
     ChangeProfileDefinition(
         "runtime_capacity",
-        "Runtime / capacity",
-        "Serving runtime, placement, capacity, and transport changes.",
+        "Runtime and capacity",
+        "Serving software, deployment placement, throughput, latency, or transport changes.",
     ),
     ChangeProfileDefinition(
         "agent_multimodal",
-        "Agent / multimodal",
-        "Agent trajectory, tool, state, and multimodal changes.",
+        "Agents and multimodal",
+        "Tool use, multi-step agent behavior, state handling, or multimodal input changes.",
     ),
     ChangeProfileDefinition(
         "online_adaptation",
-        "Online adaptation",
-        "Online assignment, preference, feedback, and adaptive policy changes.",
+        "Online learning and feedback",
+        "Traffic assignment, user preferences, feedback, or adaptive policy changes.",
     ),
 )
 

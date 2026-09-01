@@ -387,7 +387,9 @@ describe('catalog-owned promotion campaign slots', () => {
 
   it('preserves exact same-attempt cohort checks for controlled sources', () => {
     const mismatch = run('20000000-0000-4000-8000-000000000011', 'live', { seed: 7 })
-    expect(pairedCampaignCohortMismatches(liveBaseline, mismatch)).toContain('seed')
+    expect(pairedCampaignCohortMismatches(liveBaseline, mismatch)).toContain(
+      'repeatability setting',
+    )
   })
 
   it('requires an attested live reference followed by fresh exact-cohort live evidence', () => {
@@ -424,9 +426,9 @@ describe('catalog-owned promotion campaign slots', () => {
         true,
         true,
       ),
-    ).toMatch(/required G3/i)
-    expect(validateEvaluationCampaignDraft(catalog, runs, draft(), true, true, false)).toMatch(
-      /complete run ledger/i,
+    ).toBe('Select evidence for every required release check.')
+    expect(validateEvaluationCampaignDraft(catalog, runs, draft(), true, true, false)).toBe(
+      'Load all runs before selecting evidence for this decision.',
     )
   })
 
@@ -445,7 +447,62 @@ describe('catalog-owned promotion campaign slots', () => {
         true,
         true,
       ),
-    ).toMatch(/cannot fill two slots/i)
+    ).toBe('Use a different completed run for each release check.')
+  })
+
+  it('returns stable product guidance for every preflight boundary', () => {
+    const messages = [
+      validateEvaluationCampaignDraft(catalog, runs, draft(), false, true, true),
+      validateEvaluationCampaignDraft(catalog, runs, draft(), true, false, true),
+      validateEvaluationCampaignDraft(catalog, runs, draft(), true, true, false),
+      validateEvaluationCampaignDraft(catalog, runs, draft({ name: '' }), true, true, true),
+      validateEvaluationCampaignDraft(
+        catalog,
+        runs,
+        draft({ changeProfile: 'schema_adapter' }),
+        true,
+        true,
+        true,
+      ),
+      validateEvaluationCampaignDraft(
+        catalog,
+        runs,
+        draft({
+          gateBindings: { ...draft().gateBindings, g4_run_id: 'missing-run' },
+        }),
+        true,
+        true,
+        true,
+      ),
+      validateEvaluationCampaignDraft(
+        catalog,
+        runs,
+        draft({
+          gateBindings: { ...draft().gateBindings, g4_run_id: fixture.id },
+        }),
+        true,
+        true,
+        true,
+      ),
+      validateEvaluationCampaignDraft(
+        catalog,
+        runs.map((item) =>
+          item.id === controlledCandidate.id ? { ...item, baseline_run_id: undefined } : item,
+        ),
+        draft(),
+        true,
+        true,
+        true,
+      ),
+    ]
+
+    expect(messages).toContain(
+      'Launch a fresh controlled comparison for the selected baseline and candidate.',
+    )
+    for (const message of messages) {
+      expect(message).not.toBeNull()
+      expect(message).not.toMatch(/\b(?:ledger|campaign|server|slot|G[0-9]|E[0-5]|bytes?)\b/i)
+    }
   })
 
   it('builds only the v2 gate binding payload', () => {

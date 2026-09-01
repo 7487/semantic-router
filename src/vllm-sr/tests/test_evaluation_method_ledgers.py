@@ -48,7 +48,7 @@ from cli.evaluation.production_experiment_ledger import (
     ProductionExperimentLedger,
     execute_production_experiment_ledger,
 )
-from cli.evaluation.routing_recipe_plan import build_routing_recipe_plan
+from evaluation_contract_test_support import build_routing_recipe_plan
 from evaluation_method_ledger_test_support import (
     _CONFIG,
     _POLICY,

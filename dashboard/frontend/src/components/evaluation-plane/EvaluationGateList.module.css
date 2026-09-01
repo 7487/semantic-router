@@ -27,21 +27,15 @@
   box-shadow: inset 2px 0 0 var(--color-warning);
 }
 
-.gateIdentity > div {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 0.45rem;
+.gateIdentity {
+  display: grid;
+  gap: 0.3rem;
+  min-width: 0;
 }
 
 .gateIdentity strong {
   color: var(--text-primary);
   font-size: var(--text-sm);
-}
-
-.gateIdentity code {
-  color: var(--text-muted);
-  font-size: 0.7rem;
 }
 
 .gateIdentity p,
@@ -62,6 +56,23 @@
   gap: 0.18rem;
   color: var(--text-secondary);
   font-size: 0.72rem;
+}
+
+.gateEvidenceMeta {
+  color: var(--text-secondary);
+  font-size: 0.68rem;
+  font-weight: 650;
+  line-height: 1.45;
+}
+
+.gateRequirement {
+  color: var(--text-secondary);
+  font-size: 0.68rem;
+  font-weight: 650;
+}
+
+.gateVerdict {
+  justify-self: end;
 }
 
 .gateReferences {
@@ -85,10 +96,82 @@
   text-overflow: ellipsis;
 }
 
+.gateTechnicalDetails {
+  margin-top: 0.08rem;
+}
+
+.gateTechnicalDetails summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.3rem 0;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  font-weight: 600;
+  list-style: none;
+}
+
+.gateTechnicalDetails summary::-webkit-details-marker {
+  display: none;
+}
+
+.gateTechnicalDetails summary::after {
+  width: 0.38rem;
+  height: 0.38rem;
+  flex: 0 0 auto;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  content: '';
+  transform: rotate(45deg) translate(-0.08rem, -0.08rem);
+  transition: transform var(--transition-fast);
+}
+
+.gateTechnicalDetails summary:hover,
+.gateTechnicalDetails summary:focus-visible,
+.gateTechnicalDetails[open] summary {
+  color: var(--text-primary);
+}
+
+.gateTechnicalDetails[open] summary::after {
+  transform: rotate(225deg) translate(-0.04rem, -0.04rem);
+}
+
+.gateTechnicalDetails summary:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+
+.gateTechnicalCopy {
+  display: grid;
+  gap: 0.12rem;
+  margin: 0.35rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  line-height: 1.45;
+}
+
+.gateTechnicalCopy strong {
+  color: var(--text-secondary);
+  font-size: inherit;
+}
+
 .unavailableWarning {
   margin-top: 0.25rem;
   color: #f9d38b;
   font-size: 0.72rem;
+}
+
+.nextActions {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding-left: 1.2rem;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  line-height: 1.55;
 }
 
 @media (max-width: 1050px) {
@@ -96,8 +179,20 @@
     grid-template-columns: minmax(220px, 0.8fr) minmax(260px, 1fr);
   }
 
-  .gateRow > :last-child {
-    grid-column: 1 / -1;
+  .gateIdentity {
+    grid-column: 1;
+    grid-row: 1;
+    padding-right: 6rem;
+  }
+
+  .gateEvidence {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .gateVerdict {
+    grid-column: 1;
+    grid-row: 1;
   }
 }
 
@@ -106,7 +201,8 @@
     grid-template-columns: 1fr;
   }
 
-  .gateRow > :last-child {
-    grid-column: auto;
+  .gateEvidence {
+    grid-column: 1;
+    grid-row: 2;
   }
 }

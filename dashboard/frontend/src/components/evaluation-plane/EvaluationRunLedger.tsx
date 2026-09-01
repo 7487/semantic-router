@@ -3,9 +3,12 @@ import type {
   EvaluationRunStatus,
   EvaluationTrackId,
 } from '../../types/evaluationPlane'
-import { EVALUATION_TRACK_IDS, TRACK_PRESENTATION } from '../../types/evaluationPlane'
+import { EVALUATION_TRACK_IDS } from '../../types/evaluationPlane'
 import { formatDateTime } from '../../utils/dateTime'
+import EvaluationIssueDetails from './EvaluationIssueDetails'
 import { EvaluationActionButton, RunStatusBadge } from './EvaluationPrimitives'
+import { changeProfileLabel } from './evaluationRunPresentation'
+import { TRACK_PRESENTATION } from './evaluationTrackPresentation'
 import planeStyles from './EvaluationPlane.module.css'
 import styles from './EvaluationRuns.module.css'
 import type { EvaluationRunLedgerModel } from './useEvaluationRunLedger'
@@ -28,14 +31,14 @@ export function EvaluationRunLedgerFilters({
   const { search, status, track, filteredRuns, setSearch, setStatus, setTrack } = model
   return (
     <>
-      <div className={styles.filters}>
+      <div className={styles.filters} role="search" aria-label="Filter evaluation runs">
         <label>
           <span>Search</span>
           <input
             type="search"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="Run, target, profile, or ID"
+            placeholder="Run, target, or change type"
           />
         </label>
         <label>
@@ -47,19 +50,19 @@ export function EvaluationRunLedgerFilters({
             <option value="all">All statuses</option>
             <option value="pending">Pending</option>
             <option value="running">Running</option>
-            <option value="sealing">Sealing evidence</option>
+            <option value="sealing">Finalizing report</option>
             <option value="completed">Completed</option>
             <option value="failed">Failed</option>
             <option value="cancelled">Cancelled</option>
           </select>
         </label>
         <label>
-          <span>Track</span>
+          <span>Evaluation area</span>
           <select
             value={track}
             onChange={(event) => setTrack(event.target.value as EvaluationTrackId | 'all')}
           >
-            <option value="all">All tracks</option>
+            <option value="all">All areas</option>
             {EVALUATION_TRACK_IDS.map((id) => (
               <option key={id} value={id}>
                 {TRACK_PRESENTATION[id].label}
@@ -67,16 +70,25 @@ export function EvaluationRunLedgerFilters({
             ))}
           </select>
         </label>
-        <span className={styles.resultCount} aria-live="polite">
-          {runLedgerAvailable
-            ? `${filteredRuns.length} matching among loaded · ${loadedRuns} of ${totalRuns} runs loaded`
-            : 'Run ledger unavailable'}
-        </span>
+      </div>
+      <div className={styles.filterSummary} aria-live="polite">
+        {runLedgerAvailable ? (
+          <>
+            <strong>{filteredRuns.length}</strong> matching run
+            {filteredRuns.length === 1 ? '' : 's'}
+            <span aria-hidden="true">·</span>
+            <span>
+              {loadedRuns} of {totalRuns} loaded
+            </span>
+          </>
+        ) : (
+          'Run history unavailable'
+        )}
       </div>
       {hasMoreRuns ? (
         <p className={planeStyles.scopeNotice} role="status">
           Search and filters cover only the {loadedRuns} loaded runs. Load older records to search
-          and filter the full ledger.
+          and filter the full history.
         </p>
       ) : null}
     </>
@@ -96,119 +108,184 @@ interface EvaluationRunLedgerProps {
   onLoadMore: () => void
 }
 
-export default function EvaluationRunLedger({
+function runProgressSummary(run: EvaluationRun): string {
+  switch (run.status) {
+    case 'pending':
+      return 'Awaiting start'
+    case 'running':
+      return run.progress.total > 0
+        ? `${run.progress.completed} of ${run.progress.total} steps complete`
+        : 'Evaluation in progress'
+    case 'sealing':
+      return 'Finalizing verified results'
+    case 'completed':
+      return 'Report ready'
+    case 'failed':
+      return 'Stopped before completion'
+    case 'cancelled':
+      return 'Cancelled before completion'
+  }
+}
+
+function RunLedgerEmpty({
+  runs,
+  available,
+  filtersActive,
+  onReset,
+}: {
+  runs: EvaluationRun[]
+  available: boolean
+  filtersActive: boolean
+  onReset: () => void
+}) {
+  return (
+    <div className={planeStyles.emptyState}>
+      <div>
+        <strong>
+          {!available
+            ? 'Run history is unavailable.'
+            : runs.length
+              ? 'No runs match these filters.'
+              : 'No evaluation runs yet.'}
+        </strong>
+        <p>
+          {!available
+            ? 'Retry before interpreting run history.'
+            : runs.length
+              ? 'Reset filters to return to all runs.'
+              : 'Create an experiment to establish the first evidence baseline.'}
+        </p>
+      </div>
+      {filtersActive ? (
+        <EvaluationActionButton type="button" compact onClick={onReset}>
+          Reset filters
+        </EvaluationActionButton>
+      ) : null}
+    </div>
+  )
+}
+
+function RunLedgerList({
   runs,
   selectedRunID,
-  runLedgerAvailable,
-  totalRuns,
-  hasMoreRuns,
-  loadingMore,
-  refreshing,
-  model,
   onSelect,
-  onLoadMore,
-}: EvaluationRunLedgerProps) {
-  const { page, pages, visibleRuns, filtersActive, resetFilters, setPage } = model
+}: {
+  runs: EvaluationRun[]
+  selectedRunID: string | null
+  onSelect: (run: EvaluationRun) => void
+}) {
+  return (
+    <ol className={styles.runList} aria-label="Evaluation run history">
+      {runs.map((run) => (
+        <li
+          key={run.id}
+          className={`${styles.runRow} ${selectedRunID === run.id ? styles.runSelected : ''}`}
+        >
+          <button
+            type="button"
+            data-evaluation-ledger-row="true"
+            className={styles.runSummary}
+            aria-label={`Open ${run.name} details`}
+            aria-current={selectedRunID === run.id ? 'true' : undefined}
+            onClick={() => onSelect(run)}
+          >
+            <span className={styles.runRowTop}>
+              <strong>{run.name}</strong>
+              <RunStatusBadge status={run.status} />
+            </span>
+            <span className={styles.runRowMeta}>
+              {run.mixture?.entrypoint_model || (run.mode === 'live' ? 'Live run' : 'Replay')} ·{' '}
+              {run.mixture?.recipe_name || changeProfileLabel(run.change_profile)} ·{' '}
+              {formatDateTime(run.created_at)}
+            </span>
+            <span className={styles.runRowProgress}>
+              {Math.round(run.progress.percent)}% · {runProgressSummary(run)}
+            </span>
+          </button>
+        </li>
+      ))}
+    </ol>
+  )
+}
 
+function RunLedgerPagination({
+  page,
+  pages,
+  setPage,
+}: Pick<EvaluationRunLedgerModel, 'page' | 'pages' | 'setPage'>) {
+  if (pages <= 1) return null
+  return (
+    <nav className={styles.pagination} aria-label="Run history pages">
+      <EvaluationActionButton
+        type="button"
+        compact
+        disabled={page === 1}
+        onClick={() => setPage((value) => value - 1)}
+      >
+        Previous
+      </EvaluationActionButton>
+      <span>
+        Page {page} of {pages}
+      </span>
+      <EvaluationActionButton
+        type="button"
+        compact
+        disabled={page === pages}
+        onClick={() => setPage((value) => value + 1)}
+      >
+        Next
+      </EvaluationActionButton>
+    </nav>
+  )
+}
+
+function RunLedgerLoadMore(props: EvaluationRunLedgerProps) {
+  if (!props.hasMoreRuns) return null
+  return (
+    <div className={styles.pagination} aria-label="Load more evaluation runs">
+      <span>
+        {props.runs.length} of {props.totalRuns} runs loaded
+      </span>
+      <EvaluationActionButton
+        type="button"
+        compact
+        disabled={props.loadingMore || props.refreshing}
+        onClick={props.onLoadMore}
+      >
+        {props.loadingMore ? 'Loading more…' : 'Load more'}
+      </EvaluationActionButton>
+    </div>
+  )
+}
+
+export default function EvaluationRunLedger(props: EvaluationRunLedgerProps) {
+  const { visibleRuns, filtersActive, resetFilters } = props.model
+  const progressDetails = visibleRuns.flatMap((run) =>
+    run.progress.message ? [{ label: `${run.name} progress`, message: run.progress.message }] : [],
+  )
   return (
     <div className={styles.runLedger}>
       {visibleRuns.length === 0 ? (
-        <div className={planeStyles.emptyState}>
-          <div>
-            <strong>
-              {!runLedgerAvailable
-                ? 'Run ledger is unavailable.'
-                : runs.length
-                  ? 'No runs match these filters.'
-                  : 'No evaluation runs yet.'}
-            </strong>
-            <p>
-              {!runLedgerAvailable
-                ? 'Retry the ledger before interpreting run history.'
-                : runs.length
-                  ? 'Reset filters to return to the full ledger.'
-                  : 'Create an experiment to establish the first evidence baseline.'}
-            </p>
-          </div>
-          {filtersActive ? (
-            <EvaluationActionButton type="button" compact onClick={resetFilters}>
-              Reset filters
-            </EvaluationActionButton>
-          ) : null}
-        </div>
+        <RunLedgerEmpty
+          runs={props.runs}
+          available={props.runLedgerAvailable}
+          filtersActive={filtersActive}
+          onReset={resetFilters}
+        />
       ) : (
-        <ol className={styles.runList} aria-label="Evaluation run ledger">
-          {visibleRuns.map((run) => (
-            <li
-              key={run.id}
-              className={`${styles.runRow} ${selectedRunID === run.id ? styles.runSelected : ''}`}
-            >
-              {/* The row is a selectable ledger item; it deliberately keeps listbox-like affordance
-                  instead of inheriting the page action-button hierarchy. */}
-              <button
-                type="button"
-                data-evaluation-ledger-row="true"
-                className={styles.runSummary}
-                aria-label={`Inspect ${run.name}`}
-                aria-current={selectedRunID === run.id ? 'true' : undefined}
-                onClick={() => onSelect(run)}
-              >
-                <span className={styles.runRowTop}>
-                  <strong>{run.name}</strong>
-                  <RunStatusBadge status={run.status} />
-                </span>
-                <span className={styles.runRowMeta}>
-                  {run.mixture?.entrypoint_model || run.mode} ·{' '}
-                  {run.mixture?.recipe_name || run.change_profile} ·{' '}
-                  {formatDateTime(run.created_at)}
-                </span>
-                <span className={styles.runRowProgress}>
-                  {Math.round(run.progress.percent)}% ·{' '}
-                  {run.progress.message || 'Awaiting execution'}
-                </span>
-              </button>
-            </li>
-          ))}
-        </ol>
+        <RunLedgerList
+          runs={visibleRuns}
+          selectedRunID={props.selectedRunID}
+          onSelect={props.onSelect}
+        />
       )}
-      {pages > 1 ? (
-        <nav className={styles.pagination} aria-label="Run ledger pages">
-          <EvaluationActionButton
-            type="button"
-            compact
-            disabled={page === 1}
-            onClick={() => setPage((value) => value - 1)}
-          >
-            Previous
-          </EvaluationActionButton>
-          <span>
-            Page {page} of {pages}
-          </span>
-          <EvaluationActionButton
-            type="button"
-            compact
-            disabled={page === pages}
-            onClick={() => setPage((value) => value + 1)}
-          >
-            Next
-          </EvaluationActionButton>
-        </nav>
-      ) : null}
-      {hasMoreRuns ? (
-        <div className={styles.pagination} aria-label="Load more evaluation runs">
-          <span>
-            {runs.length} of {totalRuns} runs loaded
-          </span>
-          <EvaluationActionButton
-            type="button"
-            compact
-            disabled={loadingMore || refreshing}
-            onClick={onLoadMore}
-          >
-            {loadingMore ? 'Loading more…' : 'Load more'}
-          </EvaluationActionButton>
-        </div>
-      ) : null}
+      <EvaluationIssueDetails className={styles.ledgerTechnicalDetails} issues={progressDetails} />
+      <RunLedgerPagination
+        page={props.model.page}
+        pages={props.model.pages}
+        setPage={props.model.setPage}
+      />
+      <RunLedgerLoadMore {...props} />
     </div>
   )
 }

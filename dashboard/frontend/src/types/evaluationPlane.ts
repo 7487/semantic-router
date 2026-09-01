@@ -359,39 +359,3 @@ export type EvaluationRunEvent =
   | EvaluationTrackRunEvent
   | EvaluationTerminalRunEvent
   | EvaluationPayloadlessRunEvent
-
-export const TRACK_PRESENTATION: Record<EvaluationTrackId, { label: string; description: string }> =
-  {
-    routing: {
-      label: 'Routing',
-      description: 'Recipe decisions, oracle regret, abstention, calibration, and eligibility.',
-    },
-    model_pool: {
-      label: 'Model pool',
-      description: 'Arm quality, complementarity, coverage, dominance, and failure isolation.',
-    },
-    joint: {
-      label: 'Routing + pool',
-      description: 'End-to-end quality, latency, cost, reliability, and decomposition.',
-    },
-    agentic: {
-      label: 'Agentic',
-      description: 'Trajectory success, tool use, state continuity, recovery, and budget.',
-    },
-    multimodal: {
-      label: 'Multimodal',
-      description: 'Modality-aware routing, perception, grounding, and cross-modal quality.',
-    },
-    preference: {
-      label: 'Preference',
-      description: 'Offline preference, online trials, stability, and feedback adaptation.',
-    },
-    safety: {
-      label: 'Safety',
-      description: 'Policy adherence, attack resistance, privacy, and unsafe regressions.',
-    },
-    capacity: {
-      label: 'Capacity',
-      description: 'Throughput, saturation, queueing, SLOs, GPU efficiency, and TCO.',
-    },
-  }

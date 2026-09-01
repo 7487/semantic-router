@@ -2,6 +2,7 @@ import type { EvaluationChangeProfileId, EvaluationCatalog } from '../../types/e
 import type { EvaluationExperimentFormModel } from './useEvaluationExperimentForm'
 import EvaluationExperimentSectionHeading from './EvaluationExperimentSectionHeading'
 import { EvaluationTag } from './EvaluationPrimitives'
+import { evaluationGateCapabilityLabel } from './evaluationPresentation'
 import styles from './EvaluationExperimentGateScope.module.css'
 import noticeStyles from './EvaluationExperimentNotice.module.css'
 import sectionStyles from './EvaluationExperimentSection.module.css'
@@ -25,12 +26,12 @@ export default function EvaluationExperimentGateScope({
     <section className={sectionStyles.formSection}>
       <EvaluationExperimentSectionHeading
         index="02"
-        title="Change profile and G0–G9 contract"
-        description="The profile defines which release gates are required, advisory, or not applicable."
+        title="Release readiness"
+        description="The change type selects the checks required before this result can support a production decision."
       />
       <div className={styles.profileHeader}>
         <label>
-          Change profile
+          Change type
           <select
             value={form.changeProfile}
             disabled={form.baselineLocked}
@@ -39,7 +40,7 @@ export default function EvaluationExperimentGateScope({
             }
             required
           >
-            <option value="">Select profile</option>
+            <option value="">Select change type</option>
             {catalog.change_profiles.map((profile) => (
               <option key={profile.id} value={profile.id}>
                 {profile.name}
@@ -48,29 +49,30 @@ export default function EvaluationExperimentGateScope({
           </select>
           <small>
             {form.selectedChangeProfile?.description ||
-              'Only server-declared change profiles are selectable.'}
+              'Only registered change types are selectable.'}
           </small>
         </label>
         <div>
-          <span>Gate contract</span>
-          <code>{catalog.gate_contract_version}</code>
+          <span>Release checks</span>
+          <strong>
+            {requiredGates} required · {advisoryGates} recommended
+          </strong>
         </div>
       </div>
       {form.gateApplicability.length ? (
         <details className={styles.gateDisclosure}>
           <summary>
-            <span>Review G0–G9 applicability</span>
+            <span>Review release checks</span>
             <small>
-              {requiredGates} required · {advisoryGates} advisory ·{' '}
-              {form.gateApplicability.length - requiredGates - advisoryGates} not applicable
+              {requiredGates} required · {advisoryGates} recommended ·{' '}
+              {form.gateApplicability.length - requiredGates - advisoryGates} not required
             </small>
           </summary>
-          <div className={styles.gateMatrix} aria-label="G0–G9 gate applicability">
+          <div className={styles.gateMatrix} role="list" aria-label="Release check applicability">
             {form.gateApplicability.map((gate) => (
-              <article key={gate.id} data-disposition={gate.disposition}>
+              <article key={gate.id} role="listitem" data-disposition={gate.disposition}>
                 <div>
-                  <code>{gate.id}</code>
-                  <strong>{gate.name}</strong>
+                  <strong>{evaluationGateCapabilityLabel(gate.id)}</strong>
                 </div>
                 <EvaluationTag
                   tone={
@@ -81,7 +83,11 @@ export default function EvaluationExperimentGateScope({
                         : 'neutral'
                   }
                 >
-                  {gate.disposition.replace('_', ' ')}
+                  {gate.disposition === 'required'
+                    ? 'Required'
+                    : gate.disposition === 'advisory'
+                      ? 'Recommended'
+                      : 'Not required'}
                 </EvaluationTag>
                 <small>{gate.description}</small>
               </article>
@@ -90,8 +96,8 @@ export default function EvaluationExperimentGateScope({
         </details>
       ) : (
         <div className={noticeStyles.contractWarning} role="status">
-          This dashboard cannot explain applicability for gate contract{' '}
-          <code>{catalog.gate_contract_version}</code>. The server report remains authoritative.
+          Release checks for this evaluation catalog could not be explained. The completed report
+          remains the source of truth for a production decision.
         </div>
       )}
     </section>

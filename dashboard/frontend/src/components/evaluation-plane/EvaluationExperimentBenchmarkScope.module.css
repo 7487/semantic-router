@@ -30,6 +30,12 @@
   background: rgba(255, 255, 255, 0.025);
 }
 
+.catalogCard:focus-within,
+.trackCard:focus-within {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -3px;
+}
+
 .active {
   background: rgba(255, 255, 255, 0.045);
   box-shadow: inset 2px 0 0 var(--brand-amd);

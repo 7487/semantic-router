@@ -1,4 +1,7 @@
 import type { EvaluationRunLedgerWarning } from '../types/evaluationPlane'
+import EvaluationIssueDetails, {
+  type EvaluationIssueDetail,
+} from '../components/evaluation-plane/EvaluationIssueDetails'
 import { EvaluationActionButton } from '../components/evaluation-plane/EvaluationPrimitives'
 import styles from './EvaluationPage.module.css'
 
@@ -18,91 +21,114 @@ interface EvaluationPageStatusProps {
   onClearMutationError: () => void
 }
 
-export default function EvaluationPageStatus({
-  readonlyLoading,
-  serverReadonly,
-  hasCatalog,
-  catalogError,
-  runsError,
-  runsLoaded,
-  refreshing,
-  runLedgerComplete,
-  runLedgerWarningCount,
-  runLedgerWarnings,
-  mutationError,
-  onRefresh,
-  onClearMutationError,
-}: EvaluationPageStatusProps) {
-  const refreshIssue = [
-    catalogError
-      ? `Catalog refresh failed; showing the last loaded catalog. ${catalogError}`
+function EvaluationRefreshStatus(props: EvaluationPageStatusProps) {
+  if (!props.hasCatalog || (!props.catalogError && !props.runsError)) return null
+  const refreshMessages = [
+    props.catalogError
+      ? 'Evaluation setup could not refresh. Showing the last loaded benchmark catalog.'
       : null,
-    runsError
-      ? runsLoaded
-        ? `Run refresh failed; showing the last loaded run state. ${runsError}`
-        : `The run ledger could not be loaded. ${runsError}`
+    props.runsError
+      ? props.runsLoaded
+        ? 'Run history could not refresh. Showing the last loaded run state.'
+        : 'Run history could not be loaded.'
       : null,
   ]
     .filter(Boolean)
     .join(' ')
+  const refreshDetails: EvaluationIssueDetail[] = [
+    ...(props.catalogError ? [{ label: 'Benchmark catalog', message: props.catalogError }] : []),
+    ...(props.runsError ? [{ label: 'Run history', message: props.runsError }] : []),
+  ]
+  return (
+    <div className={styles.staleBanner} role="status">
+      <div className={styles.issueCopy}>
+        <span>{refreshMessages}</span>
+        <EvaluationIssueDetails issues={refreshDetails} />
+      </div>
+      <EvaluationActionButton
+        type="button"
+        compact
+        disabled={props.refreshing}
+        onClick={props.onRefresh}
+      >
+        {props.refreshing ? 'Retrying…' : 'Retry refresh'}
+      </EvaluationActionButton>
+    </div>
+  )
+}
 
+function EvaluationLedgerStatus(props: EvaluationPageStatusProps) {
+  if (!props.runsLoaded || props.runLedgerComplete || props.runLedgerWarningCount === 0) return null
+  return (
+    <div className={styles.ledgerBanner} role="alert">
+      <div>
+        <strong>Some saved runs could not be read</strong>
+        <span>
+          {props.runLedgerWarningCount} saved run
+          {props.runLedgerWarningCount === 1 ? ' is' : 's are'} excluded. Available results remain
+          safe to inspect, but baseline selection and comparison are paused until repaired.
+        </span>
+        {props.runLedgerWarnings.length < props.runLedgerWarningCount ? (
+          <small>
+            Showing {props.runLedgerWarnings.length} of {props.runLedgerWarningCount} warning
+            details returned by run history.
+          </small>
+        ) : null}
+      </div>
+      {props.runLedgerWarnings.length ? (
+        <details className={styles.warningDetails}>
+          <summary>Technical details · {props.runLedgerWarnings.length}</summary>
+          <ul aria-label="Unreadable saved run details">
+            {props.runLedgerWarnings.map((warning) => (
+              <li key={`${warning.code}-${warning.evidence_id}-${warning.evidence_file}`}>
+                <span className={styles.evidenceIdentity}>
+                  <small>Run record</small>
+                  <code>{warning.evidence_id}</code>
+                </span>
+                <span>
+                  {warning.evidence_file}: {warning.message}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
+    </div>
+  )
+}
+
+function EvaluationMutationStatus(props: EvaluationPageStatusProps) {
+  if (!props.mutationError) return null
+  return (
+    <div className={styles.errorBanner} role="alert">
+      <div className={styles.issueCopy}>
+        <span>
+          The last evaluation action could not be completed. Review the technical details, then
+          retry the action.
+        </span>
+        <EvaluationIssueDetails
+          issues={[{ label: 'Evaluation action', message: props.mutationError }]}
+        />
+      </div>
+      <EvaluationActionButton type="button" compact onClick={props.onClearMutationError}>
+        Dismiss
+      </EvaluationActionButton>
+    </div>
+  )
+}
+
+export default function EvaluationPageStatus(props: EvaluationPageStatusProps) {
   return (
     <>
-      {!readonlyLoading && serverReadonly ? (
+      {!props.readonlyLoading && props.serverReadonly ? (
         <div className={styles.readonlyBanner} role="status">
-          Evaluation evidence remains readable. Server read-only policy disables creation,
-          execution, cancellation, and deletion.
+          Results remain readable. The server is in read-only mode, so runs cannot be created,
+          started, cancelled, or deleted.
         </div>
       ) : null}
-      {hasCatalog && (catalogError || runsError) ? (
-        <div className={styles.staleBanner} role="status">
-          <span>{refreshIssue}</span>
-          <EvaluationActionButton type="button" compact disabled={refreshing} onClick={onRefresh}>
-            {refreshing ? 'Retrying…' : 'Retry refresh'}
-          </EvaluationActionButton>
-        </div>
-      ) : null}
-      {runsLoaded && !runLedgerComplete && runLedgerWarningCount > 0 ? (
-        <div className={styles.ledgerBanner} role="alert">
-          <div>
-            <strong>Run ledger incomplete</strong>
-            <span>
-              {runLedgerWarningCount} durable run bundle
-              {runLedgerWarningCount === 1 ? ' is' : 's are'} quarantined. Visible runs remain
-              inspectable, but baseline selection and comparison conclusions are blocked.
-            </span>
-            {runLedgerWarnings.length < runLedgerWarningCount ? (
-              <small>
-                Showing {runLedgerWarnings.length} of {runLedgerWarningCount} warning details
-                returned by the ledger.
-              </small>
-            ) : null}
-          </div>
-          {runLedgerWarnings.length ? (
-            <ul aria-label="Quarantined run evidence">
-              {runLedgerWarnings.map((warning) => (
-                <li key={`${warning.code}-${warning.evidence_id}-${warning.evidence_file}`}>
-                  <span className={styles.evidenceIdentity}>
-                    <small>Evidence ID</small>
-                    <code>{warning.evidence_id}</code>
-                  </span>
-                  <span>
-                    {warning.evidence_file}: {warning.message}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          ) : null}
-        </div>
-      ) : null}
-      {mutationError ? (
-        <div className={styles.errorBanner} role="alert">
-          <span>{mutationError}</span>
-          <EvaluationActionButton type="button" compact onClick={onClearMutationError}>
-            Dismiss
-          </EvaluationActionButton>
-        </div>
-      ) : null}
+      <EvaluationRefreshStatus {...props} />
+      <EvaluationLedgerStatus {...props} />
+      <EvaluationMutationStatus {...props} />
     </>
   )
 }

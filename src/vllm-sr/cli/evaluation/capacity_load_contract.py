@@ -27,35 +27,3 @@ def capacity_concurrency_levels(maximum: int) -> tuple[int, ...]:
         level *= 2
     levels.append(maximum)
     return tuple(levels)
-
-
-def default_capacity_load_protocol_fields(maximum: int) -> dict[str, object]:
-    """Build the platform default without importing the Pydantic contract."""
-
-    return {
-        "kind": CAPACITY_LOAD_KIND,
-        "concurrency_levels": capacity_concurrency_levels(maximum),
-        "warmup_request_multiplier": MIN_CAPACITY_WARMUP_MULTIPLIER,
-        "measurement_requests_per_repetition": MIN_CAPACITY_MEASUREMENT_REQUESTS,
-        "repetitions_per_level": MIN_CAPACITY_REPETITIONS,
-        "confidence_level": CAPACITY_LOAD_CONFIDENCE_LEVEL,
-        "max_throughput_cv": MAX_CAPACITY_STABILITY_CV,
-        "max_latency_p95_cv": MAX_CAPACITY_STABILITY_CV,
-    }
-
-
-def capacity_request_budget(
-    concurrency_levels: tuple[int, ...],
-    warmup_request_multiplier: int,
-    measurement_requests_per_repetition: int,
-    repetitions_per_level: int,
-) -> int:
-    """Return the exact brokered chat-call count for a frozen protocol."""
-
-    warmup = sum(level * warmup_request_multiplier for level in concurrency_levels)
-    measured = (
-        len(concurrency_levels)
-        * measurement_requests_per_repetition
-        * repetitions_per_level
-    )
-    return warmup + measured

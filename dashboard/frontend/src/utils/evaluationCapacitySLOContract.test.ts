@@ -189,11 +189,11 @@ describe('Capacity SLO and repeated load contract', () => {
       capacity_load_protocol: loadProtocol,
     })
     expect(() => buildCreateRunPayload({ ...request, capacity_slo: undefined }, catalog)).toThrow(
-      /requires an explicit SLO and load protocol/i,
+      /requires performance goals and a load pattern/i,
     )
     expect(() =>
       buildCreateRunPayload({ ...request, capacity_load_protocol: undefined }, catalog),
-    ).toThrow(/requires an explicit SLO and load protocol/i)
+    ).toThrow(/requires performance goals and a load pattern/i)
     expect(() =>
       buildCreateRunPayload(
         {
@@ -203,7 +203,7 @@ describe('Capacity SLO and repeated load contract', () => {
         },
         catalog,
       ),
-    ).toThrow(/concurrency of at least 2/i)
+    ).toThrow(/at least two parallel requests/i)
     expect(() =>
       buildCreateRunPayload(
         {
@@ -212,7 +212,7 @@ describe('Capacity SLO and repeated load contract', () => {
         },
         catalog,
       ),
-    ).toThrow(/cannot exceed the run concurrency/i)
+    ).toThrow(/cannot exceed the run limit/i)
   })
 
   it('forbids the contract outside live capacity and freezes it in run responses', () => {
@@ -249,7 +249,7 @@ describe('Capacity SLO and repeated load contract', () => {
       track_ids: ['routing' as const],
     }
     expect(() => buildCreateRunPayload(replayRequest, catalog)).toThrow(
-      /valid only for a live capacity evaluation/i,
+      /only for live performance evaluation/i,
     )
     expect(() =>
       decodeEvaluationRun(

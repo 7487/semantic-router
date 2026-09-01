@@ -47,10 +47,6 @@ func publicRunLedgerWarning(warning runListWarning) RunLedgerWarning {
 	}
 }
 
-func (s *Service) ListRunLedger() (RunLedger, error) {
-	return s.store.listRunLedger(RunListQuery{Limit: defaultRunPageLimit})
-}
-
 func (s *Service) ListRunLedgerPage(query RunListQuery) (RunLedger, error) {
 	if query.Limit == 0 {
 		query.Limit = defaultRunPageLimit

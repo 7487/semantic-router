@@ -1,4 +1,7 @@
+import type { RefObject } from 'react'
+
 import ConfirmDialog from '../components/ConfirmDialog'
+import EvaluationIssueDetails from '../components/evaluation-plane/EvaluationIssueDetails'
 import type { EvaluationRun } from '../types/evaluationPlane'
 
 interface EvaluationRunActionDialogsProps {
@@ -6,6 +9,9 @@ interface EvaluationRunActionDialogsProps {
   deleteTarget: EvaluationRun | null
   mutationKey: string | null
   error: string | null
+  returnFocusRef: RefObject<HTMLElement | null>
+  cancelReturnFocusMode: 'fallback' | 'always'
+  deleteReturnFocusMode: 'fallback' | 'always'
   onCloseCancel: () => void
   onCloseDelete: () => void
   onConfirmCancel: () => void | Promise<void>
@@ -17,6 +23,9 @@ export default function EvaluationRunActionDialogs({
   deleteTarget,
   mutationKey,
   error,
+  returnFocusRef,
+  cancelReturnFocusMode,
+  deleteReturnFocusMode,
   onCloseCancel,
   onCloseDelete,
   onConfirmCancel,
@@ -29,46 +38,74 @@ export default function EvaluationRunActionDialogs({
       <ConfirmDialog
         isOpen={cancelTarget !== null}
         title={
-          cancelPairID ? 'Cancel controlled pair?' : `Cancel ${cancelTarget?.name || 'this run'}?`
+          cancelPairID
+            ? 'Cancel controlled comparison?'
+            : `Cancel ${cancelTarget?.name || 'this run'}?`
         }
         description={
           cancelPairID
-            ? 'Both derived runs stop as one controlled-pair transition. Their durable lifecycle events and cancelled terminal status remain available.'
-            : 'Execution stops and no completed report is published. Durable lifecycle events and terminal status remain available; worker staging is not presented as partial scientific evidence.'
+            ? 'Both runs stop together. Their execution timelines and cancelled status remain available.'
+            : 'Execution stops and no completed report is created. The timeline and cancelled status remain available.'
         }
-        eyebrow={cancelPairID ? 'Controlled pair execution' : 'Evaluation execution'}
-        confirmLabel={cancelPairID ? 'Cancel pair' : 'Cancel run'}
-        pendingLabel={cancelPairID ? 'Cancelling pair…' : 'Cancelling…'}
+        eyebrow={cancelPairID ? 'Controlled comparison' : 'Evaluation run'}
+        confirmLabel={cancelPairID ? 'Cancel comparison' : 'Cancel run'}
+        pendingLabel={cancelPairID ? 'Cancelling comparison…' : 'Cancelling…'}
         tone="warning"
         pending={
           mutationKey ===
           (cancelPairID ? `cancel-pair:${cancelPairID}` : `cancel:${cancelTarget?.id || ''}`)
         }
-        error={error}
-        details={cancelTarget ? <code>{cancelPairID || cancelTarget.id}</code> : null}
+        errorMessage={
+          error
+            ? cancelPairID
+              ? 'The controlled comparison could not be cancelled. Retry or close this dialog.'
+              : 'The run could not be cancelled. Retry or close this dialog.'
+            : undefined
+        }
+        errorDetails={
+          error ? (
+            <EvaluationIssueDetails issues={[{ label: 'Cancellation request', message: error }]} />
+          ) : undefined
+        }
+        returnFocusRef={returnFocusRef}
+        returnFocusMode={cancelReturnFocusMode}
         onCancel={onCloseCancel}
         onConfirm={onConfirmCancel}
       />
       <ConfirmDialog
         isOpen={deleteTarget !== null}
         title={
-          deletePairID ? 'Delete controlled pair?' : `Delete ${deleteTarget?.name || 'this run'}?`
+          deletePairID
+            ? 'Delete controlled comparison?'
+            : `Delete ${deleteTarget?.name || 'this run'}?`
         }
         description={
           deletePairID
-            ? 'This permanently removes both derived run bundles and their Dashboard history. Download required artifacts from either member before continuing.'
-            : 'This permanently removes the run bundle and Dashboard history. Download required artifacts before continuing.'
+            ? 'This permanently removes both runs and their reports from Evaluation. Download anything you need before continuing.'
+            : 'This permanently removes the run and its report from Evaluation. Download anything you need before continuing.'
         }
-        eyebrow={deletePairID ? 'Controlled pair evidence' : 'Evaluation evidence'}
-        confirmLabel={deletePairID ? 'Delete pair' : 'Delete run'}
-        pendingLabel={deletePairID ? 'Deleting pair…' : 'Deleting…'}
+        eyebrow={deletePairID ? 'Controlled comparison' : 'Evaluation run'}
+        confirmLabel={deletePairID ? 'Delete comparison' : 'Delete run'}
+        pendingLabel={deletePairID ? 'Deleting comparison…' : 'Deleting…'}
         pending={
           mutationKey ===
           (deletePairID ? `delete-pair:${deletePairID}` : `delete:${deleteTarget?.id || ''}`)
         }
-        error={error}
-        confirmationText={deletePairID || deleteTarget?.name}
-        details={deleteTarget ? <code>{deletePairID || deleteTarget.id}</code> : null}
+        errorMessage={
+          error
+            ? deletePairID
+              ? 'The controlled comparison could not be deleted. Retry or close this dialog.'
+              : 'The run could not be deleted. Retry or close this dialog.'
+            : undefined
+        }
+        errorDetails={
+          error ? (
+            <EvaluationIssueDetails issues={[{ label: 'Deletion request', message: error }]} />
+          ) : undefined
+        }
+        confirmationText={deletePairID ? 'DELETE COMPARISON' : deleteTarget?.name}
+        returnFocusRef={returnFocusRef}
+        returnFocusMode={deleteReturnFocusMode}
         onCancel={onCloseDelete}
         onConfirm={onConfirmDelete}
       />

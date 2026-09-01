@@ -4,13 +4,13 @@
   "change_profiles": [
     {
       "id": "schema_adapter",
-      "name": "Schema / adapter",
-      "description": "Strict schema and adapter parity changes.",
+      "name": "Schema and integration",
+      "description": "Request or response formats, provider integrations, and adapter behavior changes.",
       "campaign_slots": [
         {
           "gate_id": "G2",
-          "name": "Hard policy",
-          "description": "Server-qualified hard-policy enforcement on the candidate subject.",
+          "name": "Policy enforcement",
+          "description": "Checks that required safety and routing policies are enforced on the proposed system.",
           "disposition": "advisory",
           "binding_kind": "run",
           "track_id": "safety",
@@ -22,8 +22,8 @@
         },
         {
           "gate_id": "G3",
-          "name": "Controlled paired-live value",
-          "description": "Controlled AB/BA paired-live outcomes under the frozen promotion policy.",
+          "name": "Controlled value comparison",
+          "description": "Compares baseline and candidate outcomes on the same live cases with balanced execution order.",
           "disposition": "advisory",
           "binding_kind": "controlled_pair",
           "track_id": "joint",
@@ -35,8 +35,8 @@
         },
         {
           "gate_id": "G4",
-          "name": "Declared-shift robustness",
-          "description": "Server-qualified declared-shift robustness on the candidate subject.",
+          "name": "Workload-shift robustness",
+          "description": "Measures quality and reliability under the workload changes declared for this release.",
           "disposition": "required",
           "binding_kind": "run",
           "track_id": "routing",
@@ -48,8 +48,8 @@
         },
         {
           "gate_id": "G5",
-          "name": "Live fidelity",
-          "description": "Reference-to-fresh-live agreement on the exact live-mom-core candidate and joint case cohort.",
+          "name": "Live consistency",
+          "description": "Checks that a fresh live run agrees with the saved candidate on the same evaluation cases.",
           "disposition": "advisory",
           "binding_kind": "fidelity_pair",
           "track_id": "joint",
@@ -61,8 +61,8 @@
         },
         {
           "gate_id": "G6",
-          "name": "Live fault-recovery continuity",
-          "description": "Server-qualified fault-recovery continuity on the candidate subject.",
+          "name": "Fault recovery",
+          "description": "Measures fallback, retry, state continuity, and side effects during injected failures.",
           "disposition": "not_applicable",
           "binding_kind": "run",
           "track_id": "agentic",
@@ -74,8 +74,8 @@
         },
         {
           "gate_id": "G7",
-          "name": "Cost / latency / capacity",
-          "description": "Server-qualified capacity envelope on the candidate subject.",
+          "name": "Cost, latency, and capacity",
+          "description": "Measures whether the proposed system meets its service objectives under repeated load.",
           "disposition": "advisory",
           "binding_kind": "run",
           "track_id": "capacity",
@@ -87,8 +87,8 @@
         },
         {
           "gate_id": "G8",
-          "name": "Shadow / canary",
-          "description": "Server-qualified production assignment, exposure, risk, stop, and rollback controls.",
+          "name": "Canary safety",
+          "description": "Checks production assignment, exposure limits, stop conditions, and rollback controls.",
           "disposition": "not_applicable",
           "binding_kind": "run",
           "track_id": "preference",
@@ -101,7 +101,7 @@
         {
           "gate_id": "G9",
           "name": "Online preference",
-          "description": "Server-qualified online preference evidence on the candidate subject.",
+          "description": "Measures assigned user-preference outcomes for the baseline and proposed system.",
           "disposition": "not_applicable",
           "binding_kind": "run",
           "track_id": "preference",
@@ -116,12 +116,12 @@
     {
       "id": "recipe",
       "name": "Routing recipe",
-      "description": "Recipe signal, decision, algorithm, and policy changes.",
+      "description": "Routing rules, signals, decision logic, or selection policy changes.",
       "campaign_slots": [
         {
           "gate_id": "G2",
-          "name": "Hard policy",
-          "description": "Server-qualified hard-policy enforcement on the candidate subject.",
+          "name": "Policy enforcement",
+          "description": "Checks that required safety and routing policies are enforced on the proposed system.",
           "disposition": "required",
           "binding_kind": "run",
           "track_id": "safety",
@@ -133,8 +133,8 @@
         },
         {
           "gate_id": "G3",
-          "name": "Controlled paired-live value",
-          "description": "Controlled AB/BA paired-live outcomes under the frozen promotion policy.",
+          "name": "Controlled value comparison",
+          "description": "Compares baseline and candidate outcomes on the same live cases with balanced execution order.",
           "disposition": "required",
           "binding_kind": "controlled_pair",
           "track_id": "joint",
@@ -146,8 +146,8 @@
         },
         {
           "gate_id": "G4",
-          "name": "Declared-shift robustness",
-          "description": "Server-qualified declared-shift robustness on the candidate subject.",
+          "name": "Workload-shift robustness",
+          "description": "Measures quality and reliability under the workload changes declared for this release.",
           "disposition": "required",
           "binding_kind": "run",
           "track_id": "routing",
@@ -159,8 +159,8 @@
         },
         {
           "gate_id": "G5",
-          "name": "Live fidelity",
-          "description": "Reference-to-fresh-live agreement on the exact live-mom-core candidate and joint case cohort.",
+          "name": "Live consistency",
+          "description": "Checks that a fresh live run agrees with the saved candidate on the same evaluation cases.",
           "disposition": "required",
           "binding_kind": "fidelity_pair",
           "track_id": "joint",
@@ -172,8 +172,8 @@
         },
         {
           "gate_id": "G6",
-          "name": "Live fault-recovery continuity",
-          "description": "Server-qualified fault-recovery continuity on the candidate subject.",
+          "name": "Fault recovery",
+          "description": "Measures fallback, retry, state continuity, and side effects during injected failures.",
           "disposition": "not_applicable",
           "binding_kind": "run",
           "track_id": "agentic",
@@ -185,8 +185,8 @@
         },
         {
           "gate_id": "G7",
-          "name": "Cost / latency / capacity",
-          "description": "Server-qualified capacity envelope on the candidate subject.",
+          "name": "Cost, latency, and capacity",
+          "description": "Measures whether the proposed system meets its service objectives under repeated load.",
           "disposition": "required",
           "binding_kind": "run",
           "track_id": "capacity",
@@ -198,8 +198,8 @@
         },
         {
           "gate_id": "G8",
-          "name": "Shadow / canary",
-          "description": "Server-qualified production assignment, exposure, risk, stop, and rollback controls.",
+          "name": "Canary safety",
+          "description": "Checks production assignment, exposure limits, stop conditions, and rollback controls.",
           "disposition": "advisory",
           "binding_kind": "run",
           "track_id": "preference",
@@ -212,7 +212,7 @@
         {
           "gate_id": "G9",
           "name": "Online preference",
-          "description": "Server-qualified online preference evidence on the candidate subject.",
+          "description": "Measures assigned user-preference outcomes for the baseline and proposed system.",
           "disposition": "not_applicable",
           "binding_kind": "run",
           "track_id": "preference",
@@ -226,13 +226,13 @@
     },
     {
       "id": "selector",
-      "name": "Selector / binding",
-      "description": "Selector, projection, classifier, and binding changes.",
+      "name": "Model selection",
+      "description": "Model scoring, prediction, classification, or model-binding changes.",
       "campaign_slots": [
         {
           "gate_id": "G2",
-          "name": "Hard policy",
-          "description": "Server-qualified hard-policy enforcement on the candidate subject.",
+          "name": "Policy enforcement",
+          "description": "Checks that required safety and routing policies are enforced on the proposed system.",
           "disposition": "required",
           "binding_kind": "run",
           "track_id": "safety",
@@ -244,8 +244,8 @@
         },
         {
           "gate_id": "G3",
-          "name": "Controlled paired-live value",
-          "description": "Controlled AB/BA paired-live outcomes under the frozen promotion policy.",
+          "name": "Controlled value comparison",
+          "description": "Compares baseline and candidate outcomes on the same live cases with balanced execution order.",
           "disposition": "required",
           "binding_kind": "controlled_pair",
           "track_id": "joint",
@@ -257,8 +257,8 @@
         },
         {
           "gate_id": "G4",
-          "name": "Declared-shift robustness",
-          "description": "Server-qualified declared-shift robustness on the candidate subject.",
+          "name": "Workload-shift robustness",
+          "description": "Measures quality and reliability under the workload changes declared for this release.",
           "disposition": "required",
           "binding_kind": "run",
           "track_id": "routing",
@@ -270,8 +270,8 @@
         },
         {
           "gate_id": "G5",
-          "name": "Live fidelity",
-          "description": "Reference-to-fresh-live agreement on the exact live-mom-core candidate and joint case cohort.",
+          "name": "Live consistency",
+          "description": "Checks that a fresh live run agrees with the saved candidate on the same evaluation cases.",
           "disposition": "required",
           "binding_kind": "fidelity_pair",
           "track_id": "joint",
@@ -283,8 +283,8 @@
         },
         {
           "gate_id": "G6",
-          "name": "Live fault-recovery continuity",
-          "description": "Server-qualified fault-recovery continuity on the candidate subject.",
+          "name": "Fault recovery",
+          "description": "Measures fallback, retry, state continuity, and side effects during injected failures.",
           "disposition": "advisory",
           "binding_kind": "run",
           "track_id": "agentic",
@@ -296,8 +296,8 @@
         },
         {
           "gate_id": "G7",
-          "name": "Cost / latency / capacity",
-          "description": "Server-qualified capacity envelope on the candidate subject.",
+          "name": "Cost, latency, and capacity",
+          "description": "Measures whether the proposed system meets its service objectives under repeated load.",
           "disposition": "required",
           "binding_kind": "run",
           "track_id": "capacity",
@@ -309,8 +309,8 @@
         },
         {
           "gate_id": "G8",
-          "name": "Shadow / canary",
-          "description": "Server-qualified production assignment, exposure, risk, stop, and rollback controls.",
+          "name": "Canary safety",
+          "description": "Checks production assignment, exposure limits, stop conditions, and rollback controls.",
           "disposition": "required",
           "binding_kind": "run",
           "track_id": "preference",
@@ -323,7 +323,7 @@
         {
           "gate_id": "G9",
           "name": "Online preference",
-          "description": "Server-qualified online preference evidence on the candidate subject.",
+          "description": "Measures assigned user-preference outcomes for the baseline and proposed system.",
           "disposition": "not_applicable",
           "binding_kind": "run",
           "track_id": "preference",
@@ -338,12 +338,12 @@
     {
       "id": "model_pool",
       "name": "Model pool",
-      "description": "Logical arm composition, capability, quality, and price changes.",
+      "description": "Available models, their capabilities, quality, reliability, or pricing changes.",
       "campaign_slots": [
         {
           "gate_id": "G2",
-          "name": "Hard policy",
-          "description": "Server-qualified hard-policy enforcement on the candidate subject.",
+          "name": "Policy enforcement",
+          "description": "Checks that required safety and routing policies are enforced on the proposed system.",
           "disposition": "required",
           "binding_kind": "run",
           "track_id": "safety",
@@ -355,8 +355,8 @@
         },
         {
           "gate_id": "G3",
-          "name": "Controlled paired-live value",
-          "description": "Controlled AB/BA paired-live outcomes under the frozen promotion policy.",
+          "name": "Controlled value comparison",
+          "description": "Compares baseline and candidate outcomes on the same live cases with balanced execution order.",
           "disposition": "required",
           "binding_kind": "controlled_pair",
           "track_id": "joint",
@@ -368,8 +368,8 @@
         },
         {
           "gate_id": "G4",
-          "name": "Declared-shift robustness",
-          "description": "Server-qualified declared-shift robustness on the candidate subject.",
+          "name": "Workload-shift robustness",
+          "description": "Measures quality and reliability under the workload changes declared for this release.",
           "disposition": "required",
           "binding_kind": "run",
           "track_id": "routing",
@@ -381,8 +381,8 @@
         },
         {
           "gate_id": "G5",
-          "name": "Live fidelity",
-          "description": "Reference-to-fresh-live agreement on the exact live-mom-core candidate and joint case cohort.",
+          "name": "Live consistency",
+          "description": "Checks that a fresh live run agrees with the saved candidate on the same evaluation cases.",
           "disposition": "required",
           "binding_kind": "fidelity_pair",
           "track_id": "joint",
@@ -394,8 +394,8 @@
         },
         {
           "gate_id": "G6",
-          "name": "Live fault-recovery continuity",
-          "description": "Server-qualified fault-recovery continuity on the candidate subject.",
+          "name": "Fault recovery",
+          "description": "Measures fallback, retry, state continuity, and side effects during injected failures.",
           "disposition": "advisory",
           "binding_kind": "run",
           "track_id": "agentic",
@@ -407,8 +407,8 @@
         },
         {
           "gate_id": "G7",
-          "name": "Cost / latency / capacity",
-          "description": "Server-qualified capacity envelope on the candidate subject.",
+          "name": "Cost, latency, and capacity",
+          "description": "Measures whether the proposed system meets its service objectives under repeated load.",
           "disposition": "required",
           "binding_kind": "run",
           "track_id": "capacity",
@@ -420,8 +420,8 @@
         },
         {
           "gate_id": "G8",
-          "name": "Shadow / canary",
-          "description": "Server-qualified production assignment, exposure, risk, stop, and rollback controls.",
+          "name": "Canary safety",
+          "description": "Checks production assignment, exposure limits, stop conditions, and rollback controls.",
           "disposition": "required",
           "binding_kind": "run",
           "track_id": "preference",
@@ -434,7 +434,7 @@
         {
           "gate_id": "G9",
           "name": "Online preference",
-          "description": "Server-qualified online preference evidence on the candidate subject.",
+          "description": "Measures assigned user-preference outcomes for the baseline and proposed system.",
           "disposition": "not_applicable",
           "binding_kind": "run",
           "track_id": "preference",
@@ -448,13 +448,13 @@
     },
     {
       "id": "runtime_capacity",
-      "name": "Runtime / capacity",
-      "description": "Serving runtime, placement, capacity, and transport changes.",
+      "name": "Runtime and capacity",
+      "description": "Serving software, deployment placement, throughput, latency, or transport changes.",
       "campaign_slots": [
         {
           "gate_id": "G2",
-          "name": "Hard policy",
-          "description": "Server-qualified hard-policy enforcement on the candidate subject.",
+          "name": "Policy enforcement",
+          "description": "Checks that required safety and routing policies are enforced on the proposed system.",
           "disposition": "required",
           "binding_kind": "run",
           "track_id": "safety",
@@ -466,8 +466,8 @@
         },
         {
           "gate_id": "G3",
-          "name": "Controlled paired-live value",
-          "description": "Controlled AB/BA paired-live outcomes under the frozen promotion policy.",
+          "name": "Controlled value comparison",
+          "description": "Compares baseline and candidate outcomes on the same live cases with balanced execution order.",
           "disposition": "advisory",
           "binding_kind": "controlled_pair",
           "track_id": "joint",
@@ -479,8 +479,8 @@
         },
         {
           "gate_id": "G4",
-          "name": "Declared-shift robustness",
-          "description": "Server-qualified declared-shift robustness on the candidate subject.",
+          "name": "Workload-shift robustness",
+          "description": "Measures quality and reliability under the workload changes declared for this release.",
           "disposition": "advisory",
           "binding_kind": "run",
           "track_id": "routing",
@@ -492,8 +492,8 @@
         },
         {
           "gate_id": "G5",
-          "name": "Live fidelity",
-          "description": "Reference-to-fresh-live agreement on the exact live-mom-core candidate and joint case cohort.",
+          "name": "Live consistency",
+          "description": "Checks that a fresh live run agrees with the saved candidate on the same evaluation cases.",
           "disposition": "required",
           "binding_kind": "fidelity_pair",
           "track_id": "joint",
@@ -505,8 +505,8 @@
         },
         {
           "gate_id": "G6",
-          "name": "Live fault-recovery continuity",
-          "description": "Server-qualified fault-recovery continuity on the candidate subject.",
+          "name": "Fault recovery",
+          "description": "Measures fallback, retry, state continuity, and side effects during injected failures.",
           "disposition": "advisory",
           "binding_kind": "run",
           "track_id": "agentic",
@@ -518,8 +518,8 @@
         },
         {
           "gate_id": "G7",
-          "name": "Cost / latency / capacity",
-          "description": "Server-qualified capacity envelope on the candidate subject.",
+          "name": "Cost, latency, and capacity",
+          "description": "Measures whether the proposed system meets its service objectives under repeated load.",
           "disposition": "required",
           "binding_kind": "run",
           "track_id": "capacity",
@@ -531,8 +531,8 @@
         },
         {
           "gate_id": "G8",
-          "name": "Shadow / canary",
-          "description": "Server-qualified production assignment, exposure, risk, stop, and rollback controls.",
+          "name": "Canary safety",
+          "description": "Checks production assignment, exposure limits, stop conditions, and rollback controls.",
           "disposition": "required",
           "binding_kind": "run",
           "track_id": "preference",
@@ -545,7 +545,7 @@
         {
           "gate_id": "G9",
           "name": "Online preference",
-          "description": "Server-qualified online preference evidence on the candidate subject.",
+          "description": "Measures assigned user-preference outcomes for the baseline and proposed system.",
           "disposition": "not_applicable",
           "binding_kind": "run",
           "track_id": "preference",
@@ -559,13 +559,13 @@
     },
     {
       "id": "agent_multimodal",
-      "name": "Agent / multimodal",
-      "description": "Agent trajectory, tool, state, and multimodal changes.",
+      "name": "Agents and multimodal",
+      "description": "Tool use, multi-step agent behavior, state handling, or multimodal input changes.",
       "campaign_slots": [
         {
           "gate_id": "G2",
-          "name": "Hard policy",
-          "description": "Server-qualified hard-policy enforcement on the candidate subject.",
+          "name": "Policy enforcement",
+          "description": "Checks that required safety and routing policies are enforced on the proposed system.",
           "disposition": "required",
           "binding_kind": "run",
           "track_id": "safety",
@@ -577,8 +577,8 @@
         },
         {
           "gate_id": "G3",
-          "name": "Controlled paired-live value",
-          "description": "Controlled AB/BA paired-live outcomes under the frozen promotion policy.",
+          "name": "Controlled value comparison",
+          "description": "Compares baseline and candidate outcomes on the same live cases with balanced execution order.",
           "disposition": "not_applicable",
           "binding_kind": "controlled_pair",
           "track_id": "joint",
@@ -590,8 +590,8 @@
         },
         {
           "gate_id": "G4",
-          "name": "Declared-shift robustness",
-          "description": "Server-qualified declared-shift robustness on the candidate subject.",
+          "name": "Workload-shift robustness",
+          "description": "Measures quality and reliability under the workload changes declared for this release.",
           "disposition": "required",
           "binding_kind": "run",
           "track_id": "routing",
@@ -603,8 +603,8 @@
         },
         {
           "gate_id": "G5",
-          "name": "Live fidelity",
-          "description": "Reference-to-fresh-live multimodal agreement on an exact candidate and MMR case cohort.",
+          "name": "Live consistency",
+          "description": "Checks that a fresh multimodal run agrees with the saved candidate on the same evaluation cases.",
           "disposition": "required",
           "binding_kind": "fidelity_pair",
           "track_id": "multimodal",
@@ -616,8 +616,8 @@
         },
         {
           "gate_id": "G6",
-          "name": "Live fault-recovery continuity",
-          "description": "Server-qualified fault-recovery continuity on the candidate subject.",
+          "name": "Fault recovery",
+          "description": "Measures fallback, retry, state continuity, and side effects during injected failures.",
           "disposition": "required",
           "binding_kind": "run",
           "track_id": "agentic",
@@ -629,8 +629,8 @@
         },
         {
           "gate_id": "G7",
-          "name": "Cost / latency / capacity",
-          "description": "Server-qualified capacity envelope on the candidate subject.",
+          "name": "Cost, latency, and capacity",
+          "description": "Measures whether the proposed system meets its service objectives under repeated load.",
           "disposition": "required",
           "binding_kind": "run",
           "track_id": "capacity",
@@ -642,8 +642,8 @@
         },
         {
           "gate_id": "G8",
-          "name": "Shadow / canary",
-          "description": "Server-qualified production assignment, exposure, risk, stop, and rollback controls.",
+          "name": "Canary safety",
+          "description": "Checks production assignment, exposure limits, stop conditions, and rollback controls.",
           "disposition": "required",
           "binding_kind": "run",
           "track_id": "preference",
@@ -656,7 +656,7 @@
         {
           "gate_id": "G9",
           "name": "Online preference",
-          "description": "Server-qualified online preference evidence on the candidate subject.",
+          "description": "Measures assigned user-preference outcomes for the baseline and proposed system.",
           "disposition": "advisory",
           "binding_kind": "run",
           "track_id": "preference",
@@ -670,13 +670,13 @@
     },
     {
       "id": "online_adaptation",
-      "name": "Online adaptation",
-      "description": "Online assignment, preference, feedback, and adaptive policy changes.",
+      "name": "Online learning and feedback",
+      "description": "Traffic assignment, user preferences, feedback, or adaptive policy changes.",
       "campaign_slots": [
         {
           "gate_id": "G2",
-          "name": "Hard policy",
-          "description": "Server-qualified hard-policy enforcement on the candidate subject.",
+          "name": "Policy enforcement",
+          "description": "Checks that required safety and routing policies are enforced on the proposed system.",
           "disposition": "required",
           "binding_kind": "run",
           "track_id": "safety",
@@ -688,8 +688,8 @@
         },
         {
           "gate_id": "G3",
-          "name": "Controlled paired-live value",
-          "description": "Controlled AB/BA paired-live outcomes under the frozen promotion policy.",
+          "name": "Controlled value comparison",
+          "description": "Compares baseline and candidate outcomes on the same live cases with balanced execution order.",
           "disposition": "required",
           "binding_kind": "controlled_pair",
           "track_id": "joint",
@@ -701,8 +701,8 @@
         },
         {
           "gate_id": "G4",
-          "name": "Declared-shift robustness",
-          "description": "Server-qualified declared-shift robustness on the candidate subject.",
+          "name": "Workload-shift robustness",
+          "description": "Measures quality and reliability under the workload changes declared for this release.",
           "disposition": "required",
           "binding_kind": "run",
           "track_id": "routing",
@@ -714,8 +714,8 @@
         },
         {
           "gate_id": "G5",
-          "name": "Live fidelity",
-          "description": "Reference-to-fresh-live agreement on the exact live-mom-core candidate and joint case cohort.",
+          "name": "Live consistency",
+          "description": "Checks that a fresh live run agrees with the saved candidate on the same evaluation cases.",
           "disposition": "required",
           "binding_kind": "fidelity_pair",
           "track_id": "joint",
@@ -727,8 +727,8 @@
         },
         {
           "gate_id": "G6",
-          "name": "Live fault-recovery continuity",
-          "description": "Server-qualified fault-recovery continuity on the candidate subject.",
+          "name": "Fault recovery",
+          "description": "Measures fallback, retry, state continuity, and side effects during injected failures.",
           "disposition": "required",
           "binding_kind": "run",
           "track_id": "agentic",
@@ -740,8 +740,8 @@
         },
         {
           "gate_id": "G7",
-          "name": "Cost / latency / capacity",
-          "description": "Server-qualified capacity envelope on the candidate subject.",
+          "name": "Cost, latency, and capacity",
+          "description": "Measures whether the proposed system meets its service objectives under repeated load.",
           "disposition": "required",
           "binding_kind": "run",
           "track_id": "capacity",
@@ -753,8 +753,8 @@
         },
         {
           "gate_id": "G8",
-          "name": "Shadow / canary",
-          "description": "Server-qualified production assignment, exposure, risk, stop, and rollback controls.",
+          "name": "Canary safety",
+          "description": "Checks production assignment, exposure limits, stop conditions, and rollback controls.",
           "disposition": "required",
           "binding_kind": "run",
           "track_id": "preference",
@@ -767,7 +767,7 @@
         {
           "gate_id": "G9",
           "name": "Online preference",
-          "description": "Server-qualified online preference evidence on the candidate subject.",
+          "description": "Measures assigned user-preference outcomes for the baseline and proposed system.",
           "disposition": "required",
           "binding_kind": "run",
           "track_id": "preference",
@@ -784,7 +784,7 @@
     {
       "id": "routing",
       "name": "Routing",
-      "description": "Recipe decisions, coverage, abstention, fallback, and oracle regret.",
+      "description": "Decision quality, coverage, abstention, fallbacks, and missed best-model opportunities.",
       "modes": [
         "replay",
         "live"
@@ -814,7 +814,7 @@
     {
       "id": "model_pool",
       "name": "Model pool",
-      "description": "Arm quality, complementarity, unique wins, and pool oracle quality.",
+      "description": "Quality and reliability of each model, complementary strengths, unique wins, and the best possible pool outcome.",
       "modes": [
         "replay",
         "live"
@@ -850,8 +850,8 @@
     },
     {
       "id": "joint",
-      "name": "Routing + pool",
-      "description": "Realized system utility, oracle regret, latency, reliability, and cost.",
+      "name": "Routing and model pool",
+      "description": "End-to-end quality, reliability, latency, and cost, including the gap from the best available model.",
       "modes": [
         "replay",
         "live"
@@ -872,8 +872,8 @@
     },
     {
       "id": "agentic",
-      "name": "Agentic",
-      "description": "Task quality, trajectory and explicit tool-policy integrity, privacy, complete cost, and separately qualified recovery continuity.",
+      "name": "Agent tasks",
+      "description": "Task completion, tool-use policy, state and privacy, recovery from failures, latency, and cost.",
       "modes": [
         "replay",
         "live"
@@ -921,7 +921,7 @@
     {
       "id": "multimodal",
       "name": "Multimodal",
-      "description": "Capability-aware routing, grounding quality, and privacy signals.",
+      "description": "Input capability matching, grounded response quality, reliability, and privacy for text and non-text requests.",
       "modes": [
         "replay",
         "live"
@@ -940,7 +940,7 @@
     {
       "id": "preference",
       "name": "Preference",
-      "description": "Offline preference agreement and propensity-qualified online evidence.",
+      "description": "Offline preference agreement and statistically valid online preference outcomes.",
       "modes": [
         "replay",
         "live"
@@ -985,7 +985,7 @@
     {
       "id": "safety",
       "name": "Safety",
-      "description": "Policy adherence, blocking correctness, privacy, and unsafe regressions.",
+      "description": "Policy adherence, correct blocking behavior, privacy, and unsafe regressions.",
       "modes": [
         "replay",
         "live"
@@ -1009,7 +1009,7 @@
     {
       "id": "capacity",
       "name": "Capacity",
-      "description": "Repeated closed-loop throughput, tail latency, statistical error bounds, stability, SLO headroom, and measurement cost.",
+      "description": "Throughput, tail latency, error bounds, stability, service-objective headroom, and test cost across repeated load levels.",
       "modes": [
         "replay",
         "live"
@@ -1041,8 +1041,8 @@
   "suites": [
     {
       "id": "evaluation-smoke",
-      "name": "Evaluation smoke",
-      "description": "Deterministic all-track vertical slice.",
+      "name": "Evaluation setup check",
+      "description": "A small deterministic workload that verifies every evaluation area is connected and reportable.",
       "track_ids": [
         "routing",
         "model_pool",
@@ -1129,8 +1129,8 @@
     },
     {
       "id": "live-mom-core",
-      "name": "Live Mixture-of-Models core",
-      "description": "One hidden-label cohort for exact Recipe routing, dense per-arm outcomes, and routed end-to-end utility.",
+      "name": "Routing and model-pool evaluation",
+      "description": "A shared workload whose answers stay hidden during execution. It measures routing decisions, every available model, and the quality delivered by the routed system.",
       "track_ids": [
         "routing",
         "model_pool",
@@ -1181,8 +1181,8 @@
     },
     {
       "id": "live-agent-tasks",
-      "name": "Live agent tasks",
-      "description": "Brokered complete sealed provider-observed task trajectories on the exact frozen Mixture. Every task declares a required-tool or pure-reasoning policy, and required attempts carry unique provider-executed receipts. This method does not execute tools or claim native benchmark parity.",
+      "name": "Agent task evaluation",
+      "description": "Repeated tool-use and reasoning tasks with complete provider results. Measures task completion, tool-policy compliance, reliability, latency, and cost; it does not invoke tools itself or claim parity with external agent benchmarks.",
       "track_ids": [
         "agentic"
       ],
@@ -1204,14 +1204,14 @@
           "qualified_gate_ids": [],
           "evidence_source": "live_runtime",
           "status": "data_required",
-          "reason": "Configure a dedicated server-owned agent_task_ledger endpoint with a complete sealed repeated-task window and explicit per-task tool policy on the exact frozen Mixture."
+          "reason": "Connect a managed agent-task results source that includes every repeated attempt, the required tool policy for each task, and provider-confirmed outcomes for the selected Mixture."
         }
       ]
     },
     {
       "id": "live-fault-recovery",
-      "name": "Live fault recovery",
-      "description": "Brokered exact-step fault injection with paired baseline and treatment receipts, state continuity, side-effect, retry, and latency evidence.",
+      "name": "Agent fault-recovery evaluation",
+      "description": "Matched baseline and injected-failure tasks that measure recovery, state continuity, side effects, retries, and latency.",
       "track_ids": [
         "agentic"
       ],
@@ -1235,14 +1235,14 @@
           ],
           "evidence_source": "live_runtime",
           "status": "data_required",
-          "reason": "Configure a server-owned fault_recovery_ledger endpoint with a complete sealed exact-step baseline/treatment window."
+          "reason": "Connect a managed fault-recovery results source with complete matched baseline and injected-failure attempts at the same task step."
         }
       ]
     },
     {
       "id": "live-multimodal",
-      "name": "Live multimodal",
-      "description": "Bounded non-text request probes with response grading and latency.",
+      "name": "Multimodal response evaluation",
+      "description": "Text and non-text requests graded for supported input handling, response quality, reliability, and latency.",
       "track_ids": [
         "multimodal"
       ],
@@ -1269,8 +1269,8 @@
     },
     {
       "id": "live-hard-policy",
-      "name": "Live hard-policy enforcement",
-      "description": "Brokered runtime policy proof and attack observations bound to the server-owned policy and configuration snapshots.",
+      "name": "Policy enforcement evaluation",
+      "description": "Live policy and adversarial cases that verify required rules are enforced by the selected system configuration.",
       "track_ids": [
         "safety"
       ],
@@ -1294,14 +1294,14 @@
           ],
           "evidence_source": "live_runtime",
           "status": "data_required",
-          "reason": "Configure a server-owned hard_policy_ledger endpoint with an exact rule/enforcement-point proof and complete sealed window."
+          "reason": "Connect managed policy-test results with the evaluated rules, enforcement points, and complete outcomes for the selected configuration."
         }
       ]
     },
     {
       "id": "live-production-experiment",
-      "name": "Live production experiment",
-      "description": "Brokered sealed production assignment and exposure ledger for operational controls and propensity-qualified target-versus-reference preference lift.",
+      "name": "Guarded production evaluation",
+      "description": "A guarded production experiment that measures assignment balance, exposure controls, risk, stop conditions, rollback readiness, and preference lift between baseline and candidate.",
       "track_ids": [
         "preference"
       ],
@@ -1325,7 +1325,7 @@
           ],
           "evidence_source": "live_production",
           "status": "data_required",
-          "reason": "Configure a server-owned production_experiment_ledger endpoint with a complete sealed assignment/exposure and control window."
+          "reason": "Connect managed production experiment results with complete assignment, exposure, and safety-control data."
         },
         {
           "id": "production.preference-lift.v1",
@@ -1335,14 +1335,14 @@
           ],
           "evidence_source": "live_production",
           "status": "data_required",
-          "reason": "Configure a server-owned production_experiment_ledger endpoint with complete preference outcomes, propensities, and explicit target/reference policy probabilities."
+          "reason": "Connect managed production experiment results with complete preference outcomes and the recorded assignment probability for each policy."
         }
       ]
     },
     {
       "id": "live-capacity",
-      "name": "Live capacity",
-      "description": "Repeated closed-loop load levels with frozen warmup, independent measurement windows, confidence bounds, stability checks, and SLO headroom.",
+      "name": "Live capacity evaluation",
+      "description": "Repeated load levels after warmup that measure throughput, response time, error rate, stability, confidence bounds, and service-objective headroom.",
       "track_ids": [
         "capacity"
       ],
@@ -1373,8 +1373,8 @@
   "targets": [
     {
       "id": "fixture",
-      "name": "Built-in replay fixture",
-      "description": "Deterministic evidence for validating the complete evaluation plane.",
+      "name": "Built-in evaluation sample",
+      "description": "A small deterministic replay for checking the full evaluation workflow without calling a live system.",
       "kind": "builtin-fixture",
       "track_ids": [
         "routing",
@@ -1403,8 +1403,8 @@
     },
     {
       "id": "benchmark-source",
-      "name": "Installed benchmark observations",
-      "description": "Pinned source-policy observations from installed normalized benchmark revisions. This target never represents the active runtime.",
+      "name": "Imported benchmark results",
+      "description": "Replay saved results from pinned benchmark revisions. This evaluates imported observations, not the live system.",
       "kind": "normalized-benchmark-source",
       "track_ids": [
         "routing",

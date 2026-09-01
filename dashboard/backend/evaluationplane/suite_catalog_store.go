@@ -191,10 +191,10 @@ func validateInstalledSuiteManifest(root string, data []byte, index suiteIndexRe
 	if err := validateInstalledSuiteArtifacts(root, manifest.Artifacts); err != nil {
 		return CatalogSuite{}, err
 	}
-	parserLabel := "User-provided normalized records passed the closed schema"
+	importSummary := "The imported records passed the required data checks."
 	importTag := "user-provided-import"
 	if importEvidence.ParserVerified {
-		parserLabel = "Registered parser output was re-derived exactly"
+		importSummary = "The registered parser was rerun and produced the same records."
 		importTag = "parser-verified"
 	}
 	methods, err := installedCatalogMethods(root, manifest)
@@ -215,8 +215,8 @@ func validateInstalledSuiteManifest(root string, data []byte, index suiteIndexRe
 	}
 	return CatalogSuite{
 		ID: manifest.ID, Name: manifest.Name,
-		Description: "Pinned normalized exploratory workload. " + parserLabel +
-			"; the import remains E0 and only explicitly registered first-party methods may execute live.",
+		Description: "Imported benchmark workload pinned to a specific revision. " + importSummary +
+			" Imported results are exploratory; release evidence requires a separately supported live evaluation.",
 		Executors:     executors,
 		TrackIDs:      append([]TrackID(nil), manifest.TrackIDs...),
 		Modes:         modes,

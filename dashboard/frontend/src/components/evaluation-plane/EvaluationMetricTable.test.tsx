@@ -39,8 +39,8 @@ const metrics = [
   },
 ] satisfies EvaluationMetric[]
 
-describe('EvaluationMetricTable evidence labels', () => {
-  it('distinguishes independently reduced metrics from diagnostic aggregates', () => {
+describe('EvaluationMetricTable result labels', () => {
+  it('distinguishes verified metrics from supporting diagnostics', () => {
     const markup = renderToStaticMarkup(
       createElement(EvaluationMetricTable, {
         metrics,
@@ -49,8 +49,9 @@ describe('EvaluationMetricTable evidence labels', () => {
       }),
     )
 
-    expect(markup).toContain('Server-reduced E0')
-    expect(markup).toContain('Worker-derived E0 / diagnostic only')
+    expect(markup).toContain('Verified result · Diagnostic')
+    expect(markup).toContain('Supporting diagnostic · Diagnostic')
+    expect(markup).not.toContain('E0')
   })
 
   it('retains the same evidence boundary at higher qualification levels', () => {
@@ -62,7 +63,40 @@ describe('EvaluationMetricTable evidence labels', () => {
       }),
     )
 
-    expect(markup).toContain('Server-reduced E5')
-    expect(markup).toContain('Worker-derived E5 / diagnostic only')
+    expect(markup).toContain('Verified result · End-to-end validation')
+    expect(markup).toContain('Supporting diagnostic · End-to-end validation')
+    expect(markup).not.toContain('E5')
+  })
+
+  it('keeps reported names and units behind closed technical details', () => {
+    const reportedName = 'arm-fast private SNIPS estimator output'
+    const reportedUnit = 'private-service-unit'
+    const modelMetric: EvaluationMetric = {
+      id: 'model_pool.arm.fast.quality',
+      name: reportedName,
+      track_id: 'model_pool',
+      value: 0.91,
+      unit: reportedUnit,
+      analysis_provenance: analysisProvenance('model_pool.arm.fast.quality'),
+    }
+    const markup = renderToStaticMarkup(
+      createElement(EvaluationMetricTable, {
+        metrics: [modelMetric],
+        controls: false,
+        evidenceLevel: 'E4',
+      }),
+    )
+    const technicalDetailsStart = markup.indexOf('<details')
+    const technicalDetailsEnd =
+      markup.indexOf('</details>', technicalDetailsStart) + '</details>'.length
+    const defaultSurface = `${markup.slice(0, technicalDetailsStart)}${markup.slice(technicalDetailsEnd)}`
+
+    expect(defaultSurface).toContain('Model quality')
+    expect(defaultSurface).toContain('0.91')
+    expect(defaultSurface).not.toContain(reportedName)
+    expect(defaultSurface).not.toContain(reportedUnit)
+    expect(markup.slice(technicalDetailsStart)).toContain(reportedName)
+    expect(markup.slice(technicalDetailsStart)).toContain(reportedUnit)
+    expect(markup).not.toContain('<details open')
   })
 })

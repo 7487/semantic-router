@@ -4,12 +4,13 @@ import type {
   EvaluationRoutingRecipeReport as RoutingRecipeReport,
 } from '../../types/evaluationReport'
 import type { EvaluationRoutingRecipePlan } from '../../types/evaluationPlane'
+import EvaluationIssueDetails, { type EvaluationIssueDetail } from './EvaluationIssueDetails'
 import { EvaluationTag } from './EvaluationPrimitives'
 import layoutStyles from './EvaluationReportLayout.module.css'
 import styles from './EvaluationRoutingRecipeReport.module.css'
 
-function reasonLabel(reason?: string): string {
-  return (reason || 'not_available').replace(/_/g, ' ')
+function percent(numerator: number, denominator: number): string {
+  return denominator > 0 ? `${((numerator / denominator) * 100).toFixed(1)}%` : 'Not measured'
 }
 
 function MetricReading({
@@ -20,11 +21,7 @@ function MetricReading({
   format?: 'decimal' | 'fraction'
 }) {
   if (!metric.available) {
-    return (
-      <span className={styles.unavailable} title={metric.reason}>
-        Unavailable · {reasonLabel(metric.reason)}
-      </span>
-    )
+    return <span className={styles.unavailable}>Not measured</span>
   }
   const value = metric.value || 0
   return (
@@ -37,9 +34,11 @@ function MetricReading({
 
 function InputTable({
   caption,
+  itemLabel,
   inputs,
 }: {
   caption: string
+  itemLabel: string
   inputs: EvaluationRoutingRecipeInputAvailabilityReport[]
 }) {
   if (inputs.length === 0) {
@@ -62,13 +61,13 @@ function InputTable({
           </tr>
         </thead>
         <tbody>
-          {inputs.map((input) => (
+          {inputs.map((input, index) => (
             <tr key={input.id}>
               <th scope="row">
-                <code>{input.id}</code>
+                {itemLabel} {index + 1}
               </th>
               <td>
-                <strong>{((input.present / input.expected) * 100).toFixed(1)}%</strong>
+                <strong>{percent(input.present, input.expected)}</strong>
                 <small>{input.present} cases</small>
               </td>
               <td>{input.missing}</td>
@@ -84,9 +83,7 @@ function InputTable({
                     <small>{input.latency.sample_count} timed</small>
                   </span>
                 ) : (
-                  <span className={styles.unavailable} title={input.latency.reason}>
-                    Unavailable · {reasonLabel(input.latency.reason)}
-                  </span>
+                  <span className={styles.unavailable}>Not measured</span>
                 )}
               </td>
             </tr>
@@ -97,61 +94,108 @@ function InputTable({
   )
 }
 
-export default function EvaluationRoutingRecipeReport({
-  plan,
-  report,
-}: {
-  plan: EvaluationRoutingRecipePlan
-  report: RoutingRecipeReport
-}) {
-  const expected = report.e1.expected_decisions
-  return (
-    <section className={layoutStyles.section} aria-labelledby="routing-recipe-report-title">
-      <div className={layoutStyles.sectionHeader}>
-        <div>
-          <span className={layoutStyles.eyebrow}>Server-owned decision evidence</span>
-          <h3 id="routing-recipe-report-title">Routing Recipe</h3>
-          <p>
-            Decision-time signals, eligibility, ranking, and later pool outcomes are reduced against
-            the frozen plan. These values are not worker metrics and are not inferred by the
-            browser.
-          </p>
-        </div>
-        <EvaluationTag mono tone="info">
-          {report.contract_version}
-        </EvaluationTag>
-      </div>
+function routingTechnicalIssues(report: RoutingRecipeReport): EvaluationIssueDetail[] {
+  const issues: EvaluationIssueDetail[] = []
+  const addInputs = (
+    inputs: EvaluationRoutingRecipeInputAvailabilityReport[],
+    itemLabel: string,
+  ) => {
+    inputs.forEach((input, index) => {
+      const label = `${itemLabel} ${index + 1}`
+      issues.push({ label: `${label} identifier`, message: input.id })
+      if (!input.latency.available && input.latency.reason) {
+        issues.push({ label: `${label} latency status`, message: input.latency.reason })
+      }
+    })
+  }
 
-      <dl className={styles.planIdentity} aria-label="Frozen routing recipe plan">
+  addInputs(report.e1.signals, 'Signal')
+  addInputs(report.e1.projections, 'Outcome estimate')
+  report.e2.projection_outcomes.forEach((projection, index) => {
+    const label = `Outcome estimate ${index + 1}`
+    issues.push({ label: `${label} identifier`, message: projection.projection_id })
+    const metrics = [
+      { label: 'ranking correlation', metric: projection.spearman },
+      { label: 'probability accuracy', metric: projection.brier },
+      { label: 'calibration', metric: projection.ece_10 },
+    ]
+    metrics.forEach(({ label: metricLabel, metric }) => {
+      if (metric.reason) {
+        issues.push({ label: `${label} ${metricLabel} status`, message: metric.reason })
+      }
+    })
+  })
+  report.e2.top_k.forEach((topK) => {
+    if (topK.feasible_oracle_recall.reason) {
+      issues.push({
+        label: `Top ${topK.k} recall status`,
+        message: topK.feasible_oracle_recall.reason,
+      })
+    }
+  })
+  if (report.e2.oracle_regret.reason) {
+    issues.push({
+      label: 'Best-model quality-gap status',
+      message: report.e2.oracle_regret.reason,
+    })
+  }
+  return issues
+}
+
+function RoutingPlanSummary({ plan }: { plan: EvaluationRoutingRecipePlan }) {
+  return (
+    <>
+      <dl className={styles.planIdentity} aria-label="Routing evaluation setup">
         <div>
-          <dt>Plan</dt>
+          <dt>Configuration</dt>
+          <dd>Recipe and pool pinned</dd>
+        </div>
+        <div>
+          <dt>Evaluation target</dt>
+          <dd>Saved with this run</dd>
+        </div>
+        <div>
+          <dt>Routing inputs</dt>
           <dd>
-            <code title={plan.plan_digest}>{plan.plan_digest}</code>
+            {plan.signals.length} signals · {plan.projections.length} outcome estimates
           </dd>
         </div>
         <div>
-          <dt>Target snapshot</dt>
+          <dt>Model pool</dt>
           <dd>
-            <code title={plan.target_snapshot_digest}>{plan.target_snapshot_digest}</code>
-          </dd>
-        </div>
-        <div>
-          <dt>Inputs</dt>
-          <dd>
-            {plan.signals.length} signals · {plan.projections.length} projections
-          </dd>
-        </div>
-        <div>
-          <dt>Frozen pool</dt>
-          <dd>
-            {plan.arm_ids.length} arms · top-k {plan.top_k.join(' / ')}
+            {plan.arm_ids.length} candidates · measured at{' '}
+            {plan.top_k.map((k) => `top ${k}`).join(' / ')}
           </dd>
         </div>
       </dl>
+      <details className={styles.reproducibilityDetails}>
+        <summary>Reproducibility details</summary>
+        <dl className={styles.digestList} aria-label="Routing recipe identities">
+          <div>
+            <dt>Routing setup identity</dt>
+            <dd>
+              <code>{plan.plan_digest}</code>
+            </dd>
+          </div>
+          <div>
+            <dt>Evaluation target identity</dt>
+            <dd>
+              <code>{plan.target_snapshot_digest}</code>
+            </dd>
+          </div>
+        </dl>
+      </details>
+    </>
+  )
+}
 
+function RoutingDecisionInputs({ report }: { report: RoutingRecipeReport }) {
+  const expected = report.e1.expected_decisions
+  return (
+    <>
       <div className={styles.stageHeader}>
         <div>
-          <span>E1 · Decision-time observability</span>
+          <span>Decision inputs</span>
           <strong>Can the recipe make a complete, feasible choice?</strong>
         </div>
         <span>
@@ -161,97 +205,103 @@ export default function EvaluationRoutingRecipeReport({
       <dl className={styles.rateLine}>
         <div>
           <dt>Decision coverage</dt>
-          <dd>{((report.e1.observed_decisions / expected) * 100).toFixed(1)}%</dd>
+          <dd>{percent(report.e1.observed_decisions, expected)}</dd>
         </div>
         <div>
           <dt>Eligibility complete</dt>
           <dd>
-            {((report.e1.eligibility_complete / expected) * 100).toFixed(1)}%
+            {percent(report.e1.eligibility_complete, expected)}
             <small>{report.e1.eligibility_complete} cases</small>
           </dd>
         </div>
         <div>
           <dt>Selected feasible</dt>
           <dd>
-            {((report.e1.selected_feasible / expected) * 100).toFixed(1)}%
+            {percent(report.e1.selected_feasible, expected)}
             <small>{report.e1.selected_feasible} cases</small>
           </dd>
         </div>
       </dl>
-      <InputTable caption="Signal availability" inputs={report.e1.signals} />
-      <InputTable caption="Projection availability" inputs={report.e1.projections} />
+      <InputTable caption="Signal availability" itemLabel="Signal" inputs={report.e1.signals} />
+      <InputTable
+        caption="Projection availability"
+        itemLabel="Outcome estimate"
+        inputs={report.e1.projections}
+      />
+    </>
+  )
+}
 
+function ProjectionOutcomeTable({ report }: { report: RoutingRecipeReport }) {
+  if (!report.e2.projection_outcomes.length) {
+    return <p className={styles.emptyLine}>No outcome estimate is bound to later results.</p>
+  }
+  return (
+    <div
+      className={styles.tableScroll}
+      tabIndex={0}
+      role="region"
+      aria-label="Projection outcome calibration"
+    >
+      <table className={styles.table}>
+        <caption>Projection outcome calibration</caption>
+        <thead>
+          <tr>
+            <th scope="col">Projection</th>
+            <th scope="col">Ranking agreement</th>
+            <th scope="col">Probability accuracy</th>
+            <th scope="col">Calibration gap</th>
+            <th scope="col">Reliability</th>
+          </tr>
+        </thead>
+        <tbody>
+          {report.e2.projection_outcomes.map((projection, index) => (
+            <tr key={projection.projection_id}>
+              <th scope="row">Outcome estimate {index + 1}</th>
+              <td>
+                <MetricReading metric={projection.spearman} />
+              </td>
+              <td>
+                <MetricReading metric={projection.brier} />
+              </td>
+              <td>
+                <MetricReading metric={projection.ece_10} />
+              </td>
+              <td>
+                {projection.reliability_bins.length ? (
+                  <span>
+                    <strong>{projection.reliability_bins.length} bins</strong>
+                    <small>
+                      {projection.reliability_bins.reduce((sum, bin) => sum + bin.count, 0)} paired
+                      cases
+                    </small>
+                  </span>
+                ) : (
+                  <span className={styles.unavailable}>Not measured</span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function RoutingOutcomeValidation({ report }: { report: RoutingRecipeReport }) {
+  return (
+    <>
       <div className={styles.stageHeader}>
         <div>
-          <span>E2 · Outcome calibration</span>
+          <span>Outcome validation</span>
           <strong>Does the ranking preserve the feasible pool frontier?</strong>
         </div>
-        <span>Post-decision, server-observed outcomes</span>
+        <span>Observed outcomes after routing</span>
       </div>
-      {report.e2.projection_outcomes.length ? (
-        <div
-          className={styles.tableScroll}
-          tabIndex={0}
-          role="region"
-          aria-label="Projection outcome calibration"
-        >
-          <table className={styles.table}>
-            <caption>Projection outcome calibration</caption>
-            <thead>
-              <tr>
-                <th scope="col">Projection</th>
-                <th scope="col">Spearman</th>
-                <th scope="col">Brier</th>
-                <th scope="col">ECE-10</th>
-                <th scope="col">Reliability</th>
-              </tr>
-            </thead>
-            <tbody>
-              {report.e2.projection_outcomes.map((projection) => (
-                <tr key={projection.projection_id}>
-                  <th scope="row">
-                    <code>{projection.projection_id}</code>
-                  </th>
-                  <td>
-                    <MetricReading metric={projection.spearman} />
-                  </td>
-                  <td>
-                    <MetricReading metric={projection.brier} />
-                  </td>
-                  <td>
-                    <MetricReading metric={projection.ece_10} />
-                  </td>
-                  <td>
-                    {projection.reliability_bins.length ? (
-                      <span>
-                        <strong>{projection.reliability_bins.length} bins</strong>
-                        <small>
-                          {projection.reliability_bins.reduce((sum, bin) => sum + bin.count, 0)}{' '}
-                          paired cases
-                        </small>
-                      </span>
-                    ) : (
-                      <span
-                        className={styles.unavailable}
-                        title={projection.ece_10.reason || projection.brier.reason}
-                      >
-                        Unavailable ·{' '}
-                        {reasonLabel(projection.ece_10.reason || projection.brier.reason)}
-                      </span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <p className={styles.emptyLine}>No projection outcome binding is present in this plan.</p>
-      )}
-
+      <ProjectionOutcomeTable report={report} />
       <div className={styles.outcomeLine}>
         <div>
-          <span>Feasible oracle recall</span>
+          <span>Best-model coverage</span>
           <dl>
             {report.e2.top_k.map((topK) => (
               <div key={topK.k}>
@@ -264,10 +314,40 @@ export default function EvaluationRoutingRecipeReport({
           </dl>
         </div>
         <div>
-          <span>Oracle regret</span>
+          <span>Quality gap to the best feasible model</span>
           <MetricReading metric={report.e2.oracle_regret} />
         </div>
       </div>
+    </>
+  )
+}
+
+export default function EvaluationRoutingRecipeReport({
+  plan,
+  report,
+}: {
+  plan: EvaluationRoutingRecipePlan
+  report: RoutingRecipeReport
+}) {
+  return (
+    <section className={layoutStyles.section} aria-labelledby="routing-recipe-report-title">
+      <div className={layoutStyles.sectionHeader}>
+        <div>
+          <span className={layoutStyles.eyebrow}>Routing behavior</span>
+          <h3 id="routing-recipe-report-title">Routing Recipe</h3>
+          <p>
+            Signals, model eligibility, ranking, and later outcomes are measured against the exact
+            recipe and model pool used by this run.
+          </p>
+        </div>
+        <EvaluationTag tone="info">
+          {report.e1.observed_decisions} of {report.e1.expected_decisions} decisions measured
+        </EvaluationTag>
+      </div>
+      <RoutingPlanSummary plan={plan} />
+      <RoutingDecisionInputs report={report} />
+      <RoutingOutcomeValidation report={report} />
+      <EvaluationIssueDetails issues={routingTechnicalIssues(report)} />
     </section>
   )
 }

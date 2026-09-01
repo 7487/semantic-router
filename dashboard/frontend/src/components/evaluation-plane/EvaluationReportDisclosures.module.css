@@ -18,7 +18,27 @@
   font-size: var(--text-sm);
   font-weight: 650;
   cursor: pointer;
+  list-style: none;
   transition: background var(--transition-fast);
+}
+
+.disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+
+.disclosure > summary::after {
+  width: 0.45rem;
+  height: 0.45rem;
+  flex: 0 0 auto;
+  border-right: 1.5px solid var(--text-secondary);
+  border-bottom: 1.5px solid var(--text-secondary);
+  content: '';
+  transform: rotate(45deg) translate(-0.1rem, -0.1rem);
+  transition: transform var(--transition-fast);
+}
+
+.disclosure[open] > summary::after {
+  transform: rotate(225deg) translate(-0.05rem, -0.05rem);
 }
 
 .disclosure > summary:hover {
@@ -26,10 +46,12 @@
 }
 
 .disclosure > summary:focus-visible {
+  outline: 2px solid var(--focus-ring);
   outline-offset: -3px;
 }
 
 .disclosure summary > span {
+  margin-left: auto;
   color: var(--text-muted);
   font-size: 0.75rem;
 }
@@ -88,6 +110,31 @@
 .recommendations li {
   padding-left: 0.2rem;
   line-height: 1.55;
+}
+
+.technicalNotes {
+  margin-top: 0.85rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.technicalNotes > summary {
+  width: fit-content;
+  color: var(--text-secondary);
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.technicalNotes > summary:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+
+.technicalNotes > p {
+  margin: 0.55rem 0 0;
+  line-height: 1.5;
 }
 
 .provenance {
