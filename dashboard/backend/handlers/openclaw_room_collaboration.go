@@ -184,7 +184,7 @@ func (h *OpenClawHandler) fanOutCollaborationToWebSocket(roomID string, event Cl
 			return true
 		}
 
-		if !client.trySend(outbound) {
+		if sent, open := client.trySend(outbound); !sent && open {
 			log.Printf("openclaw: WS client %s buffer full, skipping event", client.clientID)
 		}
 		return true
