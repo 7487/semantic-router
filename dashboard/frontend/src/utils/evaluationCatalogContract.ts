@@ -22,7 +22,10 @@ import {
   decodeEvaluationCapacitySLO,
   requiresCapacitySLO,
 } from './evaluationCapacitySLOContract'
-import { isEvaluationMixture } from './evaluationMixtureContract'
+import {
+  isEvaluationMixture,
+  isUnavailableEvaluationCatalogMixture,
+} from './evaluationMixtureContract'
 
 function isTargetExecutorMap(value: unknown, modes: unknown): boolean {
   if (
@@ -201,6 +204,48 @@ function hasExactCampaignSlots(value: unknown, profileID: unknown): boolean {
   )
 }
 
+function isCatalogTarget(value: unknown): boolean {
+  if (
+    !isEvaluationRecord(value) ||
+    !hasOnlyEvaluationFields(value, [
+      'id',
+      'name',
+      'description',
+      'kind',
+      'track_ids',
+      'modes',
+      'accepted_executors',
+      'evidence_level',
+      'healthy',
+      'labels',
+      'mixture',
+    ]) ||
+    !isNonEmptyText(value.id) ||
+    !isNonEmptyText(value.name) ||
+    typeof value.description !== 'string' ||
+    !isNonEmptyText(value.kind) ||
+    !isKnownValueArray(value.track_ids, EVALUATION_TRACK_ID_SET) ||
+    !isKnownValueArray(value.modes, EVALUATION_MODE_SET, false) ||
+    !isTargetExecutorMap(value.accepted_executors, value.modes) ||
+    (value.evidence_level !== undefined &&
+      !isKnownValue(value.evidence_level, EVALUATION_EVIDENCE_LEVEL_SET)) ||
+    (value.healthy !== undefined && typeof value.healthy !== 'boolean') ||
+    (value.labels !== undefined && !isStringRecord(value.labels))
+  ) {
+    return false
+  }
+  const mixtureTarget = value.kind === 'mixture-of-models'
+  if (mixtureTarget !== (value.mixture !== undefined)) return false
+  if (!Array.isArray(value.track_ids) || value.track_ids.length > 0) {
+    return value.mixture === undefined || isEvaluationMixture(value.mixture)
+  }
+  return (
+    mixtureTarget &&
+    value.healthy === false &&
+    (isEvaluationMixture(value.mixture) || isUnavailableEvaluationCatalogMixture(value.mixture))
+  )
+}
+
 export function decodeEvaluationCatalog(payload: unknown): EvaluationCatalog {
   assertCurrentEvaluationContract(payload, 'Evaluation catalog response')
   if (
@@ -293,36 +338,7 @@ export function decodeEvaluationCatalog(payload: unknown): EvaluationCatalog {
           item.evidence_level !== 'E0'),
     ) ||
     !Array.isArray(payload.targets) ||
-    payload.targets.some(
-      (item) =>
-        !isEvaluationRecord(item) ||
-        !hasOnlyEvaluationFields(item, [
-          'id',
-          'name',
-          'description',
-          'kind',
-          'track_ids',
-          'modes',
-          'accepted_executors',
-          'evidence_level',
-          'healthy',
-          'labels',
-          'mixture',
-        ]) ||
-        !isNonEmptyText(item.id) ||
-        !isNonEmptyText(item.name) ||
-        typeof item.description !== 'string' ||
-        !isNonEmptyText(item.kind) ||
-        !isKnownValueArray(item.track_ids, EVALUATION_TRACK_ID_SET, false) ||
-        !isKnownValueArray(item.modes, EVALUATION_MODE_SET, false) ||
-        !isTargetExecutorMap(item.accepted_executors, item.modes) ||
-        (item.evidence_level !== undefined &&
-          !isKnownValue(item.evidence_level, EVALUATION_EVIDENCE_LEVEL_SET)) ||
-        (item.healthy !== undefined && typeof item.healthy !== 'boolean') ||
-        (item.labels !== undefined && !isStringRecord(item.labels)) ||
-        (item.mixture !== undefined && !isEvaluationMixture(item.mixture)) ||
-        (item.kind === 'mixture-of-models') !== (item.mixture !== undefined),
-    )
+    payload.targets.some((item) => !isCatalogTarget(item))
   ) {
     throw new Error('Evaluation catalog response is incomplete.')
   }

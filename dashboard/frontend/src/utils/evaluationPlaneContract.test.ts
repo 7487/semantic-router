@@ -80,8 +80,99 @@ const mixture = {
   ...mixtureBase,
   routing_recipe_plan: buildEvaluationRoutingRecipePlan(mixtureBase),
 }
+const unavailableMixtureBase = {
+  ...mixtureBase,
+  id: 'mom-unavailable',
+  entrypoint_model: 'unavailable-router',
+  aliases: ['unavailable-router'],
+  model_arms: [],
+  support_models: [],
+  decisions: [],
+}
+const unavailableMixture = {
+  ...unavailableMixtureBase,
+  routing_recipe_plan: buildEvaluationRoutingRecipePlan(unavailableMixtureBase),
+}
+const catalogWithUnavailableMixture = {
+  schema_version: 'evaluation.v1',
+  gate_contract_version: 'evaluation-release-gates.v2',
+  generated_at: '2026-08-30T00:00:00Z',
+  change_profiles: [],
+  tracks: [],
+  suites: [],
+  targets: [
+    {
+      id: 'mom-unavailable',
+      name: 'Unavailable Mixture',
+      description: 'Inspectable, but not executable',
+      kind: 'mixture-of-models',
+      track_ids: [],
+      modes: ['replay', 'live'],
+      accepted_executors: {
+        replay: ['mom-cohort-replay.v1'],
+        live: ['live-runtime.v1'],
+      },
+      healthy: false,
+      mixture: unavailableMixture,
+    },
+  ],
+}
 
 describe('evaluation current-contract codec', () => {
+  it('accepts an inspectable zero-arm Mixture only as an unavailable catalog target', () => {
+    expect(decodeEvaluationCatalog(catalogWithUnavailableMixture).targets[0]).toMatchObject({
+      id: 'mom-unavailable',
+      healthy: false,
+      track_ids: [],
+    })
+  })
+
+  it('keeps the unavailable catalog exception narrow and digest-bound', () => {
+    const unavailableTarget = catalogWithUnavailableMixture.targets[0]
+    const invalidTargets = [
+      { ...unavailableTarget, healthy: true },
+      { ...unavailableTarget, healthy: undefined },
+      { ...unavailableTarget, track_ids: ['routing'] },
+      { ...unavailableTarget, kind: 'provider-runtime', mixture: undefined },
+      {
+        ...unavailableTarget,
+        mixture: {
+          ...unavailableMixture,
+          routing_recipe_plan: {
+            ...unavailableMixture.routing_recipe_plan,
+            target_snapshot_digest: `sha256:${'a'.repeat(64)}`,
+          },
+        },
+      },
+      {
+        ...unavailableTarget,
+        mixture: {
+          ...unavailableMixture,
+          routing_recipe_plan: {
+            ...unavailableMixture.routing_recipe_plan,
+            plan_digest: `sha256:${'b'.repeat(64)}`,
+          },
+        },
+      },
+    ]
+    for (const target of invalidTargets) {
+      expect(() =>
+        decodeEvaluationCatalog({ ...catalogWithUnavailableMixture, targets: [target] }),
+      ).toThrow(/catalog response is incomplete/i)
+    }
+  })
+
+  it('keeps zero-arm Mixtures outside the executable run contract', () => {
+    expect(() =>
+      decodeEvaluationRun({
+        ...run,
+        mode: 'live',
+        target_id: 'mom-unavailable',
+        mixture: unavailableMixture,
+      }),
+    ).toThrow(/run response is incomplete/i)
+  })
+
   it('requires one explicit executor per advertised suite mode', () => {
     const catalog = {
       schema_version: 'evaluation.v1',

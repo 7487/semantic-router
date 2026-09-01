@@ -211,9 +211,10 @@ export function evaluationRoutingRecipePlanDigest(
   })
 }
 
-export function isEvaluationRoutingRecipePlan(
+function isEvaluationRoutingRecipePlanContract(
   value: unknown,
   mixture: Omit<EvaluationMixture, 'routing_recipe_plan'>,
+  allowEmptyPool: boolean,
 ): value is EvaluationRoutingRecipePlan {
   if (
     !isEvaluationRecord(value) ||
@@ -233,7 +234,7 @@ export function isEvaluationRoutingRecipePlan(
     typeof value.target_snapshot_digest !== 'string' ||
     !DIGEST.test(value.target_snapshot_digest) ||
     !Array.isArray(value.arm_ids) ||
-    value.arm_ids.length < 1 ||
+    (!allowEmptyPool && value.arm_ids.length < 1) ||
     value.arm_ids.length > MAX_ARMS ||
     value.arm_ids.some((arm) => typeof arm !== 'string' || !PORTABLE_ID.test(arm)) ||
     !unique(value.arm_ids as string[]) ||
@@ -277,6 +278,22 @@ export function isEvaluationRoutingRecipePlan(
       projections: plan.projections,
       top_k: plan.top_k,
     })
+  )
+}
+
+export function isEvaluationRoutingRecipePlan(
+  value: unknown,
+  mixture: Omit<EvaluationMixture, 'routing_recipe_plan'>,
+): value is EvaluationRoutingRecipePlan {
+  return isEvaluationRoutingRecipePlanContract(value, mixture, false)
+}
+
+export function isUnavailableEvaluationCatalogRoutingRecipePlan(
+  value: unknown,
+  mixture: Omit<EvaluationMixture, 'routing_recipe_plan'>,
+): value is EvaluationRoutingRecipePlan {
+  return (
+    mixture.model_arms.length === 0 && isEvaluationRoutingRecipePlanContract(value, mixture, true)
   )
 }
 

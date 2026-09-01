@@ -13,7 +13,10 @@ import {
   isNonNegativeInteger,
   isTextArray,
 } from './evaluationContractValidation'
-import { isEvaluationRoutingRecipePlan } from './evaluationRoutingRecipeContract'
+import {
+  isEvaluationRoutingRecipePlan,
+  isUnavailableEvaluationCatalogRoutingRecipePlan,
+} from './evaluationRoutingRecipeContract'
 
 const PORTABLE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/
 const SHA256 = /^sha256:[0-9a-f]{64}$/
@@ -98,7 +101,10 @@ function isSupportModel(value: unknown): value is EvaluationSupportModel {
   )
 }
 
-export function isEvaluationMixture(value: unknown): value is EvaluationMixture {
+function isEvaluationMixtureContract(
+  value: unknown,
+  allowEmptyPool: boolean,
+): value is EvaluationMixture {
   if (
     !isEvaluationRecord(value) ||
     !hasOnlyEvaluationFields(value, [
@@ -139,7 +145,7 @@ export function isEvaluationMixture(value: unknown): value is EvaluationMixture 
     typeof value.binding_digest !== 'string' ||
     !SHA256.test(value.binding_digest) ||
     !Array.isArray(value.model_arms) ||
-    value.model_arms.length === 0 ||
+    (!allowEmptyPool && value.model_arms.length === 0) ||
     value.model_arms.some((arm) => !isModelArm(arm)) ||
     !Array.isArray(value.support_models) ||
     value.support_models.some((model) => !isSupportModel(model)) ||
@@ -169,9 +175,22 @@ export function isEvaluationMixture(value: unknown): value is EvaluationMixture 
     (decision) => decision.name as string,
   )
   if (new Set(decisionNames).size !== decisionNames.length) return false
-  return isEvaluationRoutingRecipePlan(
-    value.routing_recipe_plan,
-    value as unknown as Omit<EvaluationMixture, 'routing_recipe_plan'>,
+  const mixture = value as unknown as Omit<EvaluationMixture, 'routing_recipe_plan'>
+  return allowEmptyPool
+    ? isUnavailableEvaluationCatalogRoutingRecipePlan(value.routing_recipe_plan, mixture)
+    : isEvaluationRoutingRecipePlan(value.routing_recipe_plan, mixture)
+}
+
+export function isEvaluationMixture(value: unknown): value is EvaluationMixture {
+  return isEvaluationMixtureContract(value, false)
+}
+
+export function isUnavailableEvaluationCatalogMixture(value: unknown): value is EvaluationMixture {
+  return (
+    isEvaluationRecord(value) &&
+    Array.isArray(value.model_arms) &&
+    value.model_arms.length === 0 &&
+    isEvaluationMixtureContract(value, true)
   )
 }
 
